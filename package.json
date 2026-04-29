@@ -25,6 +25,16 @@
   "bin": {
     "araon": "./dist/cli/araon.js"
   },
+  "files": [
+    "dist/client/**/*",
+    "dist/cli/**/*",
+    "src/server/db/migrations/**/*",
+    "docs/release-notes/v1.1.0-beta.3.md",
+    "README.md",
+    "INSTALL.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "engines": {
     "node": ">=20"
   },
