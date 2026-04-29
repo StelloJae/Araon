@@ -24,6 +24,7 @@ import {
   rankStockSearchCombined,
   type CombinedSearchResult,
 } from '../lib/stock-search';
+import { syncTrackedCatalogAfterMasterAdd } from '../lib/tracked-catalog-sync';
 import type { StockViewModel } from '../lib/view-models';
 import { useMasterStore } from '../stores/master-store';
 import { useStocksStore } from '../stores/stocks-store';
@@ -79,6 +80,7 @@ export function GlobalSearch({
   const masterItems = useMasterStore((s) => s.items);
   const ensureMasterLoaded = useMasterStore((s) => s.ensureLoaded);
   const setCatalog = useStocksStore((s) => s.setCatalog);
+  const setThemes = useStocksStore((s) => s.setThemes);
 
   // ⌘K / Ctrl+K / `/` — focus the input. Cleanup on unmount.
   useEffect(() => {
@@ -187,18 +189,7 @@ export function GlobalSearch({
     setPendingAdd(item.code);
     try {
       await addStockFromMaster(item.code);
-      // Optimistically merge into the catalog so the next render's combined
-      // search sees this ticker as tracked. The next `/stocks` reload (next
-      // SSE snapshot) will overwrite this with authoritative data.
-      const current = useStocksStore.getState().catalog;
-      setCatalog([
-        ...Object.keys(current).map((t) => ({
-          ticker: t,
-          name: current[t]!.name,
-          market: current[t]!.market,
-        })),
-        { ticker: item.code, name: item.name, market: item.market },
-      ]);
+      await syncTrackedCatalogAfterMasterAdd({ setCatalog, setThemes });
       setQuery('');
       setOpen(false);
       setActiveIdx(0);

@@ -1,6 +1,8 @@
 export const SESSION_REALTIME_CAP_OPTIONS = [1, 3, 5, 10, 20, 40] as const;
 export type SessionRealtimeCap = (typeof SESSION_REALTIME_CAP_OPTIONS)[number];
 
+export const REALTIME_CONTROL_BADGE_LABEL = '검증 완료';
+export const REALTIME_ADVANCED_RECHECK_LABEL = '운영자 재검증';
 export const REALTIME_STATUS_FETCH_ERROR_MESSAGE =
   '실시간 상태를 불러오지 못했습니다. REST 폴링은 계속 유지됩니다.';
 

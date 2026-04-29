@@ -24,7 +24,7 @@ function stock(overrides: Partial<StockViewModel> = {}): StockViewModel {
 }
 
 describe('volume visibility', () => {
-  it('shows current cumulative volume on compact stock rows', () => {
+  it('keeps compact stock rows focused on price without a volume pill', () => {
     const html = renderToStaticMarkup(
       createElement(StockRow, {
         stock: stock(),
@@ -37,8 +37,8 @@ describe('volume visibility', () => {
       }),
     );
 
-    expect(html).toContain('거래량');
-    expect(html).toContain('123.5만');
+    expect(html).not.toContain('거래량');
+    expect(html).not.toContain('123.5만');
   });
 
   it('shows current cumulative volume on surge row sublabels', () => {

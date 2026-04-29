@@ -25,7 +25,6 @@ import {
   fmtAbs,
   fmtPct,
   fmtPrice,
-  fmtVolMan,
   krColor,
   rowBarAlpha,
 } from '../lib/format';
@@ -62,7 +61,6 @@ export function StockRow({
     price,
     changePct,
     changeAbs,
-    volume,
     market,
     effectiveSector,
   } = stock;
@@ -249,20 +247,6 @@ export function StockRow({
           >
             {effectiveSector.name}
           </span>
-          <span
-            style={{
-              fontSize: 8,
-              fontWeight: 700,
-              color: 'var(--text-muted)',
-              padding: '0 3px',
-              border: '1px solid var(--border-soft)',
-              borderRadius: 3,
-              lineHeight: 1.4,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            거래량 {fmtVolMan(volume)}
-          </span>
         </div>
       </div>
 
@@ -294,7 +278,7 @@ export function StockRow({
           fontWeight: 700,
           color: 'var(--text-primary)',
           textAlign: 'right',
-          minWidth: 56,
+          minWidth: 64,
           whiteSpace: 'nowrap',
         }}
       >

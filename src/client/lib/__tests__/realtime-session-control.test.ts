@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   REALTIME_STATUS_FETCH_ERROR_MESSAGE,
+  REALTIME_ADVANCED_RECHECK_LABEL,
+  REALTIME_CONTROL_BADGE_LABEL,
   SESSION_REALTIME_CAP_OPTIONS,
   getRealtimeCapVerificationDescription,
   getRealtimeCap20PreviewLabel,
@@ -17,6 +19,13 @@ import {
 } from '../realtime-session-control';
 
 describe('realtime session operator controls', () => {
+  it('describes integrated realtime as verified, not experimental', () => {
+    expect(REALTIME_CONTROL_BADGE_LABEL).toBe('검증 완료');
+    expect(REALTIME_ADVANCED_RECHECK_LABEL).toBe('운영자 재검증');
+    expect(REALTIME_CONTROL_BADGE_LABEL).not.toContain('실험');
+    expect(REALTIME_ADVANCED_RECHECK_LABEL).not.toContain('실험');
+  });
+
   it('exposes controlled cap choices up to the KIS WebSocket ceiling', () => {
     expect(SESSION_REALTIME_CAP_OPTIONS).toEqual([1, 3, 5, 10, 20, 40]);
     expect(SESSION_REALTIME_CAP_OPTIONS).not.toContain(41);

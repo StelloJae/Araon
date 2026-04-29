@@ -47,6 +47,63 @@ describe('useStocksStore.removeStock', () => {
     expect(next.flashSeeds['000660']).toBe(1);
   });
 
+  it('does not flash for timestamp-only or volume-only updates', async () => {
+    const { useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+
+    store.applyPriceUpdate(PRICE_A);
+    const firstFlash = useStocksStore.getState().flashSeeds['005930'];
+
+    store.applyPriceUpdate({
+      ...PRICE_A,
+      volume: PRICE_A.volume + 1_000,
+      updatedAt: '2026-04-27T01:00:01.000Z',
+    });
+    expect(useStocksStore.getState().flashSeeds['005930']).toBe(firstFlash);
+    expect(useStocksStore.getState().quotes['005930']?.volume).toBe(
+      PRICE_A.volume + 1_000,
+    );
+
+    store.applyPriceUpdate({
+      ...PRICE_A,
+      volume: PRICE_A.volume + 1_000,
+      updatedAt: '2026-04-27T01:00:02.000Z',
+    });
+    expect(useStocksStore.getState().flashSeeds['005930']).toBe(firstFlash);
+  });
+
+  it('flashes when price, change rate, or absolute change moves', async () => {
+    const { useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+
+    store.applyPriceUpdate(PRICE_A);
+    const firstFlash = useStocksStore.getState().flashSeeds['005930'] ?? 0;
+
+    store.applyPriceUpdate({
+      ...PRICE_A,
+      price: PRICE_A.price + 100,
+      updatedAt: '2026-04-27T01:00:01.000Z',
+    });
+    expect(useStocksStore.getState().flashSeeds['005930']).toBe(firstFlash + 1);
+
+    store.applyPriceUpdate({
+      ...PRICE_A,
+      price: PRICE_A.price + 100,
+      changeRate: PRICE_A.changeRate + 0.1,
+      updatedAt: '2026-04-27T01:00:02.000Z',
+    });
+    expect(useStocksStore.getState().flashSeeds['005930']).toBe(firstFlash + 2);
+
+    store.applyPriceUpdate({
+      ...PRICE_A,
+      price: PRICE_A.price + 100,
+      changeRate: PRICE_A.changeRate + 0.1,
+      changeAbs: (PRICE_A.changeAbs ?? 0) + 100,
+      updatedAt: '2026-04-27T01:00:03.000Z',
+    });
+    expect(useStocksStore.getState().flashSeeds['005930']).toBe(firstFlash + 3);
+  });
+
   it('drops the ticker from catalog, quotes, and flashSeeds', async () => {
     const { useStocksStore } = await import('../stocks-store');
     const store = useStocksStore.getState();

@@ -51,6 +51,8 @@ import {
   type RealtimeStatusPayload,
 } from '../lib/api-client';
 import {
+  REALTIME_ADVANCED_RECHECK_LABEL,
+  REALTIME_CONTROL_BADGE_LABEL,
   REALTIME_STATUS_FETCH_ERROR_MESSAGE,
   getRealtimeCap20PreviewLabel,
   getRealtimeCap20ReadinessLabel,
@@ -636,6 +638,7 @@ function RealtimeSessionControl({
   onDisable: () => void;
 }) {
   const busy = phase.kind === 'running';
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const sessionActive = status?.sessionRealtimeEnabled === true;
   const runtimeApplyActive = status?.canApplyTicksToPriceStore === true;
   const runtimeReceiving =
@@ -692,203 +695,240 @@ function RealtimeSessionControl({
             padding: '2px 5px',
           }}
         >
-          실험 기능
+          {REALTIME_CONTROL_BADGE_LABEL}
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        통합 실시간 시세는 H0UNCNT0 기반으로 상시 운영됩니다.
+        통합 실시간 시세는 H0UNCNT0 기반으로 검증 완료됐습니다.
         <br />
-        REST 폴링은 fallback으로 계속 유지됩니다.
+        REST 폴링은 항상 fallback으로 유지됩니다.
         <br />
-        아래 수동 세션 버튼은 짧은 재검증/정리용이며, 시간 또는 tick 제한에 도달하면 자동으로 정리됩니다.
-        <br />
-        검증 완료: 1 / 3 / 5 / 10 / 20 / 40종목.
-        <br />
-        {getRealtimeCapVerificationDescription(40)}
-        <br />
-        20종목 상태: {cap20Label}. {cap20Preview}.
-        <br />
-        40종목까지 controlled live smoke는 완료됐지만, 40종목 초과 구독은 허용하지 않습니다.
+        이 로컬 설정에서는 상시 실시간이 켜져 있을 수 있지만, 새 설치 기본값은 OFF입니다.
         <br />
         raw key / account / secret 정보는 표시하지 않습니다.
       </div>
-      <div
-        data-testid="realtime-status-panel"
+      <button
+        type="button"
+        onClick={() => setAdvancedOpen((open) => !open)}
+        aria-expanded={advancedOpen}
+        data-testid="realtime-advanced-toggle"
         style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 8,
-          marginTop: 10,
-        }}
-      >
-        <Row
-          k="현재 상태"
-          v={sessionStateLabel}
-          chipColor={runtimeReceiving ? 'var(--kr-up)' : 'var(--text-muted)'}
-        />
-        <Row
-          k="소스"
-          v="통합"
-          chipColor="var(--text-muted)"
-        />
-        <Row
-          k="현재 cap"
-          v={session?.cap !== null && session?.cap !== undefined
-            ? `${session.cap}종목`
-            : `${selectedCap}종목 선택`}
-          chipColor="var(--text-muted)"
-        />
-        <Row
-          k="구독 수"
-          v={`${status?.subscribedTickerCount ?? 0} 종목`}
-          chipColor="var(--text-muted)"
-        />
-        <Row
-          k="파싱/반영/무시"
-          v={
-            status === null
-              ? '0 / 0 / 0'
-              : `${status.parsedTickCount} / ${status.appliedTickCount} / ${status.ignoredStaleTickCount}`
-          }
-          chipColor="var(--text-muted)"
-        />
-        <Row
-          k="최근 tick"
-          v={status?.lastTickAt !== undefined && status.lastTickAt !== null
-            ? formatLocal(status.lastTickAt)
-            : '없음'}
-          chipColor="var(--text-muted)"
-        />
-        <Row
-          k="세션 진행"
-          v={
-            session !== undefined
-              ? `적용 ${session.sessionAppliedTickCount}/${session.maxAppliedTicks ?? '-'}`
-              : '60초 / 대기'
-          }
-          chipColor="var(--text-muted)"
-        />
-        <Row
-          k="세션 제한"
-          v={
-            session !== undefined
-              ? `${Math.round(session.maxSessionMs / 1000)}초 / 수신 ${session.sessionParsedTickCount}/${session.maxParsedTicks ?? '-'}`
-              : '60초 / 대기'
-          }
-          chipColor="var(--text-muted)"
-        />
-        <Row
-          k="종료 사유"
-          v={getRealtimeSessionEndReasonLabel(endReason)}
-          chipColor={endReason === null ? 'var(--text-muted)' : 'var(--gold-text)'}
-        />
-        <Row
-          k="10종목"
-          v={status?.readiness.cap10UiHardLimitReady
-            ? '검증됨'
-            : status?.readiness.cap10UiHardLimitConditional
-              ? '조건부'
-              : '미검증'}
-          chipColor="var(--gold-text)"
-        />
-        <Row
-          k="20종목"
-          v={`${cap20Label} · ${cap20Preview}`}
-          chipColor="var(--gold-text)"
-        />
-        <Row
-          k="40종목"
-          v={status?.readiness.readyForCap40 ? '준비됨' : '미검증'}
-          chipColor="var(--gold-text)"
-        />
-      </div>
-      <label
-        style={{
-          display: 'block',
           marginTop: 12,
-          fontSize: 11,
-          fontWeight: 700,
+          width: '100%',
+          padding: '8px 10px',
+          borderRadius: 7,
+          border: '1px solid var(--border)',
+          background: 'var(--bg-card)',
           color: 'var(--text-secondary)',
+          fontFamily: 'inherit',
+          fontSize: 12,
+          fontWeight: 800,
+          cursor: 'pointer',
+          textAlign: 'left',
         }}
       >
-        최대 종목 수
-        <select
-          value={selectedCap}
-          onChange={(e) => onCapChange(Number(e.target.value) as SessionRealtimeCap)}
-          disabled={uiState.capSelectDisabled}
-          data-testid="realtime-cap-select"
-          style={{
-            display: 'block',
-            marginTop: 6,
-            width: '100%',
-            padding: '8px 10px',
-            borderRadius: 7,
-            border: '1px solid var(--border)',
-            background: 'var(--bg-card)',
-            color: uiState.capSelectDisabled
-              ? 'var(--text-muted)'
-              : 'var(--text-primary)',
-            fontFamily: 'inherit',
-            fontSize: 12,
-            cursor: uiState.capSelectDisabled ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {SESSION_REALTIME_CAP_OPTIONS.map((cap) => (
-            <option key={cap} value={cap} data-testid={`realtime-cap-${cap}`}>
-              {getRealtimeCapOptionLabel(cap)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginTop: 10,
-          fontSize: 11,
-          color: 'var(--text-secondary)',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(e) => onConfirmChange(e.currentTarget.checked)}
-          data-testid="realtime-confirm-checkbox"
-        />
-        이 세션에서만 켜는 실험 기능임을 확인했습니다
-      </label>
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button
-          type="button"
-          onClick={onEnable}
-          disabled={uiState.enableDisabled}
-          data-testid="realtime-session-enable"
-          style={operatorButtonStyle(!uiState.enableDisabled)}
-        >
-          {phase.kind === 'running' && phase.action === 'enable'
-            ? '켜는 중…'
-            : sessionActive
-              ? '진행 중'
-              : '세션에서 켜기'}
-        </button>
-        <button
-          type="button"
-          onClick={onDisable}
-          disabled={uiState.disableDisabled}
-          data-testid="realtime-session-disable"
-          style={operatorButtonStyle(!uiState.disableDisabled)}
-        >
-          {phase.kind === 'running' && phase.action === 'disable'
-            ? '끄는 중…'
-            : '끄기'}
-        </button>
-      </div>
-      {phase.kind === 'success' && (
-        <div style={operatorMessageStyle('var(--up-tint-1)')}>{phase.message}</div>
-      )}
-      {phase.kind === 'error' && (
-        <div style={operatorMessageStyle('var(--accent-soft)')}>{phase.message}</div>
+        {REALTIME_ADVANCED_RECHECK_LABEL} {advancedOpen ? '닫기' : '열기'}
+      </button>
+      {advancedOpen && (
+        <div data-testid="realtime-advanced-panel">
+          <div
+            style={{
+              marginTop: 10,
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              lineHeight: 1.6,
+            }}
+          >
+            아래 cap 선택은 운영자 재검증용입니다. 시간 또는 tick 제한에
+            도달하면 자동으로 정리됩니다.
+            <br />
+            검증 완료: 1 / 3 / 5 / 10 / 20 / 40종목.
+            <br />
+            {getRealtimeCapVerificationDescription(40)}
+            <br />
+            20종목 상태: {cap20Label}. {cap20Preview}.
+            <br />
+            40종목까지 controlled live smoke는 완료됐지만, 40종목 초과 구독은 허용하지 않습니다.
+          </div>
+          <div
+            data-testid="realtime-status-panel"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 8,
+              marginTop: 10,
+            }}
+          >
+            <Row
+              k="현재 상태"
+              v={sessionStateLabel}
+              chipColor={runtimeReceiving ? 'var(--kr-up)' : 'var(--text-muted)'}
+            />
+            <Row
+              k="소스"
+              v="통합"
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="현재 cap"
+              v={session?.cap !== null && session?.cap !== undefined
+                ? `${session.cap}종목`
+                : `${selectedCap}종목 선택`}
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="구독 수"
+              v={`${status?.subscribedTickerCount ?? 0} 종목`}
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="파싱/반영/무시"
+              v={
+                status === null
+                  ? '0 / 0 / 0'
+                  : `${status.parsedTickCount} / ${status.appliedTickCount} / ${status.ignoredStaleTickCount}`
+              }
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="최근 tick"
+              v={status?.lastTickAt !== undefined && status.lastTickAt !== null
+                ? formatLocal(status.lastTickAt)
+                : '없음'}
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="세션 진행"
+              v={
+                session !== undefined
+                  ? `적용 ${session.sessionAppliedTickCount}/${session.maxAppliedTicks ?? '-'}`
+                  : '60초 / 대기'
+              }
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="세션 제한"
+              v={
+                session !== undefined
+                  ? `${Math.round(session.maxSessionMs / 1000)}초 / 수신 ${session.sessionParsedTickCount}/${session.maxParsedTicks ?? '-'}`
+                  : '60초 / 대기'
+              }
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="종료 사유"
+              v={getRealtimeSessionEndReasonLabel(endReason)}
+              chipColor={endReason === null ? 'var(--text-muted)' : 'var(--gold-text)'}
+            />
+            <Row
+              k="10종목"
+              v={status?.readiness.cap10UiHardLimitReady
+                ? '검증됨'
+                : status?.readiness.cap10UiHardLimitConditional
+                  ? '조건부'
+                  : '미검증'}
+              chipColor="var(--gold-text)"
+            />
+            <Row
+              k="20종목"
+              v={`${cap20Label} · ${cap20Preview}`}
+              chipColor="var(--gold-text)"
+            />
+            <Row
+              k="40종목"
+              v={status?.readiness.readyForCap40 ? '준비됨' : '미검증'}
+              chipColor="var(--gold-text)"
+            />
+          </div>
+          <label
+            style={{
+              display: 'block',
+              marginTop: 12,
+              fontSize: 11,
+              fontWeight: 700,
+              color: 'var(--text-secondary)',
+            }}
+          >
+            최대 종목 수
+            <select
+              value={selectedCap}
+              onChange={(e) => onCapChange(Number(e.target.value) as SessionRealtimeCap)}
+              disabled={uiState.capSelectDisabled}
+              data-testid="realtime-cap-select"
+              style={{
+                display: 'block',
+                marginTop: 6,
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: 7,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-card)',
+                color: uiState.capSelectDisabled
+                  ? 'var(--text-muted)'
+                  : 'var(--text-primary)',
+                fontFamily: 'inherit',
+                fontSize: 12,
+                cursor: uiState.capSelectDisabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {SESSION_REALTIME_CAP_OPTIONS.map((cap) => (
+                <option key={cap} value={cap} data-testid={`realtime-cap-${cap}`}>
+                  {getRealtimeCapOptionLabel(cap)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginTop: 10,
+              fontSize: 11,
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => onConfirmChange(e.currentTarget.checked)}
+              data-testid="realtime-confirm-checkbox"
+            />
+            이 세션에서만 운영자 재검증을 실행합니다
+          </label>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={onEnable}
+              disabled={uiState.enableDisabled}
+              data-testid="realtime-session-enable"
+              style={operatorButtonStyle(!uiState.enableDisabled)}
+            >
+              {phase.kind === 'running' && phase.action === 'enable'
+                ? '켜는 중…'
+                : sessionActive
+                  ? '진행 중'
+                  : '세션에서 켜기'}
+            </button>
+            <button
+              type="button"
+              onClick={onDisable}
+              disabled={uiState.disableDisabled}
+              data-testid="realtime-session-disable"
+              style={operatorButtonStyle(!uiState.disableDisabled)}
+            >
+              {phase.kind === 'running' && phase.action === 'disable'
+                ? '끄는 중…'
+                : '끄기'}
+            </button>
+          </div>
+          {phase.kind === 'success' && (
+            <div style={operatorMessageStyle('var(--up-tint-1)')}>{phase.message}</div>
+          )}
+          {phase.kind === 'error' && (
+            <div style={operatorMessageStyle('var(--accent-soft)')}>{phase.message}</div>
+          )}
+        </div>
       )}
     </div>
   );

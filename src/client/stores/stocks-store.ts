@@ -138,28 +138,41 @@ export const useStocksStore = create<StocksState>((set) => ({
     }),
 
   applyPriceUpdate: (price) =>
-    set((state) => ({
-      quotes: { ...state.quotes, [price.ticker]: price },
-      flashSeeds: {
-        ...state.flashSeeds,
-        [price.ticker]: (state.flashSeeds[price.ticker] ?? 0) + 1,
-      },
-    })),
+    set((state) => {
+      const shouldFlash = isPriceRelevantChange(
+        state.quotes[price.ticker],
+        price,
+      );
+      return {
+        quotes: { ...state.quotes, [price.ticker]: price },
+        ...(shouldFlash
+          ? {
+              flashSeeds: {
+                ...state.flashSeeds,
+                [price.ticker]: (state.flashSeeds[price.ticker] ?? 0) + 1,
+              },
+            }
+          : {}),
+      };
+    }),
 
   applyPriceUpdates: (prices) =>
     set((state) => {
       if (prices.length === 0) return {};
       const quotes = { ...state.quotes };
-      const flashSeeds = { ...state.flashSeeds };
+      let flashSeeds: Record<string, number> | null = null;
       const updateCounts: Record<string, number> = {};
       for (const price of prices) {
+        if (isPriceRelevantChange(quotes[price.ticker], price)) {
+          updateCounts[price.ticker] = (updateCounts[price.ticker] ?? 0) + 1;
+        }
         quotes[price.ticker] = price;
-        updateCounts[price.ticker] = (updateCounts[price.ticker] ?? 0) + 1;
       }
       for (const [ticker, count] of Object.entries(updateCounts)) {
+        flashSeeds ??= { ...state.flashSeeds };
         flashSeeds[ticker] = (flashSeeds[ticker] ?? 0) + count;
       }
-      return { quotes, flashSeeds };
+      return flashSeeds !== null ? { quotes, flashSeeds } : { quotes };
     }),
 
   removeStock: (ticker) =>
@@ -214,4 +227,13 @@ export function buildStockVM(
     sectorId: meta.sectorId,
     effectiveSector: getEffectiveSector(meta.manualSectorName, meta.autoSector),
   };
+}
+
+function isPriceRelevantChange(previous: Price | undefined, next: Price): boolean {
+  if (previous === undefined) return true;
+  return (
+    previous.price !== next.price ||
+    previous.changeRate !== next.changeRate ||
+    (previous.changeAbs ?? null) !== (next.changeAbs ?? null)
+  );
 }
