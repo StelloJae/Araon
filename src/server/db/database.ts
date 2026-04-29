@@ -7,13 +7,20 @@
  * to a setInterval lifecycle.
  */
 
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
-import { DB_PATH } from '@shared/constants.js';
 import { createChildLogger } from '@shared/logger.js';
+import { resolveDataPath } from '../runtime-paths.js';
 
 const log = createChildLogger('db');
 
 let _db: Database.Database | null = null;
+let _dbPath: string | null = null;
+
+export function getDbPath(): string {
+  return _dbPath ?? resolveDataPath('watchlist.db');
+}
 
 /**
  * Returns (or lazily opens) the single shared SQLite connection.
@@ -24,8 +31,12 @@ export function getDb(): Database.Database {
     return _db;
   }
 
-  log.info({ path: DB_PATH }, 'opening SQLite database');
-  _db = new Database(DB_PATH);
+  const path = getDbPath();
+  mkdirSync(dirname(path), { recursive: true });
+
+  log.info({ path }, 'opening SQLite database');
+  _dbPath = path;
+  _db = new Database(path);
 
   _db.pragma('journal_mode = WAL');
   _db.pragma('busy_timeout = 5000');
@@ -47,6 +58,7 @@ export function closeDb(): void {
   log.info('closing SQLite database');
   _db.close();
   _db = null;
+  _dbPath = null;
 }
 
 /**

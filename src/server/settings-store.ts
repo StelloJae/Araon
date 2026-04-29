@@ -15,10 +15,11 @@ import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import { createChildLogger } from '@shared/logger.js';
+import { resolveDataPath } from './runtime-paths.js';
 
 const log = createChildLogger('settings-store');
 
-const DEFAULT_SETTINGS_PATH = 'data/settings.json';
+const DEFAULT_SETTINGS_FILE = 'settings.json';
 
 export const settingsSchema = z.object({
   pollingCycleDelayMs: z.number().int().min(100),
@@ -66,7 +67,7 @@ export interface SettingsStore {
 }
 
 export interface SettingsStoreOptions {
-  /** File path (relative or absolute). Defaults to `data/settings.json`. */
+  /** File path (relative or absolute). Defaults to configured data dir. */
   path?: string;
   /** Override defaults (used by tests — no KIS magic numbers). */
   defaults?: Settings;
@@ -75,7 +76,7 @@ export interface SettingsStoreOptions {
 export function createSettingsStore(
   options: SettingsStoreOptions = {},
 ): SettingsStore {
-  const path = options.path ?? DEFAULT_SETTINGS_PATH;
+  const path = options.path ?? resolveDataPath(DEFAULT_SETTINGS_FILE);
   const defaults = options.defaults ?? DEFAULT_SETTINGS;
 
   let current: Settings = { ...defaults };
