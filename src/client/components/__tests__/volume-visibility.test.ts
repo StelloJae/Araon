@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { StockViewModel } from '../../lib/view-models';
 import { StockRow } from '../StockRow';
-import { formatSurgeSubLabel } from '../SurgeBlock';
+import { formatSurgeSubLabel, SurgeBlock } from '../SurgeBlock';
 
 function stock(overrides: Partial<StockViewModel> = {}): StockViewModel {
   return {
@@ -101,5 +101,62 @@ describe('volume visibility', () => {
     }, 1_000);
 
     expect(label).toContain('거래량 5.2x');
+  });
+
+  it('labels realtime momentum rows by signal and window', () => {
+    const label = formatSurgeSubLabel({
+      code: '005930',
+      name: '삼성전자',
+      price: 70_000,
+      changePct: 2.1,
+      volume: 1_234_567,
+      ts: 1_700_000_000_000,
+      isLive: true,
+      signalType: 'scalp',
+      momentumWindow: '30s',
+      momentumPct: 2.1,
+      dailyChangePct: 6.8,
+    }, 1_000);
+
+    expect(label).toContain('급가속');
+    expect(label).toContain('30초 +2.1%');
+    expect(label).toContain('오늘 +6.8%');
+  });
+
+  it('shows exit warning text on realtime momentum rows', () => {
+    const label = formatSurgeSubLabel({
+      code: '005930',
+      name: '삼성전자',
+      price: 70_000,
+      changePct: 2.1,
+      volume: 1_234_567,
+      ts: 1_700_000_000_000,
+      isLive: true,
+      signalType: 'scalp',
+      momentumWindow: '30s',
+      momentumPct: 2.1,
+      dailyChangePct: 6.8,
+      exitWarning: {
+        type: 'drawdown_from_high',
+        message: '이탈 경고',
+        valuePct: -0.8,
+      },
+    }, 1_000);
+
+    expect(label).toContain('이탈 경고');
+  });
+
+  it('renders clear surge tab labels for recent surge and today strength', () => {
+    const html = renderToStaticMarkup(
+      createElement(SurgeBlock, {
+        marketStatus: 'open',
+        allStocks: [],
+        onOpenDetail: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('최근 급상승');
+    expect(html).toContain('오늘 강세');
+    expect(html).toContain('10~30초');
   });
 });

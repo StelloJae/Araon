@@ -22,8 +22,14 @@ function vm(code: string, name: string, changePct: number, opts: Partial<StockVi
   };
 }
 
-function entry(code: string, name: string, surgePct: number, ageMs: number): SurgeEntry {
-  return { code, name, price: 10_000, surgePct, ts: NOW - ageMs };
+function entry(
+  code: string,
+  name: string,
+  surgePct: number,
+  ageMs: number,
+  overrides: Partial<SurgeEntry> = {},
+): SurgeEntry {
+  return { code, name, price: 10_000, surgePct, ts: NOW - ageMs, ...overrides };
 }
 
 const STATUS_OPEN: MarketStatus = 'open';
@@ -71,6 +77,37 @@ describe('aggregateSurgeView — live filter', () => {
     const feed: SurgeEntry[] = [entry('005930', '삼성전자', 5.5, 1_000)];
     const got = aggregateSurgeView(feed, [], 'live', STATUS_OPEN, 3, NOW, 15);
     expect(got[0]?.volume).toBeNull();
+  });
+
+  it('excludes trend-only signals from the recent surge filter', () => {
+    const feed: SurgeEntry[] = [
+      entry('005930', '삼성전자', 5.5, 1_000, {
+        source: 'realtime-momentum',
+        signalType: 'trend',
+        momentumPct: 5.5,
+        momentumWindow: '5m',
+      }),
+    ];
+    const got = aggregateSurgeView(feed, [], 'live', STATUS_OPEN, 3, NOW, 15);
+    expect(got).toEqual([]);
+  });
+
+  it('keeps scalp signals in the recent surge filter', () => {
+    const feed: SurgeEntry[] = [
+      entry('005930', '삼성전자', 2.1, 1_000, {
+        source: 'realtime-momentum',
+        signalType: 'scalp',
+        momentumPct: 2.1,
+        momentumWindow: '30s',
+      }),
+    ];
+    const got = aggregateSurgeView(feed, [], 'live', STATUS_OPEN, 3, NOW, 15);
+    expect(got[0]).toMatchObject({
+      code: '005930',
+      signalType: 'scalp',
+      momentumWindow: '30s',
+      isLive: true,
+    });
   });
 });
 
@@ -125,6 +162,23 @@ describe('aggregateSurgeView — all filter', () => {
     expect(got.map((it) => it.code)).toEqual(['A', 'C', 'B']);
     expect(got[0]?.isLive).toBe(true);
     expect(got[1]?.isLive).toBe(false);
+  });
+
+  it('includes trend-only signals in the all filter', () => {
+    const feed: SurgeEntry[] = [
+      entry('005930', '삼성전자', 5.2, 1_000, {
+        source: 'realtime-momentum',
+        signalType: 'trend',
+        momentumPct: 5.2,
+        momentumWindow: '5m',
+      }),
+    ];
+    const got = aggregateSurgeView(feed, [], 'all', STATUS_OPEN, 3, NOW, 15);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      signalType: 'trend',
+      momentumWindow: '5m',
+    });
   });
 
   it('falls back to today-only when market closed', () => {

@@ -28,6 +28,12 @@ import type { SurgeEntry } from '../stores/surge-store';
 import { SURGE_TOTAL_MS } from '../stores/surge-store';
 import type { SurgeFilter } from '../stores/settings-store';
 import { isMarketLive } from './market-status';
+import {
+  isPrimaryRealtimeSignal,
+  type MomentumExitWarning,
+  type MomentumSignalType,
+  type MomentumWindow,
+} from './realtime-momentum';
 import type { StockViewModel } from './view-models';
 
 export interface SurgeViewItem {
@@ -40,6 +46,11 @@ export interface SurgeViewItem {
   volume: number | null;
   volumeSurgeRatio?: number | null;
   volumeBaselineStatus?: 'collecting' | 'ready' | 'unavailable';
+  signalType?: MomentumSignalType;
+  momentumPct?: number;
+  momentumWindow?: MomentumWindow;
+  dailyChangePct?: number;
+  exitWarning?: MomentumExitWarning | null;
   /** Spawn timestamp (ms epoch) for live items. `null` for today-only items. */
   ts: number | null;
   isLive: boolean;
@@ -60,15 +71,36 @@ export function aggregateSurgeView(
     for (const s of allStocks) stockByCode.set(s.code, s);
     for (const e of feed) {
       if (now - e.ts >= SURGE_TOTAL_MS) continue;
+      if (
+        filter === 'live' &&
+        e.source === 'realtime-momentum' &&
+        e.signalType !== undefined &&
+        !isPrimaryRealtimeSignal(e.signalType)
+      ) {
+        continue;
+      }
       const stock = stockByCode.get(e.code);
       liveItems.push({
         code: e.code,
         name: e.name,
         price: e.price,
-        changePct: e.surgePct,
-        volume: stock?.volume ?? null,
-        volumeSurgeRatio: stock?.volumeSurgeRatio ?? null,
-        volumeBaselineStatus: stock?.volumeBaselineStatus ?? 'unavailable',
+        changePct: e.momentumPct ?? e.surgePct,
+        volume: e.volume ?? stock?.volume ?? null,
+        volumeSurgeRatio:
+          e.volumeSurgeRatio ?? stock?.volumeSurgeRatio ?? null,
+        volumeBaselineStatus:
+          e.volumeBaselineStatus ??
+          stock?.volumeBaselineStatus ??
+          'unavailable',
+        ...(e.signalType !== undefined ? { signalType: e.signalType } : {}),
+        ...(e.momentumPct !== undefined ? { momentumPct: e.momentumPct } : {}),
+        ...(e.momentumWindow !== undefined
+          ? { momentumWindow: e.momentumWindow }
+          : {}),
+        ...(e.dailyChangePct !== undefined
+          ? { dailyChangePct: e.dailyChangePct }
+          : {}),
+        ...(e.exitWarning !== undefined ? { exitWarning: e.exitWarning } : {}),
         ts: e.ts,
         isLive: true,
       });
