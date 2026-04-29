@@ -1,6 +1,6 @@
 {
   "name": "araon",
-  "version": "1.1.0-beta.2",
+  "version": "1.1.0-beta.3",
   "private": false,
   "description": "A localhost-first Korean stock watchlist dashboard with KIS OpenAPI realtime support.",
   "license": "Apache-2.0",
@@ -22,24 +22,40 @@
   ],
   "type": "module",
   "main": "dist/electron/main.cjs",
+  "bin": {
+    "araon": "./dist/cli/araon.js"
+  },
+  "files": [
+    "dist/client/**/*",
+    "dist/cli/**/*",
+    "src/server/db/migrations/**/*",
+    "docs/release-notes/v1.1.0-beta.3.md",
+    "README.md",
+    "INSTALL.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
-    "build": "tsc -p tsconfig.server.json && vite build",
+    "build": "tsc -p tsconfig.server.json && vite build && npm run build:cli",
     "build:server": "tsc -p tsconfig.server.json",
     "build:client": "vite build",
+    "build:cli": "node scripts/build-cli.mjs",
     "build:electron": "node scripts/build-electron-main.mjs",
     "build:desktop": "npm run build && npm run build:electron && node scripts/run-electron-builder.mjs --dir",
     "dist:mac": "npm run build && npm run build:electron && node scripts/run-electron-builder.mjs --mac",
     "dist:win": "npm run build && npm run build:electron && node scripts/run-electron-builder.mjs --win",
     "electron:dev": "npm run build && npm run build:electron && electron .",
-    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "start:cli": "npm run build && node dist/cli/araon.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.cli.json --noEmit",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "typecheck:client": "tsc -p tsconfig.client.json --noEmit",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
+    "typecheck:cli": "tsc -p tsconfig.cli.json --noEmit",
     "test": "vitest run --fileParallelism=false"
   },
   "dependencies": {

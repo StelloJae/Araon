@@ -63,6 +63,58 @@ http://127.0.0.1:5173
 The Fastify server listens on `127.0.0.1:3000`. The Vite dev server proxies API
 and SSE requests from `127.0.0.1:5173`.
 
+## Run With The CLI Launcher
+
+Build Araon, then start the production localhost app from one terminal:
+
+```bash
+npm run build
+node dist/cli/araon.js
+```
+
+If Araon is installed as a package, use:
+
+```bash
+araon
+```
+
+The CLI starts the server, serves the built frontend, opens the default browser,
+and prints the URL. Use `Ctrl+C` to stop the app gracefully.
+
+Common options:
+
+```bash
+araon --no-open
+araon --port 3910
+araon --data-dir ~/AraonData
+araon --exit-when-browser-closes
+araon --log-level info
+```
+
+`--exit-when-browser-closes` is off by default. When enabled, the browser UI
+sends a short heartbeat to the local server. If heartbeats disappear, Araon
+shuts down gracefully. Do not combine it with `--no-open`.
+
+CLI data directory priority:
+
+```txt
+1. --data-dir
+2. ARAON_DATA_DIR
+3. OS default user-data directory
+```
+
+OS defaults:
+
+```txt
+macOS:   ~/Library/Application Support/Araon
+Windows: %APPDATA%/Araon
+Linux:   ~/.local/share/araon
+```
+
+Credentials, settings, and SQLite state are stored under the selected data
+directory. Fresh installs keep realtime disabled until you enable it from
+Settings.
+
 ## Desktop Beta
 
 The desktop beta packages Araon as an unsigned Electron app for macOS and
@@ -170,6 +222,23 @@ Stop the process using the port, then restart the server/client. The defaults ar
 API server: 127.0.0.1:3000
 Client:     127.0.0.1:5173
 ```
+
+For the CLI launcher, omit `--port` to let Araon choose an available port, or
+pick a specific one with:
+
+```bash
+araon --port 3910
+```
+
+### Browser does not open from the CLI
+
+The server still runs even if the OS browser command fails. Copy the printed
+`http://127.0.0.1:<port>` URL into your browser manually.
+
+### Reset CLI credentials or data
+
+Stop Araon, then remove the selected data directory. This removes encrypted
+credentials, settings, SQLite state, and local volume baseline history.
 
 ### KIS credential invalid
 

@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react';
 import { App } from './App';
 import { CredentialsSetup } from './components/CredentialsSetup';
+import { startLauncherHeartbeat } from './lib/launcher-heartbeat';
 
 type RuntimeStatus = 'unconfigured' | 'starting' | 'started' | 'failed';
 
@@ -40,6 +41,24 @@ export function Bootstrap() {
   const [status, setStatus] = useState<RuntimeStatus | 'loading'>('loading');
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    void startLauncherHeartbeat()
+      .then((cleanup) => {
+        if (cancelled) {
+          cleanup();
+          return;
+        }
+        stop = cleanup;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
