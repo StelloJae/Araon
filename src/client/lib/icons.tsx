@@ -11,31 +11,38 @@ interface IconProps {
   style?: React.CSSProperties;
 }
 
-/**
- * 아라온 wordmark mark — rising sparkline + peak dot in `--accent`.
- * Replaces the Binance placeholder mark from v1.
- */
 export function LogoMark({ size = 26, className, style }: IconProps) {
+  const imageSize = Math.max(1, Math.round(size * 0.95));
+
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 26 26"
-      fill="none"
-      className={className}
-      style={style}
+    <span
+      className={['araon-logo-mark', className].filter(Boolean).join(' ')}
       aria-hidden
+      style={{
+        width: size,
+        height: size,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: '0 0 auto',
+        ...style,
+      }}
     >
-      <polyline
-        points="2,20 7.5,14 12,16 17.5,7 22,11"
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
+      <img
+        className="araon-logo-mark__img araon-logo-mark__img--light"
+        src="/logo.png"
+        alt=""
+        width={imageSize}
+        height={imageSize}
       />
-      <circle cx="17.5" cy="7" r={2.6} fill="var(--accent)" />
-    </svg>
+      <img
+        className="araon-logo-mark__img araon-logo-mark__img--dark"
+        src="/logo-dark.png"
+        alt=""
+        width={imageSize}
+        height={imageSize}
+      />
+    </span>
   );
 }
 

@@ -42,4 +42,5 @@ data/*.db-wal
 
 # test / coverage output
 coverage/
+output/
 .omx/

@@ -5,7 +5,10 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)
 
 <p align="center">
-  <img src="public/favicon.svg" alt="Araon logo" width="96" height="96">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/logo-dark.png">
+    <img src="public/logo.png" alt="Araon logo" width="96" height="96">
+  </picture>
 </p>
 
 **KIS OpenAPI 기반 한국 주식 관심종목 실시간 대시보드.**
