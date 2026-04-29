@@ -5,7 +5,9 @@ import { dirname, resolve } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
 const cli = resolve(root, 'node_modules', 'electron-builder', 'cli.js');
-const args = process.argv.slice(2);
+const inputArgs = process.argv.slice(2);
+const hasPublishArg = inputArgs.some((arg) => arg === '--publish' || arg.startsWith('--publish='));
+const args = hasPublishArg ? inputArgs : [...inputArgs, '--publish=never'];
 
 const child = spawn(process.execPath, [cli, ...args], {
   cwd: root,
@@ -17,6 +19,10 @@ const child = spawn(process.execPath, [cli, ...args], {
 });
 
 function restoreNodeNativeModules(originalCode) {
+  if (process.env.CI === 'true') {
+    process.exit(originalCode);
+  }
+
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const restore = spawn(npmCommand, ['rebuild', 'better-sqlite3'], {
     cwd: root,
