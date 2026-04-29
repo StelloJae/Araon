@@ -1,0 +1,237 @@
+/* ==========================================================================
+   아라온 · Araon — Korean Watchlist
+   Design tokens + reset. Light/dark themed via [data-theme] on <html>.
+   Source: design handoff "Korean Watchlist.html" (line-for-line tokens).
+   ========================================================================== */
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans-VariableFont_wdth_wght.ttf') format('truetype-variations');
+  font-weight: 100 900;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans-Italic-VariableFont_wdth_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-stretch: 75% 100%;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root,
+[data-theme='light'] {
+  --accent:        #F6465D;
+  --accent-soft:   rgba(246, 70, 93, 0.08);
+  --gold:          #F0B90B;
+  --gold-soft:     rgba(240, 185, 11, 0.14);
+  --gold-text:     #B88704;
+
+  --kr-up:    #F6465D;
+  --kr-down:  #1EAEDB;
+  --kr-flat:  #848E9C;
+
+  --up-tint-1:   rgba(246, 70, 93, 0.08);
+  --up-tint-2:   rgba(246, 70, 93, 0.16);
+  --up-tint-3:   rgba(246, 70, 93, 0.32);
+  --down-tint-1: rgba(30, 174, 219, 0.08);
+  --down-tint-2: rgba(30, 174, 219, 0.16);
+  --down-tint-3: rgba(30, 174, 219, 0.32);
+
+  --bg-page:           #F5F5F5;
+  --bg-card:           #FFFFFF;
+  --bg-tint:           #F5F5F5;
+  --bg-flash-overlay:  rgba(255, 255, 255, 0.6);
+  --shadow:            rgba(0, 0, 0, 0.15);
+
+  --text-strong:    #1E2026;
+  --text-primary:   #1E2026;
+  --text-secondary: #32313A;
+  --text-muted:     #848E9C;
+  --text-inactive:  #D7DBE0;
+
+  --border:      #E6E8EA;
+  --border-soft: #F0F2F4;
+}
+
+[data-theme='dark'] {
+  --accent:        #F6465D;
+  --accent-soft:   rgba(246, 70, 93, 0.16);
+  --gold:          #F0B90B;
+  --gold-soft:     rgba(240, 185, 11, 0.18);
+  --gold-text:     #F0B90B;
+
+  --kr-up:    #FF5870;
+  --kr-down:  #4DC4EE;
+  --kr-flat:  #8C97A6;
+
+  --up-tint-1:   rgba(255, 88, 112, 0.10);
+  --up-tint-2:   rgba(255, 88, 112, 0.20);
+  --up-tint-3:   rgba(255, 88, 112, 0.36);
+  --down-tint-1: rgba(77, 196, 238, 0.10);
+  --down-tint-2: rgba(77, 196, 238, 0.20);
+  --down-tint-3: rgba(77, 196, 238, 0.36);
+
+  --bg-page:           #0E1116;
+  --bg-card:           #161B22;
+  --bg-tint:           #1F252E;
+  --bg-flash-overlay:  rgba(255, 255, 255, 0.05);
+  --shadow:            rgba(0, 0, 0, 0.5);
+
+  --text-strong:    #F0F2F5;
+  --text-primary:   #E6E8EC;
+  --text-secondary: #C7CCD3;
+  --text-muted:     #8C97A6;
+  --text-inactive:  #3A4250;
+
+  --border:      #2A323D;
+  --border-soft: #20262F;
+}
+
+/* ---------- Reset ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: 'IBM Plex Sans', -apple-system, 'Apple SD Gothic Neo',
+               'Noto Sans KR', 'Malgun Gothic', Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 200ms ease, color 200ms ease;
+}
+
+button,
+select,
+input,
+textarea {
+  font-family: inherit;
+  font-feature-settings: inherit;
+}
+
+select {
+  background: var(--bg-tint);
+  color: var(--text-primary);
+}
+
+button {
+  cursor: pointer;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Animations ---------- */
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(246, 70, 93, 0.6); }
+  70%  { box-shadow: 0 0 0 8px rgba(246, 70, 93, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(246, 70, 93, 0); }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes surgeIn {
+  from { opacity: 0; transform: translateY(-6px); background: rgba(246, 70, 93, 0.16); }
+  to   { opacity: 1; transform: translateY(0);    background: transparent; }
+}
+@keyframes liveDotPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---------- Layout ----------
+   3-column dashboard grid. Left + favs columns are sticky on desktop;
+   ≤1400px collapses left+favs onto one row above sectors;
+   ≤900px stacks single column.
+*/
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  flex: 1;
+  max-width: 1680px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px 24px 40px;
+  display: grid;
+  grid-template-columns: 2fr 1fr 2.5fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.col-left {
+  position: sticky;
+  top: 84px;
+  height: calc(100vh - 84px - 48px - 40px);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.col-favs {
+  position: sticky;
+  top: 84px;
+  height: calc(100vh - 84px - 48px - 40px);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.col-sectors {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (max-width: 1400px) {
+  .main {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'left favs'
+      'sectors sectors';
+  }
+  .col-left    { grid-area: left;    position: static; height: 560px; }
+  .col-favs    { grid-area: favs;    position: static; height: 560px; }
+  .col-sectors { grid-area: sectors; }
+}
+
+@media (max-width: 900px) {
+  .main {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'left' 'favs' 'sectors';
+  }
+  .col-left,
+  .col-favs {
+    height: 480px;
+  }
+}
+
+.section-block {
+  display: flex;
+  flex-direction: column;
+}

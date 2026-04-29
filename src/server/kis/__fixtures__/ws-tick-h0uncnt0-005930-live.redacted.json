@@ -1,0 +1,24 @@
+{
+  "description": "NXT3 KIS H0UNCNT0 one-ticker live smoke fixture. Contains one live tick frame for parser regression; no approval key, app key, app secret, access token, or account identifier is present.",
+  "source": "KIS live WebSocket H0UNCNT0 dry-run smoke",
+  "capturedAt": "2026-04-27T08:14:07.267Z",
+  "trId": "H0UNCNT0",
+  "ticker": "005930",
+  "name": "삼성전자",
+  "redaction": {
+    "containsApprovalKey": false,
+    "containsAppKey": false,
+    "containsAppSecret": false,
+    "containsAccessToken": false,
+    "checkedBeforeWrite": true
+  },
+  "raw": "0|H0UNCNT0|001|005930^171405^223500^2^4000^1.82^222917.85^220000^226000^217500^224000^223500^2^39260243^8751835718500^221676^306409^84733^126.87^16364012^20760836^5^0.53^110.25^080000^2^3500^113230^5^-2500^081628^2^6000^20260427^20^N^170392^126080^2036031^1338814^0.67^0^0.00^0^^220000",
+  "expected": {
+    "kind": "ticks",
+    "tick": {
+      "trId": "H0UNCNT0",
+      "source": "integrated",
+      "ticker": "005930"
+    }
+  }
+}

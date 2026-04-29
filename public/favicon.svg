@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Araon">
+  <rect width="64" height="64" rx="14" fill="#101820"/>
+  <path
+    d="M10 46 L21 33 L31 37 L43 19 L54 27"
+    fill="none"
+    stroke="#42D392"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="43" cy="19" r="7" fill="#42D392"/>
+</svg>

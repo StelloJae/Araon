@@ -1,0 +1,24 @@
+{
+  "description": "KIS H0STCNT0 (KRX 실시간 체결가) frame fixture — caret-delimited 46 field block, dataCount=001. KIS open-trading-api docs 기반 합성 데이터 (라이브 미검증). NXT3 라이브 smoke 단계에서 실측 frame redacted 파일로 교체 예정.",
+  "source": "KIS open-trading-api docs (H0STCNT0)",
+  "createdAt": "2026-04-27",
+  "ticker": "005930 (삼성전자)",
+  "scenario": "정규장 체결, 73,500원, 전일 대비 -1,500원 (-2.00%), 누적 거래량 1,234,567",
+  "raw": "0|H0STCNT0|001|005930^090032^73500^5^1500^-2.00^73600^73000^74000^72500^73500^73400^100^1234567^90000000000^50^60^10^105.5^5000^6000^5^50.0^95.0^090000^2^500^091500^2^500^100200^5^1000^20260427^20^N^1000^1500^50000^60000^1.5^1500000^82.3^0^0^0",
+  "expected": {
+    "kind": "ticks",
+    "ticks": [
+      {
+        "trId": "H0STCNT0",
+        "source": "krx",
+        "ticker": "005930",
+        "price": 73500,
+        "changeAbs": -1500,
+        "changeRate": -2.00,
+        "volume": 1234567,
+        "tradeTime": "090032",
+        "isSnapshot": false
+      }
+    ]
+  }
+}

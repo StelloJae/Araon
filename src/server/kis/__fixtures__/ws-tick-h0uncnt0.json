@@ -1,0 +1,24 @@
+{
+  "description": "KIS H0UNCNT0 (통합/SOR 실시간 체결가) frame fixture — caret-delimited 46 field block, dataCount=001. H0STCNT0과 layout 동일 (22번 필드 이름만 CCLD_DVSN→CNTG_CLS_CODE로 다름). 인덱스 기반 parser 단일 코드 처리 검증용. KIS open-trading-api docs 기반 합성 데이터 (라이브 미검증). NXT3 라이브 smoke 단계에서 실측 frame redacted 파일로 교체 예정.",
+  "source": "KIS open-trading-api docs (H0UNCNT0)",
+  "createdAt": "2026-04-27",
+  "ticker": "000660 (SK하이닉스)",
+  "scenario": "통합 SOR 체결, 130,000원, 전일 대비 +2,500원 (+1.96%), 누적 거래량 5,678,901",
+  "raw": "0|H0UNCNT0|001|000660^100515^130000^2^2500^1.96^129500^128000^130500^127500^130000^129900^200^5678901^750000000000^200^250^50^110.2^20000^25000^1^60.0^110.5^090000^2^2000^101000^2^2500^090015^5^500^20260427^20^N^2000^2500^100000^110000^2.3^4500000^126.2^0^0^0",
+  "expected": {
+    "kind": "ticks",
+    "ticks": [
+      {
+        "trId": "H0UNCNT0",
+        "source": "integrated",
+        "ticker": "000660",
+        "price": 130000,
+        "changeAbs": 2500,
+        "changeRate": 1.96,
+        "volume": 5678901,
+        "tradeTime": "100515",
+        "isSnapshot": false
+      }
+    ]
+  }
+}
