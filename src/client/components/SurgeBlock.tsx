@@ -1,15 +1,14 @@
 /**
- * SurgeBlock — sticky live feed of "실시간 급상승 ≥3%".
+ * SurgeBlock — sticky live feed of recent momentum signals.
  *
  * Two-row filter chrome:
  *
- *   [실시간] [오늘 누적] [전체]                ← from useSettingsStore
+ *   [최근 급상승] [오늘 강세] [전체]          ← from useSettingsStore
  *   [시총 전체] [대형] [중형] [소형]            ← all disabled (no marketCap data)
  *
  * Filter semantics (defined in `lib/surge-aggregator.ts`):
- *   - 실시간 — only real `useSurgeStore.feed` entries; only while marketStatus
- *              === 'open'. Closed / snapshot show "장 시간 외 — 실시간 없음".
- *   - 오늘 누적 — every catalog stock with changePct ≥ threshold; works in any
+ *   - 최근 급상승 — 10s/20s/30s momentum signals.
+ *   - 오늘 강세 — every catalog stock with changePct ≥ threshold; works in any
  *              market status.
  *   - 전체 — live first, then today's deduped by ticker.
  *
@@ -145,7 +144,7 @@ export function SurgeBlock({
             letterSpacing: -0.1,
           }}
         >
-          실시간 급상승
+          최근 급상승
         </div>
         <span
           style={{
@@ -155,7 +154,7 @@ export function SurgeBlock({
             letterSpacing: 0.4,
           }}
         >
-          ≥{surgeThreshold}%
+          10~30초
         </span>
         <span
           style={{
@@ -233,11 +232,11 @@ function FilterChrome({
   const filterOpts: FilterOpt[] = [
     {
       v: 'live',
-      l: '실시간',
+      l: '최근 급상승',
       disabled: !sessionLive,
-      title: sessionLive ? null : '장 시간 외 — 실시간 이벤트 없음',
+      title: sessionLive ? '최근 10초~30초 기준' : '장 시간 외 — 실시간 이벤트 없음',
     },
-    { v: 'today', l: '오늘 누적', disabled: false, title: null },
+    { v: 'today', l: '오늘 강세', disabled: false, title: '전일 종가 대비 기준' },
     { v: 'all', l: '전체', disabled: false, title: null },
   ];
 
@@ -350,9 +349,9 @@ function EmptyState({
   if (liveDisabledByMarket) {
     message = '장 시간 외 — 실시간 이벤트 없음';
   } else if (filter === 'today') {
-    message = `오늘 ≥${surgeThreshold}% 종목 없음`;
+    message = `오늘 강세 ≥${surgeThreshold}% 종목 없음`;
   } else if (filter === 'live') {
-    message = '현재 급상승 종목 없음';
+    message = '최근 10~30초 급상승 종목 없음';
   } else {
     message = `급상승 종목 없음`;
   }
@@ -540,7 +539,52 @@ export function formatSurgeSubLabel(item: SurgeViewItem, ageMs: number): string 
       : item.volume !== null && item.volumeBaselineStatus === 'collecting'
         ? ' · 기준선 수집 중'
         : '';
-  return item.isLive && item.ts !== null
-    ? `${item.code} · ${fmtAge(ageMs)}${volumeLabel}${baselineLabel}`
-    : `${item.code} · 오늘 누적${volumeLabel}${baselineLabel}`;
+  if (item.isLive && item.ts !== null) {
+    const momentumLabel =
+      item.signalType !== undefined &&
+      item.momentumWindow !== undefined &&
+      item.momentumPct !== undefined
+        ? `${signalTypeLabel(item.signalType)} · ${windowLabel(item.momentumWindow)} +${item.momentumPct.toFixed(1)}%`
+        : fmtAge(ageMs);
+    const dailyLabel =
+      item.dailyChangePct !== undefined
+        ? ` · 오늘 ${item.dailyChangePct >= 0 ? '+' : ''}${item.dailyChangePct.toFixed(1)}%`
+        : '';
+    const warningLabel =
+      item.exitWarning !== undefined && item.exitWarning !== null
+        ? ` · ${item.exitWarning.message}`
+        : '';
+    return `${item.code} · ${momentumLabel}${dailyLabel}${warningLabel}${volumeLabel}${baselineLabel}`;
+  }
+  return `${item.code} · 오늘 강세${volumeLabel}${baselineLabel}`;
+}
+
+function signalTypeLabel(type: NonNullable<SurgeViewItem['signalType']>): string {
+  switch (type) {
+    case 'overheat':
+      return '과열 주의';
+    case 'strong_scalp':
+      return '강한 급가속';
+    case 'scalp':
+      return '급가속';
+    case 'trend':
+      return '추세 지속';
+  }
+}
+
+function windowLabel(window: NonNullable<SurgeViewItem['momentumWindow']>): string {
+  switch (window) {
+    case '10s':
+      return '10초';
+    case '20s':
+      return '20초';
+    case '30s':
+      return '30초';
+    case '1m':
+      return '1분';
+    case '3m':
+      return '3분';
+    case '5m':
+      return '5분';
+  }
 }

@@ -20,8 +20,17 @@ import { useStocksStore } from '../stores/stocks-store';
 import { useErrorStore } from '../stores/error-store';
 import { useSurgeStore } from '../stores/surge-store';
 import { usePriceHistoryStore } from '../stores/price-history-store';
-import { useSettingsStore } from '../stores/settings-store';
+import {
+  selectMomentumBuckets,
+  useMomentumHistoryStore,
+} from '../stores/momentum-history-store';
 import { isMarketLive } from '../lib/market-status';
+import {
+  createMomentumFeedState,
+  evaluateRealtimeMomentumPrice,
+  momentumSessionFromMarketStatus,
+  shouldProcessRealtimeMomentumPrice,
+} from '../lib/realtime-momentum-feed';
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
@@ -43,6 +52,7 @@ export function useSSE(url: string = '/events'): void {
     const stocks = useStocksStore.getState();
     const errors = useErrorStore.getState();
     const pendingPrices: Price[] = [];
+    const momentumFeedState = createMomentumFeedState();
     let priceFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
     function flushPriceUpdates(): void {
@@ -100,6 +110,7 @@ export function useSSE(url: string = '/events'): void {
             break;
           case 'price-update':
             queuePriceUpdate(e.price);
+            const currentMarketStatus = useMarketStore.getState().marketStatus;
             // History append is double-gated:
             //   1. `isSnapshot === false` — never accept warm-snapshot ticks.
             //   2. `isMarketLive` — closed/pre-open REST polling also emits
@@ -108,7 +119,7 @@ export function useSSE(url: string = '/events'): void {
             //      during the session.
             if (
               e.price.isSnapshot === false &&
-              isMarketLive(useMarketStore.getState().marketStatus)
+              isMarketLive(currentMarketStatus)
             ) {
               usePriceHistoryStore.getState().appendPoint(e.price.ticker, {
                 price: e.price.price,
@@ -116,24 +127,58 @@ export function useSSE(url: string = '/events'): void {
                 ts: Date.now(),
               });
             }
-            // Surge spawn gate: only during a live market session, never on
-            // warm-snapshot ticks. This prevents post-close polling from
-            // populating "실시간 급상승" with yesterday's gainers. The
-            // threshold is read live from the settings store so changes in
-            // the surge tab take effect on the next tick.
-            const surgeThreshold = useSettingsStore.getState().settings.surgeThreshold;
-            if (
-              e.price.changeRate >= surgeThreshold &&
-              e.price.isSnapshot === false &&
-              isMarketLive(useMarketStore.getState().marketStatus)
-            ) {
-              const meta = useStocksStore.getState().catalog[e.price.ticker];
-              useSurgeStore.getState().spawn({
-                code: e.price.ticker,
-                name: meta?.name ?? e.price.ticker,
+            if (shouldProcessRealtimeMomentumPrice(e.price, currentMarketStatus)) {
+              const now = Date.now();
+              const session = momentumSessionFromMarketStatus(currentMarketStatus);
+              const momentumStore = useMomentumHistoryStore.getState();
+              momentumStore.appendBucketPoint(e.price.ticker, {
                 price: e.price.price,
-                surgePct: e.price.changeRate,
+                volume: e.price.volume,
+                ts: now,
+                session,
               });
+              const buckets = selectMomentumBuckets(
+                useMomentumHistoryStore.getState(),
+                e.price.ticker,
+                session,
+              );
+              const meta = useStocksStore.getState().catalog[e.price.ticker];
+              const result = evaluateRealtimeMomentumPrice({
+                price: e.price,
+                marketStatus: currentMarketStatus,
+                name: meta?.name ?? e.price.ticker,
+                buckets,
+                now,
+                state: momentumFeedState,
+              });
+              const signal = result.decision.signal;
+              if (signal !== null) {
+                useSurgeStore.getState().spawn({
+                  code: signal.ticker,
+                  name: signal.name,
+                  price: signal.price,
+                  surgePct: signal.momentumPct,
+                  source: signal.source,
+                  signalType: signal.signalType,
+                  momentumPct: signal.momentumPct,
+                  momentumWindow: signal.momentumWindow,
+                  baselinePrice: signal.baselinePrice,
+                  baselineAt: signal.baselineAt,
+                  currentAt: signal.currentAt,
+                  dailyChangePct: signal.dailyChangePct,
+                  volume: signal.volume,
+                  volumeSurgeRatio: signal.volumeSurgeRatio,
+                  volumeBaselineStatus: e.price.volumeBaselineStatus,
+                });
+              } else if (result.activeUpdate !== null) {
+                useSurgeStore.getState().update(result.activeUpdate.ticker, {
+                  price: result.activeUpdate.price,
+                  currentAt: result.activeUpdate.currentAt,
+                  ...(result.activeUpdate.exitWarning !== undefined
+                    ? { exitWarning: result.activeUpdate.exitWarning }
+                    : {}),
+                });
+              }
             }
             break;
           case 'heartbeat':
