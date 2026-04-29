@@ -30,7 +30,8 @@ export async function startLauncherHeartbeat(deps: LauncherHeartbeatDeps = {}): 
   const clearIntervalFn = deps.clearInterval ?? clearInterval;
   const addEventListener = deps.addEventListener ?? window.addEventListener.bind(window);
   const removeEventListener = deps.removeEventListener ?? window.removeEventListener.bind(window);
-  const sendBeacon = deps.sendBeacon ?? navigator.sendBeacon?.bind(navigator);
+  const browserNavigator = typeof navigator === 'undefined' ? undefined : navigator;
+  const sendBeacon = deps.sendBeacon ?? browserNavigator?.sendBeacon?.bind(browserNavigator);
 
   async function sendHeartbeat(closing = false): Promise<void> {
     const body = JSON.stringify({ tabId, closing });
