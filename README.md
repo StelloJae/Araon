@@ -108,6 +108,32 @@ http://127.0.0.1:5173
 
 For a fuller first-run walkthrough, see [INSTALL.md](INSTALL.md).
 
+## Desktop Beta
+
+Araon also has an unsigned desktop beta packaging path for macOS and Windows.
+This channel wraps the same local Fastify server and React UI in Electron.
+
+The desktop beta is not code-signed or notarized yet:
+
+- macOS may show a Gatekeeper warning.
+- Windows may show a SmartScreen warning.
+
+Desktop runtime data is stored under the OS app user-data directory rather than
+inside the app bundle. Credentials, settings, and SQLite state must never be
+committed. Fresh installs still keep realtime disabled until the user enables it
+from Settings.
+
+Useful desktop build commands:
+
+```bash
+npm run build:desktop
+npm run dist:mac
+npm run dist:win
+```
+
+`dist:mac` should be run on macOS and `dist:win` should be run on Windows,
+especially because Araon uses the native `better-sqlite3` dependency.
+
 ## First Run
 
 1. Start the server and client.
@@ -224,6 +250,7 @@ same-time-bucket baseline samples before showing a volume-surge ratio.
 
 - Fresh installs keep realtime OFF until the user enables it.
 - Volume-surge ratios appear only after enough local baseline samples exist.
+- Desktop beta artifacts are unsigned and may trigger OS security warnings.
 - Docker Compose packaging is planned after v1.0.0.
 - Windows service / task scheduler packaging is planned after v1.0.0.
 - Araon is currently optimized for a single-user localhost workflow.

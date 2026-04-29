@@ -6,6 +6,10 @@ const SERVER_ORIGIN = 'http://127.0.0.1:3000';
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    outDir: 'dist/client',
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),

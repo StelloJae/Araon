@@ -14,7 +14,7 @@
  */
 
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import {
   createCipheriv,
   createDecipheriv,
@@ -25,6 +25,7 @@ import { hostname, userInfo } from 'node:os';
 import { z } from 'zod';
 
 import { createChildLogger } from '@shared/logger.js';
+import { resolveDataPath } from './runtime-paths.js';
 
 const log = createChildLogger('credential-store');
 
@@ -79,7 +80,9 @@ const payloadSchema = z.object({
   token: tokenSchema.optional(),
 });
 
-const STORE_PATH = resolve(process.cwd(), 'data', 'credentials.enc');
+function getDefaultStorePath(): string {
+  return resolveDataPath('credentials.enc');
+}
 
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
@@ -189,12 +192,13 @@ export interface FileCredentialStoreOptions {
 
 /**
  * Create a file-backed credential store. The path defaults to
- * `<cwd>/data/credentials.enc` but can be overridden for tests.
+ * `data/credentials.enc` under the configured Araon data directory, but can be
+ * overridden for tests.
  */
 export function createFileCredentialStore(
   options: FileCredentialStoreOptions = {},
 ): CredentialStore {
-  const path = options.path ?? STORE_PATH;
+  const path = options.path ?? getDefaultStorePath();
 
   async function readPayload(): Promise<StoredPayload | null> {
     let blob: Buffer;

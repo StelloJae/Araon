@@ -63,6 +63,49 @@ http://127.0.0.1:5173
 The Fastify server listens on `127.0.0.1:3000`. The Vite dev server proxies API
 and SSE requests from `127.0.0.1:5173`.
 
+## Desktop Beta
+
+The desktop beta packages Araon as an unsigned Electron app for macOS and
+Windows. It is intended for early local testing, not frictionless public
+installation.
+
+Build a local unpacked desktop app:
+
+```bash
+npm run build:desktop
+```
+
+Build platform installers:
+
+```bash
+npm run dist:mac
+```
+
+```bash
+npm run dist:win
+```
+
+Run macOS packaging on macOS and Windows packaging on Windows. Araon uses the
+native `better-sqlite3` dependency, so cross-building desktop artifacts is not
+the safe path for release validation.
+
+The desktop app stores credentials, settings, and SQLite state under the OS
+app user-data directory. It does not write runtime data into the app bundle.
+Fresh installs still start with realtime disabled:
+
+```txt
+websocketEnabled=false
+applyTicksToPriceStore=false
+```
+
+Unsigned beta artifacts can show OS warnings:
+
+- macOS: Gatekeeper warning or manual allow step.
+- Windows: SmartScreen warning.
+
+Code signing and notarization are planned after the unsigned beta path is
+validated.
+
 ## First Run
 
 1. Open Araon in your browser.

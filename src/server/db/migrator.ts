@@ -10,15 +10,14 @@
  * always runs migrations in ascending version order.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { createChildLogger } from '@shared/logger.js';
 
 const log = createChildLogger('migrator');
 
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
+const ARAON_MIGRATIONS_DIR_ENV = 'ARAON_MIGRATIONS_DIR';
 
 const DOWN_MARKER = '-- DOWN ---';
 
@@ -30,8 +29,23 @@ interface MigrationFile {
 }
 
 /** Parse all `*.sql` files in the migrations directory, sorted by version. */
+function getMigrationsDir(): string {
+  const envDir = process.env[ARAON_MIGRATIONS_DIR_ENV];
+  if (envDir !== undefined && envDir.length > 0) {
+    return envDir;
+  }
+
+  const sourceDir = join(process.cwd(), 'src', 'server', 'db', 'migrations');
+  if (existsSync(sourceDir)) {
+    return sourceDir;
+  }
+
+  return sourceDir;
+}
+
 function loadMigrationFiles(): MigrationFile[] {
-  const files = readdirSync(MIGRATIONS_DIR)
+  const migrationsDir = getMigrationsDir();
+  const files = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
@@ -41,7 +55,7 @@ function loadMigrationFiles(): MigrationFile[] {
       throw new Error(`Migration filename must start with a numeric version: ${filename}`);
     }
     const version = parseInt(match[1], 10);
-    const raw = readFileSync(join(MIGRATIONS_DIR, filename), 'utf-8');
+    const raw = readFileSync(join(migrationsDir, filename), 'utf-8');
 
     const markerIndex = raw.indexOf(DOWN_MARKER);
     if (markerIndex === -1) {
