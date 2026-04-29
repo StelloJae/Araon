@@ -1,6 +1,6 @@
 {
   "name": "araon",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": false,
   "description": "A localhost-first Korean stock watchlist dashboard with KIS OpenAPI realtime support.",
   "license": "Apache-2.0",
