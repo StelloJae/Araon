@@ -77,6 +77,23 @@ intentionally.
 
 ## Quick Start
 
+Run the npm beta directly:
+
+```bash
+npx @stellojae/araon@beta
+```
+
+During the beta period, use the explicit `@beta` tag.
+
+Or install the CLI globally:
+
+```bash
+npm install -g @stellojae/araon@beta
+araon
+```
+
+For local development from source:
+
 ```bash
 git clone https://github.com/StelloJae/Araon.git
 cd Araon
@@ -110,16 +127,23 @@ For a fuller first-run walkthrough, see [INSTALL.md](INSTALL.md).
 
 ## CLI Launcher
 
-Araon can also run as a single localhost command after a production build:
+Araon can run as a single localhost command from the npm beta:
+
+```bash
+npx @stellojae/araon@beta
+```
+
+Or after a production build:
 
 ```bash
 npm run build
 node dist/cli/araon.js
 ```
 
-When installed as a package, the binary name is:
+When installed globally, the binary name is:
 
 ```bash
+npm install -g @stellojae/araon@beta
 araon
 ```
 

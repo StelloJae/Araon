@@ -12,7 +12,27 @@ credentials and does not provide trading or order-entry features.
 - A KIS OpenAPI app key/app secret pair
 - A browser that can open `http://127.0.0.1:5173`
 
-## Install
+## Run The npm Beta
+
+The easiest beta path is:
+
+```bash
+npx @stellojae/araon@beta
+```
+
+During the beta period, use the explicit `@beta` tag.
+
+Or install the CLI globally:
+
+```bash
+npm install -g @stellojae/araon@beta
+araon
+```
+
+The CLI starts Araon on `127.0.0.1`, serves the built browser UI, and opens the
+default browser. Node.js 20 or newer is required.
+
+## Install From Source
 
 ```bash
 git clone https://github.com/StelloJae/Araon.git
@@ -65,7 +85,14 @@ and SSE requests from `127.0.0.1:5173`.
 
 ## Run With The CLI Launcher
 
-Build Araon, then start the production localhost app from one terminal:
+From npm beta:
+
+```bash
+npx @stellojae/araon@beta
+```
+
+From source, build Araon, then start the production localhost app from one
+terminal:
 
 ```bash
 npm run build
@@ -75,6 +102,7 @@ node dist/cli/araon.js
 If Araon is installed as a package, use:
 
 ```bash
+npm install -g @stellojae/araon@beta
 araon
 ```
 
