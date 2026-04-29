@@ -85,6 +85,12 @@ async function createMainWindow(url: string): Promise<BrowserWindow> {
     win.show();
   });
 
+  win.on('closed', () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+  });
+
   await win.loadURL(url);
   return win;
 }
