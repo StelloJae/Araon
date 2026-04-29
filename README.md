@@ -108,6 +108,48 @@ http://127.0.0.1:5173
 
 For a fuller first-run walkthrough, see [INSTALL.md](INSTALL.md).
 
+## CLI Launcher
+
+Araon can also run as a single localhost command after a production build:
+
+```bash
+npm run build
+node dist/cli/araon.js
+```
+
+When installed as a package, the binary name is:
+
+```bash
+araon
+```
+
+The launcher starts Fastify on `127.0.0.1`, serves the built React frontend,
+prints the local URL, and opens the default browser. `Ctrl+C` owns shutdown:
+Araon stops realtime/session resources, persists snapshots, checkpoints SQLite,
+and closes the server.
+
+Useful CLI options:
+
+```bash
+araon --no-open
+araon --port 3910
+araon --data-dir ~/AraonData
+araon --exit-when-browser-closes
+araon --log-level info
+```
+
+CLI runtime data does not default to the repository `data/` directory. The
+priority is `--data-dir`, then `ARAON_DATA_DIR`, then the OS user-data default:
+
+```txt
+macOS:   ~/Library/Application Support/Araon
+Windows: %APPDATA%/Araon
+Linux:   ~/.local/share/araon
+```
+
+Fresh installs still start with realtime disabled, and Araon remains a
+localhost-only read-only monitoring tool.
+
 ## Desktop Beta
 
 Araon also has an unsigned desktop beta packaging path for macOS and Windows.
@@ -166,6 +208,7 @@ npm run dev:client
 ```txt
 src/server/      Fastify server, KIS runtime, polling, realtime, SQLite
 src/client/      React UI, stores, SSE handling, operator controls
+src/cli/         `araon` browser launcher
 src/shared/      Shared types, constants, logger, volume baseline helpers
 docs/runbooks/   Operational runbooks
 docs/research/   Validation reports and implementation notes

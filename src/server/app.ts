@@ -28,6 +28,7 @@ import { registerRoutes as importRoutes } from './routes/import.js';
 import { eventsRoutes } from './routes/events.js';
 import { masterRoutes } from './routes/master.js';
 import { runtimeRoutes } from './routes/runtime.js';
+import { launcherRoutes, type LauncherRoutesOptions } from './routes/launcher.js';
 import { registerGracefulShutdown, type GracefulShutdownHandle } from './lifecycle/graceful-shutdown.js';
 import { configureDataDir } from './runtime-paths.js';
 import { registerStaticClient } from './static-client.js';
@@ -40,6 +41,7 @@ export interface AraonServerOptions {
   serveStaticClient?: boolean;
   staticDir?: string;
   registerProcessShutdown?: boolean;
+  launcher?: LauncherRoutesOptions;
 }
 
 export interface AraonListenOptions extends AraonServerOptions {
@@ -111,6 +113,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(masterRoutes, { service: masterService, masterRepo, stockRepo });
   await app.register(eventsRoutes, { runtimeRef });
   await app.register(runtimeRoutes, { runtimeRef, settingsStore, credentialStore });
+  await app.register(launcherRoutes, options.launcher ?? {});
 
   if (options.serveStaticClient === true) {
     if (options.staticDir === undefined) {
