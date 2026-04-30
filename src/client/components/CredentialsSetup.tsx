@@ -78,7 +78,7 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
       <p
         style={{
           marginTop: 6,
-          marginBottom: 24,
+          marginBottom: 14,
           fontSize: 13,
           fontWeight: 500,
           color: 'var(--text-muted)',
@@ -86,6 +86,16 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
       >
         한국투자증권 OpenAPI 포털에서 발급받은 앱키와 앱시크릿을 입력하세요.
       </p>
+
+      <div style={noticeStyle}>
+        <div>Araon은 localhost에서만 실행되는 읽기 전용 모니터링 도구입니다.</div>
+        <div>주문/매매 기능은 없고, 새 설치의 실시간 시세는 기본 OFF입니다.</div>
+      </div>
+
+      <div style={hintStyle}>
+        모의투자 키는 모의투자 모드로, 실전투자 키는 체크를 해제하고 등록하세요.
+        REST 폴링은 실시간을 켜지 않아도 fallback으로 유지됩니다.
+      </div>
 
       <Field label="App Key">
         <input
@@ -208,4 +218,24 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 8,
   outline: 'none',
   transition: 'border-color 120ms ease',
+};
+
+const noticeStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  marginBottom: 12,
+  padding: '10px 12px',
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: 'var(--text-secondary)',
+  background: 'var(--bg-tint)',
+  border: '1px solid var(--border-soft)',
+  borderRadius: 8,
+};
+
+const hintStyle: React.CSSProperties = {
+  marginBottom: 20,
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: 'var(--text-muted)',
 };
