@@ -1,6 +1,6 @@
 # Installing Araon
 
-This guide walks through a local developer-style installation of Araon.
+This guide walks through the first-run install paths for Araon beta users.
 
 Araon is a single-user localhost dashboard. It requires your own KIS OpenAPI
 credentials and does not provide trading or order-entry features.
@@ -20,7 +20,8 @@ The easiest beta path is:
 npx @stellojae/araon@beta
 ```
 
-During the beta period, use the explicit `@beta` tag.
+During the beta period, use the explicit `@beta` tag. Araon starts a local
+server, prints a `http://127.0.0.1:<port>` URL, and opens your default browser.
 
 Or install the CLI globally:
 
@@ -31,6 +32,10 @@ araon
 
 The CLI starts Araon on `127.0.0.1`, serves the built browser UI, and opens the
 default browser. Node.js 20 or newer is required.
+
+On first run, expect the KIS credentials setup screen. Araon needs your own KIS
+OpenAPI app key/app secret pair, but it is still a read-only monitoring tool: it
+does not place orders or execute trades.
 
 ## Install From Source
 
@@ -149,6 +154,13 @@ The desktop beta packages Araon as an unsigned Electron app for macOS and
 Windows. It is intended for early local testing, not frictionless public
 installation.
 
+Download the beta installers from the GitHub Release page:
+
+```txt
+macOS:   Araon-1.1.0-beta.6-arm64.dmg
+Windows: Araon.Setup.1.1.0-beta.6.exe
+```
+
 Build a local unpacked desktop app:
 
 ```bash
@@ -188,19 +200,22 @@ validated.
 
 ## First Run
 
-1. Open Araon in your browser.
-2. Use the local setup screen to enter your KIS app key/app secret.
-3. Select the KIS mode that matches your credentials.
-4. Add stocks from the dashboard or master catalog.
-5. Use Settings to inspect runtime status.
+1. Start Araon with `npx @stellojae/araon@beta`, `araon`, or a desktop beta app.
+2. Open the printed localhost URL if your browser did not open automatically.
+3. Use the local setup screen to enter your KIS app key/app secret.
+4. Select the KIS mode that matches your credentials.
+5. Add stocks from the dashboard or master catalog.
+6. Use Settings to inspect runtime status.
 
-Credentials are encrypted locally in:
+Credentials are encrypted locally in the selected data directory:
 
 ```txt
-data/credentials.enc
+credentials.enc
 ```
 
-The `data/` directory is runtime state and must not be committed.
+For source development this is usually `data/`. For the CLI it is `--data-dir`,
+`ARAON_DATA_DIR`, or the OS default user-data directory. For desktop beta apps it
+is the OS app user-data directory. Runtime data must not be committed.
 
 ## Realtime
 
@@ -262,6 +277,11 @@ araon --port 3910
 
 The server still runs even if the OS browser command fails. Copy the printed
 `http://127.0.0.1:<port>` URL into your browser manually.
+
+### Credentials setup appears every time
+
+Check that you are using the same data directory on each run. If you pass a new
+`--data-dir`, Araon treats it as a fresh install.
 
 ### Reset CLI credentials or data
 

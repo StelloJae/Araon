@@ -32,7 +32,7 @@ fallback.
 - cap40 controlled realtime acceptance completed for the v1 release
 - Session-scoped realtime controls with rollback from the local UI
 - KIS master catalog for searchable KOSPI/KOSDAQ universe data
-- KIS-derived `autoSector` classification with manual sector override support
+- KIS official index industry grouping with manual sector override support
 - 한국어 초성 검색 for stock names
 - Server-Sent Events for live UI updates
 - Real cumulative volume display
@@ -77,13 +77,14 @@ intentionally.
 
 ## Quick Start
 
-Run the npm beta directly:
+The fastest first-run path is the npm beta:
 
 ```bash
 npx @stellojae/araon@beta
 ```
 
-During the beta period, use the explicit `@beta` tag.
+Araon starts a local server on `127.0.0.1`, prints the URL, and opens your
+browser. During the beta period, use the explicit `@beta` tag.
 
 Or install the CLI globally:
 
@@ -91,6 +92,11 @@ Or install the CLI globally:
 npm install -g @stellojae/araon@beta
 araon
 ```
+
+On first run, Araon shows the local KIS credentials setup screen. You need your
+own KIS OpenAPI app key/app secret pair. Fresh installs keep realtime OFF until
+you enable it from Settings, and Araon remains read-only: no orders, no trading,
+no brokerage actions.
 
 For local development from source:
 
@@ -202,15 +208,16 @@ especially because Araon uses the native `better-sqlite3` dependency.
 
 ## First Run
 
-1. Start the server and client.
-2. Open Araon in your browser.
+1. Run `npx @stellojae/araon@beta` or the installed `araon` command.
+2. Open the printed localhost URL if the browser did not open automatically.
 3. Enter your KIS credentials in the local setup screen.
 4. Choose paper/live mode according to your KIS app configuration.
 5. Add or favorite stocks from the dashboard.
 6. Enable realtime from Settings only when you are ready.
 
-Araon stores encrypted credentials at `data/credentials.enc`. Do not commit
-`data/`, `.env`, or any brokerage credential material.
+The CLI prints the selected data directory at startup. Araon stores encrypted
+credentials, settings, SQLite state, and local baseline history there. Do not
+commit `data/`, `.env`, or any brokerage credential material.
 
 ## Development Commands
 
