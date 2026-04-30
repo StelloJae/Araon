@@ -110,6 +110,7 @@ export function evaluateRealtimeMomentumPrice(input: {
     lastSignalAt: input.state.lastSignalAtByTicker[input.price.ticker] ?? null,
     activeSignal:
       input.state.activeSignalByTicker[input.price.ticker] ?? null,
+    allowInitialSignal: true,
   });
 
   input.state.previousMomentumByTicker[input.price.ticker] = {

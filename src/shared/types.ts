@@ -8,22 +8,63 @@
 // === Domain types =========================================================
 
 /**
- * App-level auto-classification name derived from KIS MST `krx_sector_flags`.
+ * App-level auto-classification name derived from KIS MST official index
+ * industry codes, with KRX sector flags kept as a fallback when index industry
+ * data is unavailable.
  * The mapping itself lives in `src/server/data/kis-industry-sector-map.ts` —
  * this type is here so both client and server can consume the result without
  * duplicating the literal union.
  */
 export type AutoSectorName =
+  | '음식료품'
+  | '섬유의복'
+  | '종이목재'
+  | '화학'
+  | '의약품'
+  | '비금속광물'
+  | '철강금속'
+  | '기계'
+  | '전기전자'
+  | '의료정밀'
+  | '운수장비'
+  | '유통업'
+  | '전기가스업'
+  | '건설업'
+  | '운수창고업'
+  | '통신업'
+  | '금융업'
+  | '증권'
+  | '보험'
+  | '서비스업'
+  | '제조업'
+  | '부동산업'
+  | 'IT서비스'
+  | '오락문화'
+  | '기타서비스'
+  | '제조'
+  | '건설'
+  | '유통'
+  | '운송'
+  | '금융'
+  | '음식료/담배'
+  | '섬유/의류'
+  | '종이/목재'
+  | '출판/매체복제'
+  | '제약'
+  | '비금속'
+  | '금속'
+  | '기계/장비'
+  | '일반전기전자'
+  | '의료/정밀기기'
+  | '운송장비/부품'
+  | '기타제조'
   | '반도체'
   | '자동차'
   | '바이오'
-  | '금융'
   | '에너지화학'
   | '철강'
   | '미디어통신'
-  | '건설'
   | '조선'
-  | '운송'
   | '기타';
 
 /**

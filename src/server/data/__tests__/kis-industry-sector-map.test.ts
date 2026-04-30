@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mapKisIndexIndustryToSector,
   mapKrxFlagsToSector,
+  mapStoredKisClassification,
   mapStoredKrxFlags,
   type AutoSectorName,
 } from '../kis-industry-sector-map.js';
@@ -133,6 +135,65 @@ describe('mapStoredKrxFlags — JSON helper', () => {
 
   it('returns null for non-object JSON (e.g. JSON null literal)', () => {
     expect(mapStoredKrxFlags('null')).toBeNull();
+  });
+});
+
+describe('mapKisIndexIndustryToSector — official KIS index industry', () => {
+  it('maps KOSPI 0027/0013 to 전기전자', () => {
+    const r = mapKisIndexIndustryToSector({
+      market: 'KOSPI',
+      indexIndustryLarge: '0027',
+      indexIndustryMiddle: '0013',
+      indexIndustrySmall: '0000',
+    });
+    expect(r?.sector).toBe('전기전자');
+    expect(r?.reason).toBe('mapped');
+  });
+
+  it('maps KOSDAQ 1009/1028 to 일반전기전자', () => {
+    const r = mapKisIndexIndustryToSector({
+      market: 'KOSDAQ',
+      indexIndustryLarge: '1009',
+      indexIndustryMiddle: '1028',
+      indexIndustrySmall: '0000',
+    });
+    expect(r?.sector).toBe('일반전기전자');
+    expect(r?.reason).toBe('mapped');
+  });
+
+  it('returns null for empty official index industry codes', () => {
+    expect(
+      mapKisIndexIndustryToSector({
+        market: 'KOSPI',
+        indexIndustryLarge: '0000',
+        indexIndustryMiddle: '0000',
+        indexIndustrySmall: '0000',
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('mapStoredKisClassification — official first, KRX fallback', () => {
+  it('prefers official KIS index industry over KRX sector flags', () => {
+    const r = mapStoredKisClassification({
+      market: 'KOSPI',
+      indexIndustryLarge: '0027',
+      indexIndustryMiddle: '0013',
+      indexIndustrySmall: '0000',
+      krxSectorFlags: JSON.stringify(flags({ krxAuto: 'Y' })),
+    });
+    expect(r?.sector).toBe('전기전자');
+  });
+
+  it('falls back to KRX sector flags when official codes are unavailable', () => {
+    const r = mapStoredKisClassification({
+      market: 'KOSPI',
+      indexIndustryLarge: '0000',
+      indexIndustryMiddle: '0000',
+      indexIndustrySmall: '0000',
+      krxSectorFlags: JSON.stringify(flags({ krxAuto: 'Y' })),
+    });
+    expect(r?.sector).toBe('자동차');
   });
 });
 

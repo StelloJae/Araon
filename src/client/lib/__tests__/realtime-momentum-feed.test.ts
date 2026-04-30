@@ -82,6 +82,27 @@ describe('evaluateRealtimeMomentumPrice', () => {
     expect(state.lastSignalAtByTicker['005930']).toBe(now);
   });
 
+  it('creates the first realtime signal when the first usable 10s baseline is already above threshold', () => {
+    const state = createMomentumFeedState();
+    const now = 1_700_000_010_000;
+    const result = evaluateRealtimeMomentumPrice({
+      price: price({ price: 100_900 }),
+      marketStatus: OPEN,
+      name: '삼성전자',
+      buckets: [bucket(now - 10_000, 100_000), bucket(now, 100_900)],
+      now,
+      state,
+    });
+
+    expect(result.decision.kind).toBe('spawn');
+    expect(result.decision.signal).toMatchObject({
+      ticker: '005930',
+      signalType: 'scalp',
+      momentumWindow: '10s',
+      source: 'realtime-momentum',
+    });
+  });
+
   it('does not create a realtime signal from previous-close change alone', () => {
     const state = createMomentumFeedState();
     const now = 1_700_000_030_000;

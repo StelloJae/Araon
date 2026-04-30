@@ -1,12 +1,15 @@
 /**
- * KIS KRX sector flag → app AutoSector mapping (B1b).
+ * KIS official index industry / KRX sector flag → app AutoSector mapping.
  *
  * Pure module — no DB access, no side effects. Given the parsed
- * `KrxSectorMembership` for one stock, returns one of a fixed list of
- * AutoSectorName values, plus a `reason` describing how the mapping was
- * decided.
+ * KIS classification block for one stock, returns an AutoSectorName plus a
+ * `reason` describing how the mapping was decided.
  *
- * Policy (deliberately conservative):
+ * Priority:
+ *   1. KIS official index industry codes (`index_industry_*`)
+ *   2. Legacy KRX sector-index flags (`krx_sector_flags`)
+ *
+ * KRX flag fallback policy (deliberately conservative):
  *   - 0 flags Y                       → 기타 (unmapped)
  *   - 1 non-financial flag Y          → that sector (mapped)
  *   - financial flags only (any 1+)   → 금융 (mapped)
@@ -29,8 +32,16 @@ export type MappingReason = 'mapped' | 'unmapped' | 'ambiguous';
 export interface MappingResult {
   sector: AutoSectorName;
   reason: MappingReason;
-  /** Names of the KRX flags that fired (Y). Empty if reason='unmapped'. */
+  /** Names of the KRX flags that fired (Y). Empty for official index matches. */
   matchedFlags: ReadonlyArray<keyof KrxSectorMembership>;
+}
+
+export interface StoredKisClassification {
+  market: 'KOSPI' | 'KOSDAQ';
+  indexIndustryLarge: string | null;
+  indexIndustryMiddle: string | null;
+  indexIndustrySmall: string | null;
+  krxSectorFlags: string | null;
 }
 
 const FINANCIAL_FLAGS = ['krxBank', 'krxSecurities', 'krxInsurance'] as const;
@@ -70,6 +81,107 @@ const UNMAPPED: MappingResult = {
   reason: 'unmapped',
   matchedFlags: [],
 };
+
+const KOSPI_MIDDLE_INDEX_INDUSTRY_TO_SECTOR: ReadonlyMap<string, AutoSectorName> =
+  new Map<string, AutoSectorName>([
+    ['0005', '음식료품'],
+    ['0006', '섬유의복'],
+    ['0007', '종이목재'],
+    ['0008', '화학'],
+    ['0009', '의약품'],
+    ['0010', '비금속광물'],
+    ['0011', '철강금속'],
+    ['0012', '기계'],
+    ['0013', '전기전자'],
+    ['0014', '의료정밀'],
+    ['0015', '운수장비'],
+    ['0024', '증권'],
+    ['0025', '보험'],
+  ]);
+
+const KOSPI_LARGE_INDEX_INDUSTRY_TO_SECTOR: ReadonlyMap<string, AutoSectorName> =
+  new Map<string, AutoSectorName>([
+    ['0016', '유통업'],
+    ['0017', '전기가스업'],
+    ['0018', '건설업'],
+    ['0019', '운수창고업'],
+    ['0020', '통신업'],
+    ['0021', '금융업'],
+    ['0026', '서비스업'],
+    ['0027', '제조업'],
+    ['0028', '부동산업'],
+    ['0029', 'IT서비스'],
+    ['0030', '오락문화'],
+  ]);
+
+const KOSDAQ_MIDDLE_INDEX_INDUSTRY_TO_SECTOR: ReadonlyMap<string, AutoSectorName> =
+  new Map<string, AutoSectorName>([
+    ['1019', '음식료/담배'],
+    ['1020', '섬유/의류'],
+    ['1021', '종이/목재'],
+    ['1022', '출판/매체복제'],
+    ['1023', '화학'],
+    ['1024', '제약'],
+    ['1025', '비금속'],
+    ['1026', '금속'],
+    ['1027', '기계/장비'],
+    ['1028', '일반전기전자'],
+    ['1029', '의료/정밀기기'],
+    ['1030', '운송장비/부품'],
+    ['1031', '기타제조'],
+  ]);
+
+const KOSDAQ_LARGE_INDEX_INDUSTRY_TO_SECTOR: ReadonlyMap<string, AutoSectorName> =
+  new Map<string, AutoSectorName>([
+    ['1006', '기타서비스'],
+    ['1009', '제조'],
+    ['1010', '건설'],
+    ['1011', '유통'],
+    ['1013', '운송'],
+    ['1014', '금융'],
+    ['1015', '오락문화'],
+  ]);
+
+function normalizeIndexCode(code: string | null): string | null {
+  if (code === null) return null;
+  const normalized = code.trim();
+  if (normalized.length === 0 || normalized === '0000') return null;
+  return normalized;
+}
+
+function mappedSector(sector: AutoSectorName | undefined): MappingResult | null {
+  if (sector === undefined) return null;
+  return { sector, reason: 'mapped', matchedFlags: [] };
+}
+
+export function mapKisIndexIndustryToSector(input: {
+  market: 'KOSPI' | 'KOSDAQ';
+  indexIndustryLarge: string | null;
+  indexIndustryMiddle: string | null;
+  indexIndustrySmall?: string | null;
+}): MappingResult | null {
+  const large = normalizeIndexCode(input.indexIndustryLarge);
+  const middle = normalizeIndexCode(input.indexIndustryMiddle);
+  if (large === null && middle === null) return null;
+
+  if (input.market === 'KOSPI') {
+    if (middle !== null) {
+      const sector = KOSPI_MIDDLE_INDEX_INDUSTRY_TO_SECTOR.get(middle);
+      if (sector !== undefined) return mappedSector(sector);
+    }
+    return large === null
+      ? null
+      : mappedSector(KOSPI_LARGE_INDEX_INDUSTRY_TO_SECTOR.get(large));
+  }
+
+  if (middle !== null) {
+    const sector = KOSDAQ_MIDDLE_INDEX_INDUSTRY_TO_SECTOR.get(middle);
+    if (sector !== undefined) return mappedSector(sector);
+  }
+  return large === null
+    ? null
+    : mappedSector(KOSDAQ_LARGE_INDEX_INDUSTRY_TO_SECTOR.get(large));
+}
 
 export function mapKrxFlagsToSector(flags: KrxSectorMembership): MappingResult {
   const active = getActiveFlags(flags);
@@ -114,4 +226,13 @@ export function mapStoredKrxFlags(jsonOrNull: string | null): MappingResult | nu
   if (parsed === null || typeof parsed !== 'object') return null;
   const flags = parsed as KrxSectorMembership;
   return mapKrxFlagsToSector(flags);
+}
+
+export function mapStoredKisClassification(
+  classification: StoredKisClassification,
+): MappingResult | null {
+  return (
+    mapKisIndexIndustryToSector(classification) ??
+    mapStoredKrxFlags(classification.krxSectorFlags)
+  );
 }

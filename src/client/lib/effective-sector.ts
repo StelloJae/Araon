@@ -64,7 +64,7 @@ export function describeSectorSource(source: EffectiveSectorSource): string {
     case 'manual':
       return '사용자 테마 분류';
     case 'auto':
-      return 'KRX 업종 기반 자동 분류';
+      return 'KIS 공식 업종 자동 분류';
     case 'fallback':
       return '자동 분류 결과 없음';
   }

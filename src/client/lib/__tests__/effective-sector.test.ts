@@ -80,7 +80,7 @@ describe('getEffectiveSector', () => {
 
   it('describeSectorSource returns Korean labels for each source', () => {
     expect(describeSectorSource('manual')).toBe('사용자 테마 분류');
-    expect(describeSectorSource('auto')).toBe('KRX 업종 기반 자동 분류');
+    expect(describeSectorSource('auto')).toBe('KIS 공식 업종 자동 분류');
     expect(describeSectorSource('fallback')).toBe('자동 분류 결과 없음');
   });
 
@@ -92,6 +92,7 @@ describe('getEffectiveSector', () => {
       ['금융', 'auto'],
       ['에너지화학', 'auto'],
       ['철강', 'auto'],
+      ['전기전자', 'auto'],
       ['미디어통신', 'auto'],
       ['건설', 'auto'],
       ['조선', 'auto'],

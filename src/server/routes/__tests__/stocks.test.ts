@@ -172,6 +172,50 @@ describe('GET /stocks — list', () => {
     expect(entry?.autoSector).toBe('자동차');
   });
 
+  it('prefers KIS official index industry classification over KRX sector flags', async () => {
+    // Samsung Electronics is KIS index industry 0027/0013 (전기전자), but the
+    // broad KRX sector-index flags can all be N. Official index industry
+    // classification should still drive autoSector.
+    db.prepare(
+      `INSERT INTO master_stocks (
+         ticker, name, market, standard_code, source, updated_at,
+         security_group_code, index_industry_large, index_industry_middle,
+         index_industry_small, krx_sector_flags
+       ) VALUES (?, ?, ?, ?, 'kis_mst', '2026-04-27T00:00:00.000Z',
+         'ST', '0027', '0013', '0000', ?)`,
+    ).run(
+      '005930',
+      '삼성전자',
+      'KOSPI',
+      'KR7005930003',
+      JSON.stringify({
+        krxAuto: 'N',
+        krxSemiconductor: 'N',
+        krxBio: 'N',
+        krxBank: 'N',
+        krxEnergyChem: 'N',
+        krxSteel: 'N',
+        krxMediaTel: 'N',
+        krxConstruction: 'N',
+        krxSecurities: 'N',
+        krxShip: 'N',
+        krxInsurance: 'N',
+        krxTransport: 'N',
+      }),
+    );
+
+    await app.inject({
+      method: 'POST',
+      url: '/stocks',
+      payload: { ticker: '005930', name: '삼성전자', market: 'KOSPI' },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/stocks' });
+    const body = res.json<{ data: Array<{ ticker: string; autoSector?: string | null }> }>();
+    const entry = body.data.find((s) => s.ticker === '005930');
+    expect(entry?.autoSector).toBe('전기전자');
+  });
+
   it('returns autoSector=null when no master row exists', async () => {
     await app.inject({
       method: 'POST',

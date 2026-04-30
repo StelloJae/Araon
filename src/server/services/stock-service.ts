@@ -13,7 +13,7 @@ import type {
   SectorRepository,
   MasterStockRepository,
 } from '../db/repositories.js';
-import { mapStoredKrxFlags } from '../data/kis-industry-sector-map.js';
+import { mapStoredKisClassification } from '../data/kis-industry-sector-map.js';
 import { createChildLogger } from '@shared/logger.js';
 
 const log = createChildLogger('stock-service');
@@ -25,8 +25,8 @@ export interface StockServiceDeps {
   sectorRepo: SectorRepository;
   /**
    * Optional — when provided, `list()` enriches each `Stock` with
-   * `autoSector` derived from `master_stocks.krx_sector_flags`. Callers that
-   * don't have a master catalog (some unit tests) can omit this and the
+   * `autoSector` derived from KIS official master classification. Callers
+   * that don't have a master catalog (some unit tests) can omit this and the
    * `autoSector` field will simply be undefined.
    */
   masterRepo?: MasterStockRepository;
@@ -128,12 +128,15 @@ export function createStockService(deps: StockServiceDeps): StockService {
       const stocks = stockRepo.findAll();
       if (masterRepo === undefined || stocks.length === 0) return stocks;
 
-      const flagsByTicker = masterRepo.findKrxSectorFlagsByTickers(
+      const classificationByTicker = masterRepo.findClassificationByTickers(
         stocks.map((s) => s.ticker),
       );
       return stocks.map((s) => {
-        const flagsJson = flagsByTicker.get(s.ticker) ?? null;
-        const result = mapStoredKrxFlags(flagsJson);
+        const classification = classificationByTicker.get(s.ticker);
+        const result =
+          classification === undefined
+            ? null
+            : mapStoredKisClassification(classification);
         return {
           ...s,
           autoSector: result?.sector ?? null,

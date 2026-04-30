@@ -137,6 +137,14 @@ export interface MasterStockInput {
   listedAt?: string | null;
 }
 
+export interface MasterStockClassificationRow {
+  market: 'KOSPI' | 'KOSDAQ';
+  indexIndustryLarge: string | null;
+  indexIndustryMiddle: string | null;
+  indexIndustrySmall: string | null;
+  krxSectorFlags: string | null;
+}
+
 // === Mapping helpers ==========================================================
 
 function rowToStock(row: StockRow): Stock {
@@ -445,10 +453,48 @@ export class MasterStockRepository {
   }
 
   /**
-   * Read raw `krx_sector_flags` JSON for the given tickers (B1b auto-sector
-   * mapping). Returns `null` for tickers absent from master_stocks OR with a
-   * NULL flags column. Caller is expected to feed each value through
-   * `mapStoredKrxFlags()` to derive the AutoSectorName.
+   * Read raw KIS classification columns for the given tickers. Missing
+   * tickers are absent from the returned map.
+   */
+  findClassificationByTickers(
+    tickers: ReadonlyArray<string>,
+  ): Map<string, MasterStockClassificationRow> {
+    const out = new Map<string, MasterStockClassificationRow>();
+    if (tickers.length === 0) return out;
+    const placeholders = tickers.map(() => '?').join(',');
+    const rows = this.db
+      .prepare(
+        `SELECT
+           ticker, market, index_industry_large, index_industry_middle,
+           index_industry_small, krx_sector_flags
+         FROM master_stocks
+         WHERE ticker IN (${placeholders})`,
+      )
+      .all(...tickers) as Array<{
+        ticker: string;
+        market: string;
+        index_industry_large: string | null;
+        index_industry_middle: string | null;
+        index_industry_small: string | null;
+        krx_sector_flags: string | null;
+      }>;
+    for (const r of rows) {
+      if (r.market !== 'KOSPI' && r.market !== 'KOSDAQ') continue;
+      out.set(r.ticker, {
+        market: r.market,
+        indexIndustryLarge: r.index_industry_large,
+        indexIndustryMiddle: r.index_industry_middle,
+        indexIndustrySmall: r.index_industry_small,
+        krxSectorFlags: r.krx_sector_flags,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Read raw `krx_sector_flags` JSON for the given tickers (legacy B1b
+   * auto-sector mapping). Returns `null` for tickers absent from master_stocks
+   * OR with a NULL flags column.
    */
   findKrxSectorFlagsByTickers(
     tickers: ReadonlyArray<string>,
