@@ -66,7 +66,7 @@ export function StockRow({
   } = stock;
   const color = krColor(changePct);
   const sectorPillColor =
-    effectiveSector.source === 'fallback'
+    effectiveSector.source === 'unclassified'
       ? 'var(--text-inactive)'
       : 'var(--text-secondary)';
 
@@ -242,7 +242,8 @@ export function StockRow({
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              fontStyle: effectiveSector.source === 'auto' ? 'italic' : 'normal',
+              fontStyle:
+                effectiveSector.source === 'kis-industry' ? 'italic' : 'normal',
             }}
           >
             {effectiveSector.name}

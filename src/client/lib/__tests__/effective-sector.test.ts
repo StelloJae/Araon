@@ -9,7 +9,7 @@ import {
 
 describe('getEffectiveSector', () => {
   it('returns manual when manual name is present and not 기타', () => {
-    const result = getEffectiveSector('반도체', '자동차');
+    const result = getEffectiveSector('반도체', '전기전자');
     const expected: EffectiveSector = { name: '반도체', source: 'manual' };
     expect(result).toEqual(expected);
   });
@@ -21,58 +21,65 @@ describe('getEffectiveSector', () => {
     });
   });
 
-  it('falls through to autoSector when manual is null', () => {
-    const auto: AutoSectorName = '반도체';
+  it('falls through to official KIS industry when manual is null', () => {
+    const auto: AutoSectorName = '전기전자';
     expect(getEffectiveSector(null, auto)).toEqual({
-      name: '반도체',
-      source: 'auto',
+      name: '전기전자',
+      source: 'kis-industry',
     });
   });
 
-  it('falls through to autoSector when manual is "기타"', () => {
-    expect(getEffectiveSector('기타', '바이오')).toEqual({
-      name: '바이오',
-      source: 'auto',
+  it('falls through to official KIS industry when manual is "기타"', () => {
+    expect(getEffectiveSector('기타', '전기전자')).toEqual({
+      name: '전기전자',
+      source: 'kis-industry',
     });
   });
 
-  it('returns fallback when manual is null and autoSector is "기타"', () => {
+  it('falls through to official KIS industry when manual is "미분류"', () => {
+    expect(getEffectiveSector('미분류', '운수장비')).toEqual({
+      name: '운수장비',
+      source: 'kis-industry',
+    });
+  });
+
+  it('returns unclassified when manual is null and official industry is "기타"', () => {
     expect(getEffectiveSector(null, '기타')).toEqual({
       name: EFFECTIVE_SECTOR_FALLBACK_NAME,
-      source: 'fallback',
+      source: 'unclassified',
     });
   });
 
-  it('returns fallback when both inputs are null', () => {
+  it('returns unclassified when both inputs are null', () => {
     expect(getEffectiveSector(null, null)).toEqual({
       name: EFFECTIVE_SECTOR_FALLBACK_NAME,
-      source: 'fallback',
+      source: 'unclassified',
     });
   });
 
-  it('returns fallback when both inputs are undefined-ish', () => {
+  it('returns unclassified when both inputs are undefined-ish', () => {
     expect(getEffectiveSector(undefined, undefined)).toEqual({
       name: EFFECTIVE_SECTOR_FALLBACK_NAME,
-      source: 'fallback',
+      source: 'unclassified',
     });
   });
 
-  it('returns fallback when manual is "기타" and autoSector is also "기타"', () => {
+  it('returns unclassified when manual is "기타" and official industry is also "기타"', () => {
     expect(getEffectiveSector('기타', '기타')).toEqual({
       name: EFFECTIVE_SECTOR_FALLBACK_NAME,
-      source: 'fallback',
+      source: 'unclassified',
     });
   });
 
   it('treats empty manual string as missing (falls through)', () => {
-    expect(getEffectiveSector('', '반도체')).toEqual({
-      name: '반도체',
-      source: 'auto',
+    expect(getEffectiveSector('', '전기전자')).toEqual({
+      name: '전기전자',
+      source: 'kis-industry',
     });
   });
 
   it('manual takes precedence even when autoSector also has a real value', () => {
-    expect(getEffectiveSector('금융', '반도체')).toEqual({
+    expect(getEffectiveSector('금융', '전기전자')).toEqual({
       name: '금융',
       source: 'manual',
     });
@@ -80,29 +87,22 @@ describe('getEffectiveSector', () => {
 
   it('describeSectorSource returns Korean labels for each source', () => {
     expect(describeSectorSource('manual')).toBe('사용자 테마 분류');
-    expect(describeSectorSource('auto')).toBe('KIS 공식 업종 자동 분류');
-    expect(describeSectorSource('fallback')).toBe('자동 분류 결과 없음');
+    expect(describeSectorSource('kis-industry')).toBe('KIS 공식 지수업종 기반');
+    expect(describeSectorSource('unclassified')).toBe('미분류');
   });
 
-  it('all autoSector values map cleanly when manual is missing', () => {
-    const cases: ReadonlyArray<[AutoSectorName, 'auto' | 'fallback']> = [
-      ['반도체', 'auto'],
-      ['자동차', 'auto'],
-      ['바이오', 'auto'],
-      ['금융', 'auto'],
-      ['에너지화학', 'auto'],
-      ['철강', 'auto'],
-      ['전기전자', 'auto'],
-      ['미디어통신', 'auto'],
-      ['건설', 'auto'],
-      ['조선', 'auto'],
-      ['운송', 'auto'],
-      ['기타', 'fallback'],
+  it('all official KIS industry values map cleanly when manual is missing', () => {
+    const cases: ReadonlyArray<[AutoSectorName, 'kis-industry' | 'unclassified']> = [
+      ['전기전자', 'kis-industry'],
+      ['운수장비', 'kis-industry'],
+      ['서비스업', 'kis-industry'],
+      ['일반전기전자', 'kis-industry'],
+      ['기타', 'unclassified'],
     ];
     for (const [auto, expectedSource] of cases) {
       const r = getEffectiveSector(null, auto);
       expect(r.source).toBe(expectedSource);
-      if (expectedSource === 'auto') {
+      if (expectedSource === 'kis-industry') {
         expect(r.name).toBe(auto);
       } else {
         expect(r.name).toBe(EFFECTIVE_SECTOR_FALLBACK_NAME);

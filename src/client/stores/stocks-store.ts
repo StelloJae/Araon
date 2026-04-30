@@ -26,7 +26,7 @@ import { getEffectiveSector } from '../lib/effective-sector';
 export interface CatalogEntry {
   name: string;
   market: 'KOSPI' | 'KOSDAQ';
-  /** Theme id this ticker belongs to. `null` = no theme membership ("기타"). */
+  /** Theme id this ticker belongs to. `null` = no manual theme membership. */
   sectorId: string | null;
   /**
    * Manual theme name resolved from the theme catalog at `setThemes` time.
@@ -35,9 +35,9 @@ export interface CatalogEntry {
    */
   manualSectorName: string | null;
   /**
-   * KIS-derived auto-classification from `master_stocks.krx_sector_flags`.
-   * Filled by `setCatalog` from `Stock.autoSector`. Null when no master row
-   * exists or the mapping resolved to '기타'/unknown.
+   * KIS official index industry classification from master_stocks.
+   * Filled by `setCatalog` from `Stock.autoSector`. Null when no official
+   * industry exists or the mapping resolved to '기타'/unknown.
    */
   autoSector: AutoSectorName | null;
 }

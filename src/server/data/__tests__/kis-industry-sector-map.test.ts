@@ -5,6 +5,7 @@ import {
   mapStoredKisClassification,
   mapStoredKrxFlags,
   type AutoSectorName,
+  type KrxFlagSectorName,
 } from '../kis-industry-sector-map.js';
 import type { KrxSectorMembership } from '../../kis/kis-master-fetcher.js';
 
@@ -27,7 +28,7 @@ function flags(overrides: Partial<KrxSectorMembership>): KrxSectorMembership {
 }
 
 describe('mapKrxFlagsToSector — single flag mapping', () => {
-  const cases: Array<[Partial<KrxSectorMembership>, AutoSectorName]> = [
+  const cases: Array<[Partial<KrxSectorMembership>, KrxFlagSectorName]> = [
     [{ krxAuto: 'Y' }, '자동차'],
     [{ krxSemiconductor: 'Y' }, '반도체'],
     [{ krxBio: 'Y' }, '바이오'],
@@ -173,27 +174,27 @@ describe('mapKisIndexIndustryToSector — official KIS index industry', () => {
   });
 });
 
-describe('mapStoredKisClassification — official first, KRX fallback', () => {
-  it('prefers official KIS index industry over KRX sector flags', () => {
+describe('mapStoredKisClassification — official KIS index industry only', () => {
+  it('uses official KIS index industry over KRX sector flags', () => {
     const r = mapStoredKisClassification({
       market: 'KOSPI',
       indexIndustryLarge: '0027',
       indexIndustryMiddle: '0013',
       indexIndustrySmall: '0000',
-      krxSectorFlags: JSON.stringify(flags({ krxAuto: 'Y' })),
+      krxSectorFlags: JSON.stringify(flags({ krxSemiconductor: 'Y' })),
     });
     expect(r?.sector).toBe('전기전자');
   });
 
-  it('falls back to KRX sector flags when official codes are unavailable', () => {
+  it('does not fall back to KRX sector flags when official codes are unavailable', () => {
     const r = mapStoredKisClassification({
       market: 'KOSPI',
       indexIndustryLarge: '0000',
       indexIndustryMiddle: '0000',
       indexIndustrySmall: '0000',
-      krxSectorFlags: JSON.stringify(flags({ krxAuto: 'Y' })),
+      krxSectorFlags: JSON.stringify(flags({ krxSemiconductor: 'Y' })),
     });
-    expect(r?.sector).toBe('자동차');
+    expect(r).toBeNull();
   });
 });
 

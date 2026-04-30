@@ -2,18 +2,19 @@
  * Effective sector classification used by row pills, detail modal, and
  * SectionStack grouping.
  *
- * Priority: manual sector (set by user via theme catalog) > KIS-derived
- * autoSector > fallback ('기타'). Manual classification is never overwritten
- * by autoSector — once a user puts a ticker in a theme, that wins.
+ * Priority: manual sector (set by user via theme catalog) > KIS official index
+ * industry > unclassified ('미분류'). Manual classification is never
+ * overwritten by official industry — once a user puts a ticker in a real theme,
+ * that wins.
  *
  * Pure function. No store access, no side effects.
  */
 
 import type { AutoSectorName } from '@shared/types';
 
-export const EFFECTIVE_SECTOR_FALLBACK_NAME = '기타';
+export const EFFECTIVE_SECTOR_FALLBACK_NAME = '미분류';
 
-export type EffectiveSectorSource = 'manual' | 'auto' | 'fallback';
+export type EffectiveSectorSource = 'manual' | 'kis-industry' | 'unclassified';
 
 export interface EffectiveSector {
   /** Display name for pill / label. */
@@ -24,32 +25,38 @@ export interface EffectiveSector {
 
 const FALLBACK: EffectiveSector = {
   name: EFFECTIVE_SECTOR_FALLBACK_NAME,
-  source: 'fallback',
+  source: 'unclassified',
 };
 
-function isUsableManual(name: string | null | undefined): name is string {
-  return (
-    typeof name === 'string' &&
-    name.length > 0 &&
-    name !== EFFECTIVE_SECTOR_FALLBACK_NAME
-  );
+function normalizeManual(name: string | null | undefined): string | null {
+  if (typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  if (trimmed.length === 0 || trimmed === '기타' || trimmed === '미분류') {
+    return null;
+  }
+  return trimmed;
 }
 
-function isUsableAuto(
-  auto: AutoSectorName | null | undefined,
-): auto is Exclude<AutoSectorName, '기타'> {
-  return auto !== null && auto !== undefined && auto !== '기타';
+function isUsableKisIndustry(
+  officialIndustryName: AutoSectorName | null | undefined,
+): officialIndustryName is Exclude<AutoSectorName, '기타'> {
+  return (
+    officialIndustryName !== null &&
+    officialIndustryName !== undefined &&
+    officialIndustryName !== '기타'
+  );
 }
 
 export function getEffectiveSector(
   manualSectorName: string | null | undefined,
-  autoSector: AutoSectorName | null | undefined,
+  officialIndustryName: AutoSectorName | null | undefined,
 ): EffectiveSector {
-  if (isUsableManual(manualSectorName)) {
-    return { name: manualSectorName, source: 'manual' };
+  const manual = normalizeManual(manualSectorName);
+  if (manual !== null) {
+    return { name: manual, source: 'manual' };
   }
-  if (isUsableAuto(autoSector)) {
-    return { name: autoSector, source: 'auto' };
+  if (isUsableKisIndustry(officialIndustryName)) {
+    return { name: officialIndustryName, source: 'kis-industry' };
   }
   return FALLBACK;
 }
@@ -57,15 +64,15 @@ export function getEffectiveSector(
 /**
  * Human-readable Korean label for a sector source — used as the tooltip
  * (`title` attribute) on row pills and the detail-modal sector cell so
- * users can tell apart manual / auto / fallback classifications.
+ * users can tell apart manual / KIS official industry / unclassified labels.
  */
 export function describeSectorSource(source: EffectiveSectorSource): string {
   switch (source) {
     case 'manual':
       return '사용자 테마 분류';
-    case 'auto':
-      return 'KIS 공식 업종 자동 분류';
-    case 'fallback':
-      return '자동 분류 결과 없음';
+    case 'kis-industry':
+      return 'KIS 공식 지수업종 기반';
+    case 'unclassified':
+      return '미분류';
   }
 }

@@ -1,6 +1,6 @@
 /**
  * Fetches and parses KIS KOSPI/KOSDAQ master files (`*.mst`) for the local
- * KRX universe used by master search and 자동 sector 분류 (B1a).
+ * KRX universe used by master search and official industry display grouping.
  *
  * Sources (publicly downloadable, no auth):
  *   - https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip

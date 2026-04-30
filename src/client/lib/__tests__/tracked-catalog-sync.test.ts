@@ -3,20 +3,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { syncTrackedCatalogAfterMasterAdd } from '../tracked-catalog-sync';
 
 describe('syncTrackedCatalogAfterMasterAdd', () => {
-  it('reloads tracked stocks from /stocks so autoSector stays authoritative', async () => {
+  it('reloads tracked stocks from /stocks so official KIS industry stays authoritative', async () => {
     const stocks = [
       {
         ticker: '005380',
         name: '현대차',
         market: 'KOSPI' as const,
-        autoSector: '자동차' as const,
+        autoSector: '운수장비' as const,
       },
     ];
     const themes = [
       {
         id: 'auto',
-        name: '자동차',
-        description: 'KRX 업종 자동 분류',
+        name: '운수장비',
+        description: 'KIS 공식 지수업종',
         stocks: [],
       },
     ];

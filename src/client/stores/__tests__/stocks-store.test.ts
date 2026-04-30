@@ -23,6 +23,77 @@ const PRICE_A: Price = {
 };
 
 describe('useStocksStore.removeStock', () => {
+  it('builds display sector from manual sector before official KIS industry', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+
+    store.setCatalog([{ ...STOCK_A, autoSector: '전기전자' }]);
+    store.setThemes([
+      {
+        id: 'manual-semi',
+        name: '반도체',
+        description: '',
+        stocks: [{ ticker: '005930', name: '삼성전자', market: 'KOSPI' }],
+      },
+    ]);
+
+    expect(buildStockVM('005930', useStocksStore.getState().catalog, {}))
+      .toMatchObject({
+        effectiveSector: { name: '반도체', source: 'manual' },
+      });
+  });
+
+  it('falls through from 기타 manual sector to official KIS industry', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+
+    store.setCatalog([{ ...STOCK_A, autoSector: '전기전자' }]);
+    store.setThemes([
+      {
+        id: 'manual-other',
+        name: '기타',
+        description: '',
+        stocks: [{ ticker: '005930', name: '삼성전자', market: 'KOSPI' }],
+      },
+    ]);
+
+    expect(buildStockVM('005930', useStocksStore.getState().catalog, {}))
+      .toMatchObject({
+        effectiveSector: { name: '전기전자', source: 'kis-industry' },
+      });
+  });
+
+  it('groups official-industry-missing products as 미분류', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+
+    store.setCatalog([{ ...STOCK_A, autoSector: null }]);
+
+    expect(buildStockVM('005930', useStocksStore.getState().catalog, {}))
+      .toMatchObject({
+        effectiveSector: { name: '미분류', source: 'unclassified' },
+      });
+  });
+
+  it('keeps ETF/ETN-like products without official industry as 미분류', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+
+    store.setCatalog([
+      {
+        ticker: '069500',
+        name: 'KODEX 200 ETF',
+        market: 'KOSPI',
+        autoSector: null,
+      },
+    ]);
+
+    expect(buildStockVM('069500', useStocksStore.getState().catalog, {}))
+      .toMatchObject({
+        effectiveSector: { name: '미분류', source: 'unclassified' },
+      });
+  });
+
   it('applies live price bursts in one batched store update', async () => {
     const { useStocksStore } = await import('../stocks-store');
     const first = PRICE_A;

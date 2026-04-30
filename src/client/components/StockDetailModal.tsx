@@ -294,7 +294,7 @@ function ModalHeader({
             fontSize: 10,
             fontWeight: 700,
             color:
-              stock.effectiveSector.source === 'fallback'
+              stock.effectiveSector.source === 'unclassified'
                 ? 'var(--text-muted)'
                 : 'var(--text-secondary)',
             border: '1px solid var(--border)',
@@ -302,7 +302,9 @@ function ModalHeader({
             borderRadius: 4,
             letterSpacing: 0.4,
             fontStyle:
-              stock.effectiveSector.source === 'auto' ? 'italic' : 'normal',
+              stock.effectiveSector.source === 'kis-industry'
+                ? 'italic'
+                : 'normal',
           }}
         >
           {stock.effectiveSector.name}
@@ -589,7 +591,7 @@ function MetricsGrid({ stock, lastUpdated }: MetricsGridProps) {
 }
 
 function formatSectorMetricValue(eff: EffectiveSector): string {
-  if (eff.source === 'auto') return `${eff.name} · 자동`;
+  if (eff.source === 'kis-industry') return `${eff.name} · KIS 공식`;
   return eff.name;
 }
 

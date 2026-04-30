@@ -132,8 +132,9 @@ describe('GET /stocks — list', () => {
     expect(body.data.some((s) => s.ticker === '005930')).toBe(true);
   });
 
-  it('attaches autoSector from master_stocks krx_sector_flags', async () => {
-    // Seed master with classification for 005380 → KRX자동차 = Y → 자동차.
+  it('does not attach autoSector from master_stocks krx_sector_flags only', async () => {
+    // KRX자동차 alone is not an official KIS index industry. Display grouping
+    // must leave it unclassified instead of falling back to a KRX flag label.
     db.prepare(
       `INSERT INTO master_stocks (
          ticker, name, market, standard_code, source, updated_at,
@@ -169,13 +170,13 @@ describe('GET /stocks — list', () => {
     const res = await app.inject({ method: 'GET', url: '/stocks' });
     const body = res.json<{ data: Array<{ ticker: string; autoSector?: string | null }> }>();
     const entry = body.data.find((s) => s.ticker === '005380');
-    expect(entry?.autoSector).toBe('자동차');
+    expect(entry?.autoSector).toBeNull();
   });
 
   it('prefers KIS official index industry classification over KRX sector flags', async () => {
-    // Samsung Electronics is KIS index industry 0027/0013 (전기전자), but the
-    // broad KRX sector-index flags can all be N. Official index industry
-    // classification should still drive autoSector.
+    // Samsung Electronics is KIS index industry 0027/0013 (전기전자). Even if a
+    // broad KRX sector-index flag says KRX반도체, official index industry must
+    // drive display grouping.
     db.prepare(
       `INSERT INTO master_stocks (
          ticker, name, market, standard_code, source, updated_at,
@@ -190,7 +191,7 @@ describe('GET /stocks — list', () => {
       'KR7005930003',
       JSON.stringify({
         krxAuto: 'N',
-        krxSemiconductor: 'N',
+        krxSemiconductor: 'Y',
         krxBio: 'N',
         krxBank: 'N',
         krxEnergyChem: 'N',

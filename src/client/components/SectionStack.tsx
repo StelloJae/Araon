@@ -10,8 +10,8 @@
  *   'mixed'  → MixedView: each sector as its own SectorBlock with header,
  *              sort dropdown, and collapse chevron.
  *
- * Watchlist tickers that don't map to any backend theme bucket fall into
- * a synthetic '기타' sector at the end.
+ * Watchlist tickers without a manual theme or KIS official index industry fall
+ * into a synthetic '미분류' sector at the end.
  */
 
 import { useMemo } from 'react';
@@ -28,8 +28,8 @@ import type { SortKey, StockViewModel } from '../lib/view-models';
 
 const OTHERS_META: SectorMeta = {
   id: OTHERS_SECTOR_ID,
-  name: '기타',
-  tagline: '테마 미분류',
+  name: '미분류',
+  tagline: '공식 지수업종 없음',
 };
 
 interface SectionStackProps {
@@ -62,11 +62,11 @@ export function SectionStack({ onToggleFav, onOpenDetail }: SectionStackProps) {
       let key: string;
       if (eff.source === 'manual' && vm.sectorId !== null) {
         key = vm.sectorId;
-      } else if (eff.source === 'auto') {
+      } else if (eff.source === 'kis-industry') {
         // If a manual sector with the same display name exists, merge into it
-        // so users see one '반도체' bucket regardless of classification source.
+        // so users see one bucket regardless of classification source.
         const match = sectorByName.get(eff.name);
-        key = match !== undefined ? match.id : `auto:${eff.name}`;
+        key = match !== undefined ? match.id : `kis:${eff.name}`;
       } else {
         key = OTHERS_SECTOR_ID;
       }
@@ -85,8 +85,8 @@ export function SectionStack({ onToggleFav, onOpenDetail }: SectionStackProps) {
   }
 
   // Active sector list (only non-empty buckets). Manual themes keep their
-  // catalog order, then auto: buckets discovered from autoSector classification,
-  // and 기타 last.
+  // catalog order, then kis: buckets discovered from KIS official industry
+  // classification, and 미분류 last.
   const sectorList: SectorMeta[] = (() => {
     const out: SectorMeta[] = [];
     const knownIds = new Set<string>(sectors.map((s) => s.id));
@@ -95,11 +95,11 @@ export function SectionStack({ onToggleFav, onOpenDetail }: SectionStackProps) {
     }
     for (const key of Object.keys(stocksBySector)) {
       if (key === OTHERS_SECTOR_ID || knownIds.has(key)) continue;
-      if (!key.startsWith('auto:')) continue;
+      if (!key.startsWith('kis:')) continue;
       out.push({
         id: key,
-        name: key.slice(5),
-        tagline: 'KRX 업종 자동 분류',
+        name: key.slice(4),
+        tagline: 'KIS 공식 지수업종',
       });
     }
     if ((stocksBySector[OTHERS_SECTOR_ID]?.length ?? 0) > 0) {

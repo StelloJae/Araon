@@ -1,15 +1,15 @@
 /**
- * KIS official index industry / KRX sector flag → app AutoSector mapping.
+ * KIS official index industry / KRX sector flag → app sector mapping.
  *
  * Pure module — no DB access, no side effects. Given the parsed
  * KIS classification block for one stock, returns an AutoSectorName plus a
  * `reason` describing how the mapping was decided.
  *
- * Priority:
- *   1. KIS official index industry codes (`index_industry_*`)
- *   2. Legacy KRX sector-index flags (`krx_sector_flags`)
+ * Display grouping uses KIS official index industry codes only. Legacy KRX
+ * sector-index flags remain parseable as auxiliary metadata, but they are not
+ * mixed in as a fallback for screen grouping.
  *
- * KRX flag fallback policy (deliberately conservative):
+ * Legacy KRX flag metadata mapping policy (deliberately conservative):
  *   - 0 flags Y                       → 기타 (unmapped)
  *   - 1 non-financial flag Y          → that sector (mapped)
  *   - financial flags only (any 1+)   → 금융 (mapped)
@@ -29,10 +29,30 @@ export type { AutoSectorName };
 
 export type MappingReason = 'mapped' | 'unmapped' | 'ambiguous';
 
+export type KrxFlagSectorName =
+  | '반도체'
+  | '자동차'
+  | '바이오'
+  | '금융'
+  | '에너지화학'
+  | '철강'
+  | '미디어통신'
+  | '건설'
+  | '조선'
+  | '운송'
+  | '기타';
+
 export interface MappingResult {
   sector: AutoSectorName;
   reason: MappingReason;
-  /** Names of the KRX flags that fired (Y). Empty for official index matches. */
+  /** Always empty for official index matches. */
+  matchedFlags: ReadonlyArray<keyof KrxSectorMembership>;
+}
+
+export interface KrxFlagMappingResult {
+  sector: KrxFlagSectorName;
+  reason: MappingReason;
+  /** Names of the KRX flags that fired (Y). Empty if reason='unmapped'. */
   matchedFlags: ReadonlyArray<keyof KrxSectorMembership>;
 }
 
@@ -47,8 +67,10 @@ export interface StoredKisClassification {
 const FINANCIAL_FLAGS = ['krxBank', 'krxSecurities', 'krxInsurance'] as const;
 type FinancialFlag = (typeof FINANCIAL_FLAGS)[number];
 
-const NON_FINANCIAL_FLAG_TO_SECTOR: ReadonlyMap<keyof KrxSectorMembership, AutoSectorName> =
-  new Map<keyof KrxSectorMembership, AutoSectorName>([
+const NON_FINANCIAL_FLAG_TO_SECTOR: ReadonlyMap<
+  keyof KrxSectorMembership,
+  KrxFlagSectorName
+> = new Map<keyof KrxSectorMembership, KrxFlagSectorName>([
     ['krxAuto', '자동차'],
     ['krxSemiconductor', '반도체'],
     ['krxBio', '바이오'],
@@ -76,7 +98,7 @@ function getActiveFlags(
   return active;
 }
 
-const UNMAPPED: MappingResult = {
+const UNMAPPED: KrxFlagMappingResult = {
   sector: '기타',
   reason: 'unmapped',
   matchedFlags: [],
@@ -183,7 +205,9 @@ export function mapKisIndexIndustryToSector(input: {
     : mappedSector(KOSDAQ_LARGE_INDEX_INDUSTRY_TO_SECTOR.get(large));
 }
 
-export function mapKrxFlagsToSector(flags: KrxSectorMembership): MappingResult {
+export function mapKrxFlagsToSector(
+  flags: KrxSectorMembership,
+): KrxFlagMappingResult {
   const active = getActiveFlags(flags);
   if (active.length === 0) return UNMAPPED;
 
@@ -215,7 +239,9 @@ export function mapKrxFlagsToSector(flags: KrxSectorMembership): MappingResult {
  * master_stocks and run the mapping. Returns null if the JSON is null,
  * malformed, or missing required keys.
  */
-export function mapStoredKrxFlags(jsonOrNull: string | null): MappingResult | null {
+export function mapStoredKrxFlags(
+  jsonOrNull: string | null,
+): KrxFlagMappingResult | null {
   if (jsonOrNull === null || jsonOrNull.length === 0) return null;
   let parsed: unknown;
   try {
@@ -231,8 +257,5 @@ export function mapStoredKrxFlags(jsonOrNull: string | null): MappingResult | nu
 export function mapStoredKisClassification(
   classification: StoredKisClassification,
 ): MappingResult | null {
-  return (
-    mapKisIndexIndustryToSector(classification) ??
-    mapStoredKrxFlags(classification.krxSectorFlags)
-  );
+  return mapKisIndexIndustryToSector(classification);
 }

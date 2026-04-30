@@ -108,6 +108,12 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - 추적 카탈로그(화면·polling 대상)와 마스터(검색용 4337)는 **별도 테이블**.
 - 추적 추가는 `POST /stocks/from-master` (마스터에서 골라서 폴링 대상에 합류).
 
+### 3.5 화면 섹터 grouping 정책
+- 화면 섹터 grouping은 **manual sector > KIS 공식 지수업종 > 미분류** 순서다.
+- KRX 섹터 플래그는 공식 지수업종 fallback으로 섞지 않는다.
+- 업종 없음 / ETF / ETN / 특수상품은 `미분류`로 둔다.
+- ETF/ETN 별도 그룹은 후속 작업이다.
+
 ## 4. 자주 쓰는 명령
 
 ```bash

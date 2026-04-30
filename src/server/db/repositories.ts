@@ -493,7 +493,7 @@ export class MasterStockRepository {
 
   /**
    * Read raw `krx_sector_flags` JSON for the given tickers (legacy B1b
-   * auto-sector mapping). Returns `null` for tickers absent from master_stocks
+   * metadata mapping). Returns `null` for tickers absent from master_stocks
    * OR with a NULL flags column.
    */
   findKrxSectorFlagsByTickers(

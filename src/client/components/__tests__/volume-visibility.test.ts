@@ -18,7 +18,7 @@ function stock(overrides: Partial<StockViewModel> = {}): StockViewModel {
     updatedAt: '2026-04-29T01:00:00.000Z',
     isSnapshot: false,
     sectorId: null,
-    effectiveSector: { name: '반도체', source: 'auto' },
+    effectiveSector: { name: '전기전자', source: 'kis-industry' },
     ...overrides,
   };
 }

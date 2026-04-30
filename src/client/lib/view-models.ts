@@ -38,11 +38,12 @@ export interface StockViewModel {
   /**
    * Manual theme id this ticker belongs to (from the theme catalog).
    * Null when the ticker isn't part of any theme — SectionStack groups those
-   * by `effectiveSector` instead, falling back to the synthetic '기타' bucket.
+   * by `effectiveSector` instead, falling back to the synthetic '미분류' bucket.
    */
   sectorId: string | null;
   /**
-   * Resolved sector for display + grouping: manual > autoSector > 기타.
+   * Resolved sector for display + grouping:
+   * manual > KIS official index industry > 미분류.
    * Computed by `buildStockVM` so consumers don't re-implement priority.
    */
   effectiveSector: EffectiveSector;

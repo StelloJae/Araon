@@ -9,8 +9,8 @@
 
 /**
  * App-level auto-classification name derived from KIS MST official index
- * industry codes, with KRX sector flags kept as a fallback when index industry
- * data is unavailable.
+ * industry codes. KRX sector flags are intentionally not used as a display
+ * grouping fallback.
  * The mapping itself lives in `src/server/data/kis-industry-sector-map.ts` —
  * this type is here so both client and server can consume the result without
  * duplicating the literal union.
@@ -58,13 +58,6 @@ export type AutoSectorName =
   | '의료/정밀기기'
   | '운송장비/부품'
   | '기타제조'
-  | '반도체'
-  | '자동차'
-  | '바이오'
-  | '에너지화학'
-  | '철강'
-  | '미디어통신'
-  | '조선'
   | '기타';
 
 /**
@@ -72,9 +65,10 @@ export type AutoSectorName =
  * `ticker` is the KIS 6-digit code (e.g. '005930' for Samsung Electronics).
  * `name` is the Korean display name; `market` distinguishes KOSPI vs KOSDAQ.
  *
- * `autoSector` is filled in by `StockService.list()` when a master_stocks
- * row exists for the ticker; otherwise omitted. Optional so callers that
- * construct Stock literals don't have to opt into the field.
+ * `autoSector` is filled in by `StockService.list()` from KIS official index
+ * industry codes when a master_stocks row has them; otherwise omitted/null.
+ * Optional so callers that construct Stock literals don't have to opt into the
+ * field.
  */
 export interface Stock {
   ticker: string;
