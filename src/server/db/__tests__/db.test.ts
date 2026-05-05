@@ -83,6 +83,7 @@ describe('migrateUp', () => {
       'favorites',
       'master_stock_meta',
       'master_stocks',
+      'price_candles',
       'price_snapshots',
       'schema_version',
       'sectors',
@@ -96,7 +97,7 @@ describe('migrateUp', () => {
   it('records the migration version in schema_version', () => {
     migrateUp(db);
     const row = db.prepare<[], { version: number }>('SELECT MAX(version) AS version FROM schema_version').get();
-    expect(row?.version).toBe(3);
+    expect(row?.version).toBe(4);
   });
 
   it('master_stocks has B1a classification columns after migrate', () => {

@@ -44,11 +44,14 @@ import {
   enableRealtimeSession,
   getFavorites,
   getRealtimeStatus,
+  getServerSettings,
   getStocks,
   getThemesWithStocks,
   importKisWatchlist,
+  updateServerSettings,
   type KisWatchlistImportResult,
   type RealtimeStatusPayload,
+  type ServerRuntimeSettings,
 } from '../lib/api-client';
 import {
   REALTIME_ADVANCED_RECHECK_LABEL,
@@ -232,6 +235,12 @@ type RealtimeOperatorPhase =
   | { kind: 'success'; message: string }
   | { kind: 'error'; message: string };
 
+type ServerSettingsPhase =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'success'; message: string }
+  | { kind: 'error'; message: string };
+
 function ConnectionTab() {
   const [status, setStatus] = useState<CredentialStatus | null>(null);
   const [realtimeStatus, setRealtimeStatus] =
@@ -240,6 +249,10 @@ function ConnectionTab() {
   const [importPhase, setImportPhase] = useState<ImportPhase>({ kind: 'idle' });
   const [operatorPhase, setOperatorPhase] =
     useState<RealtimeOperatorPhase>({ kind: 'idle' });
+  const [serverSettings, setServerSettings] =
+    useState<ServerRuntimeSettings | null>(null);
+  const [serverSettingsPhase, setServerSettingsPhase] =
+    useState<ServerSettingsPhase>({ kind: 'idle' });
   const [selectedCap, setSelectedCap] = useState<SessionRealtimeCap>(1);
   const [operatorConfirmed, setOperatorConfirmed] = useState(false);
 
@@ -282,6 +295,27 @@ function ConnectionTab() {
 
   async function reloadRealtimeStatus(): Promise<void> {
     setRealtimeStatus(await getRealtimeStatus());
+  }
+
+  async function saveServerSettings(
+    patch: Partial<ServerRuntimeSettings>,
+  ): Promise<void> {
+    if (serverSettings === null) return;
+    const next = { ...serverSettings, ...patch };
+    setServerSettingsPhase({ kind: 'saving' });
+    try {
+      const saved = await updateServerSettings(next);
+      setServerSettings(saved);
+      setServerSettingsPhase({
+        kind: 'success',
+        message: '백필 설정을 저장했습니다',
+      });
+    } catch (err) {
+      setServerSettingsPhase({
+        kind: 'error',
+        message: operatorErrorMessage(err),
+      });
+    }
   }
 
   useEffect(() => {
@@ -381,8 +415,10 @@ function ConnectionTab() {
           errorMessage: data.error?.message ?? null,
         });
         const realtime = await getRealtimeStatus();
+        const settings = await getServerSettings();
         if (!cancelled) {
           setRealtimeStatus(realtime);
+          setServerSettings(settings);
         }
       } catch (err) {
         if ((err as { name?: string } | null)?.name === 'AbortError') return;
@@ -481,6 +517,17 @@ function ConnectionTab() {
         onConfirmChange={setOperatorConfirmed}
         onEnable={() => void handleSessionEnable()}
         onDisable={() => void handleSessionDisable()}
+      />
+      <BackgroundBackfillControl
+        settings={serverSettings}
+        phase={serverSettingsPhase}
+        runtimeStarted={status.runtime === 'started'}
+        onEnabledChange={(enabled) => {
+          void saveServerSettings({ backgroundDailyBackfillEnabled: enabled });
+        }}
+        onRangeChange={(range) => {
+          void saveServerSettings({ backgroundDailyBackfillRange: range });
+        }}
       />
 
       {status.errorMessage !== null && (
@@ -928,6 +975,118 @@ function RealtimeSessionControl({
           {phase.kind === 'error' && (
             <div style={operatorMessageStyle('var(--accent-soft)')}>{phase.message}</div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BackgroundBackfillControl({
+  settings,
+  phase,
+  runtimeStarted,
+  onEnabledChange,
+  onRangeChange,
+}: {
+  settings: ServerRuntimeSettings | null;
+  phase: ServerSettingsPhase;
+  runtimeStarted: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  onRangeChange: (range: ServerRuntimeSettings['backgroundDailyBackfillRange']) => void;
+}) {
+  const saving = phase.kind === 'saving';
+  const enabled = settings?.backgroundDailyBackfillEnabled === true;
+  const range = settings?.backgroundDailyBackfillRange ?? '3m';
+  return (
+    <div
+      style={{
+        marginTop: 18,
+        padding: '12px 14px',
+        background: 'var(--bg-tint)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 800,
+          color: 'var(--text-primary)',
+          marginBottom: 8,
+        }}
+      >
+        과거 일봉 백필
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        기본값은 OFF입니다. 켜면 장후/주말에만 즐겨찾기 종목부터 낮은 우선순위로 KIS 일봉을 채웁니다.
+        <br />
+        장중 07:55~20:05에는 서버 정책으로 자동 실행되지 않습니다.
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          marginTop: 12,
+        }}
+      >
+        <Toggle
+          value={enabled}
+          disabled={settings === null || saving}
+          label={enabled ? '자동 백필 켜짐' : '자동 백필 꺼짐'}
+          onChange={onEnabledChange}
+        />
+        <label
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11,
+            fontWeight: 700,
+            color: 'var(--text-muted)',
+          }}
+        >
+          범위
+          <select
+            value={range}
+            disabled={settings === null || saving}
+            onChange={(e) =>
+              onRangeChange(
+                e.currentTarget.value as ServerRuntimeSettings['backgroundDailyBackfillRange'],
+              )
+            }
+            style={{
+              height: 30,
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '0 8px',
+            }}
+          >
+            <option value="1m">1m</option>
+            <option value="3m">3m</option>
+            <option value="6m">6m</option>
+            <option value="1y">1y</option>
+          </select>
+        </label>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {runtimeStarted
+            ? 'KIS 런타임 준비됨'
+            : 'KIS 런타임 시작 후 실행 가능'}
+        </span>
+      </div>
+      {phase.kind === 'success' && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-up)' }}>
+          {phase.message}
+        </div>
+      )}
+      {phase.kind === 'error' && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-down)' }}>
+          저장 실패: {phase.message}
         </div>
       )}
     </div>

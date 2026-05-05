@@ -26,6 +26,18 @@ export interface StockViewModel {
   changeAbs: number | null;
   /** Raw share volume from KIS (`acml_vol`). Display via `fmtVolMan`. */
   volume: number;
+  /** Current-session accumulated trade value in KRW, when available. */
+  accumulatedTradeValue?: number | null;
+  openPrice?: number | null;
+  highPrice?: number | null;
+  lowPrice?: number | null;
+  marketCapKrw?: number | null;
+  per?: number | null;
+  pbr?: number | null;
+  foreignOwnershipRate?: number | null;
+  week52High?: number | null;
+  week52Low?: number | null;
+  dividendYield?: number | null;
   /** Current cumulative volume divided by same-session/time-bucket baseline. */
   volumeSurgeRatio?: number | null;
   /** Baseline readiness for honest surge-ratio display. */

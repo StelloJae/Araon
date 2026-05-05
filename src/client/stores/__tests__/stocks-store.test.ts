@@ -118,6 +118,62 @@ describe('useStocksStore.removeStock', () => {
     expect(next.flashSeeds['000660']).toBe(1);
   });
 
+  it('keeps REST detail fields when a later live tick omits them', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+    store.setCatalog([STOCK_A]);
+
+    store.applyPriceUpdate({
+      ...PRICE_A,
+      openPrice: 78_000,
+      highPrice: 79_500,
+      lowPrice: 77_600,
+      accumulatedTradeValue: 78_900_000_000,
+      marketCapKrw: 471_000_000_000_000,
+      per: 14.2,
+      pbr: 1.1,
+      foreignOwnershipRate: 52.4,
+      week52High: 92_000,
+      week52Low: 61_000,
+      dividendYield: null,
+    });
+
+    store.applyPriceUpdate({
+      ...PRICE_A,
+      price: 79_100,
+      changeRate: 1.7,
+      changeAbs: 1_400,
+      volume: 1_050_000,
+      updatedAt: '2026-04-27T01:00:01.000Z',
+      source: 'ws-integrated',
+    });
+
+    const quote = useStocksStore.getState().quotes['005930'];
+    expect(quote).toMatchObject({
+      price: 79_100,
+      openPrice: 78_000,
+      highPrice: 79_500,
+      lowPrice: 77_600,
+      marketCapKrw: 471_000_000_000_000,
+      foreignOwnershipRate: 52.4,
+      week52High: 92_000,
+      week52Low: 61_000,
+    });
+    expect(
+      buildStockVM(
+        '005930',
+        useStocksStore.getState().catalog,
+        useStocksStore.getState().quotes,
+      ),
+    ).toMatchObject({
+      openPrice: 78_000,
+      highPrice: 79_500,
+      lowPrice: 77_600,
+      marketCapKrw: 471_000_000_000_000,
+      foreignOwnershipRate: 52.4,
+    });
+  });
+
   it('does not flash for timestamp-only or volume-only updates', async () => {
     const { useStocksStore } = await import('../stocks-store');
     const store = useStocksStore.getState();

@@ -42,6 +42,8 @@ export const settingsSchema = z.object({
   rateLimiterMode: z.enum(['live', 'paper']),
   websocketEnabled: z.boolean().default(false),
   applyTicksToPriceStore: z.boolean().default(false),
+  backgroundDailyBackfillEnabled: z.boolean().default(false),
+  backgroundDailyBackfillRange: z.enum(['1m', '3m', '6m', '1y']).default('3m'),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -54,6 +56,8 @@ export const DEFAULT_SETTINGS: Settings = {
   rateLimiterMode: 'paper',
   websocketEnabled: false,
   applyTicksToPriceStore: false,
+  backgroundDailyBackfillEnabled: false,
+  backgroundDailyBackfillRange: '3m',
 };
 
 export type SettingsListener = (settings: Settings) => void;

@@ -149,6 +149,21 @@ export interface Price {
   changeRate: number;
   changeAbs?: number | null;
   volume: number;
+  /** Current-session accumulated trade value in KRW, when provided by REST quote. */
+  accumulatedTradeValue?: number | null;
+  /** Current-session open/high/low in KRW, when provided by REST quote. */
+  openPrice?: number | null;
+  highPrice?: number | null;
+  lowPrice?: number | null;
+  /** HTS market cap normalized to KRW. KIS `hts_avls` is reported in 억원. */
+  marketCapKrw?: number | null;
+  per?: number | null;
+  pbr?: number | null;
+  /** HTS foreign ownership/exhaustion rate, percent. */
+  foreignOwnershipRate?: number | null;
+  week52High?: number | null;
+  week52Low?: number | null;
+  dividendYield?: number | null;
   volumeSurgeRatio?: number | null;
   volumeBaselineStatus?: VolumeBaselineStatus;
   updatedAt: string;
@@ -166,6 +181,88 @@ export interface PriceSnapshot {
   changeRate: number;
   volume: number;
   snapshotAt: string;
+}
+
+export type CandleInterval =
+  | '1m'
+  | '3m'
+  | '5m'
+  | '10m'
+  | '15m'
+  | '30m'
+  | '1h'
+  | '2h'
+  | '4h'
+  | '6h'
+  | '12h'
+  | '1D'
+  | '1W'
+  | '1M';
+
+export type StoredCandleInterval = '1m' | '1d';
+
+export type CandleSession = 'pre' | 'regular' | 'after' | 'unknown';
+
+export type PriceCandleSource = PriceSource | 'kis-daily' | 'mixed';
+
+/**
+ * Local-only OHLCV candle derived from observed Price updates.
+ * This is not historical backfill: it represents candles Araon collected
+ * while the app was running.
+ */
+export interface PriceCandle {
+  ticker: string;
+  interval: CandleInterval | StoredCandleInterval;
+  bucketAt: string;
+  session: CandleSession;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  sampleCount: number;
+  source: PriceCandleSource | null;
+  isPartial: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CandleApiItem {
+  time: number;
+  bucketAt: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  sampleCount: number;
+  source?: PriceCandleSource | null;
+  isPartial: boolean;
+}
+
+export interface CandleApiCoverage {
+  from: string | null;
+  to: string | null;
+  localOnly: boolean;
+  backfilled: boolean;
+  sourceMix: PriceCandleSource[];
+  partialCount: number;
+  gapCount: number;
+  oldestBucketAt: string | null;
+  newestBucketAt: string | null;
+}
+
+export interface CandleApiStatus {
+  state: 'empty' | 'collecting' | 'partial' | 'ready';
+  message: string;
+}
+
+export interface CandleApiResponse {
+  ticker: string;
+  interval: CandleInterval;
+  items: CandleApiItem[];
+  coverage: CandleApiCoverage;
+  status: CandleApiStatus;
 }
 
 // === SSE event schema =====================================================

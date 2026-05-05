@@ -9,7 +9,16 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { Stock, Sector, Tag, Favorite, PriceSnapshot, Tier } from '@shared/types.js';
+import type {
+  Stock,
+  Sector,
+  Tag,
+  Favorite,
+  PriceSnapshot,
+  PriceCandle,
+  StoredCandleInterval,
+  Tier,
+} from '@shared/types.js';
 import { CHUNKED_INSERT_SIZE } from '@shared/constants.js';
 import { createChildLogger } from '@shared/logger.js';
 
@@ -101,6 +110,23 @@ interface PriceSnapshotRow {
   snapshot_at: string;
 }
 
+interface PriceCandleRow {
+  ticker: string;
+  interval: string;
+  bucket_at: string;
+  session: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  sample_count: number;
+  source: string | null;
+  is_partial: number;
+  created_at: string;
+  updated_at: string;
+}
+
 interface MasterStockRow {
   ticker: string;
   name: string;
@@ -186,6 +212,25 @@ function rowToSnapshot(row: PriceSnapshotRow): PriceSnapshot {
     changeRate: row.change_rate,
     volume: row.volume,
     snapshotAt: row.snapshot_at,
+  };
+}
+
+function rowToPriceCandle(row: PriceCandleRow): PriceCandle {
+  return {
+    ticker: row.ticker,
+    interval: row.interval as PriceCandle['interval'],
+    bucketAt: row.bucket_at,
+    session: row.session as PriceCandle['session'],
+    open: row.open,
+    high: row.high,
+    low: row.low,
+    close: row.close,
+    volume: row.volume,
+    sampleCount: row.sample_count,
+    source: row.source as PriceCandle['source'],
+    isPartial: row.is_partial === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -664,5 +709,154 @@ export class PriceSnapshotRepository {
       .prepare('DELETE FROM price_snapshots WHERE snapshot_at < ?')
       .run(cutoffIso);
     return result.changes;
+  }
+}
+
+export interface PriceCandleListQuery {
+  ticker: string;
+  interval?: StoredCandleInterval;
+  from?: string | undefined;
+  to?: string | undefined;
+  limit?: number | undefined;
+}
+
+export class PriceCandleRepository {
+  private readonly db: Database.Database;
+
+  constructor(db: Database.Database) {
+    this.db = db;
+  }
+
+  async bulkUpsertCandles(candles: readonly PriceCandle[]): Promise<void> {
+    if (candles.length === 0) return;
+
+    const tracked = this.trackedTickerSet(candles.map((c) => c.ticker));
+    const rows = candles
+      .filter((c) => tracked.has(c.ticker))
+      .map((c) => ({
+        ticker: c.ticker,
+        interval: c.interval,
+        bucket_at: c.bucketAt,
+        session: c.session,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: Math.max(0, Math.trunc(c.volume)),
+        sample_count: Math.max(0, Math.trunc(c.sampleCount)),
+        source: c.source,
+        is_partial: c.isPartial ? 1 : 0,
+        created_at: c.createdAt,
+        updated_at: c.updatedAt,
+      }));
+
+    if (rows.length === 0) return;
+
+    const stmt = this.db.prepare(
+      `INSERT INTO price_candles (
+         ticker, interval, bucket_at, session,
+         open, high, low, close, volume, sample_count,
+         source, is_partial, created_at, updated_at
+       )
+       VALUES (
+         @ticker, @interval, @bucket_at, @session,
+         @open, @high, @low, @close, @volume, @sample_count,
+         @source, @is_partial, @created_at, @updated_at
+       )
+       ON CONFLICT(ticker, interval, bucket_at) DO UPDATE SET
+         session = excluded.session,
+         open = excluded.open,
+         high = excluded.high,
+         low = excluded.low,
+         close = excluded.close,
+         volume = excluded.volume,
+         sample_count = excluded.sample_count,
+         source = excluded.source,
+         is_partial = excluded.is_partial,
+         updated_at = excluded.updated_at`,
+    );
+
+    log.debug({ count: rows.length }, 'bulk-upsert price_candles');
+    await chunkedInsert(this.db, stmt, rows);
+  }
+
+  upsertCandle(candle: PriceCandle): Promise<void> {
+    return this.bulkUpsertCandles([candle]);
+  }
+
+  countExistingCandles(candles: readonly PriceCandle[]): number {
+    if (candles.length === 0) return 0;
+    const stmt = this.db.prepare<[string, string, string], { exists: 1 }>(
+      `SELECT 1 AS exists
+       FROM price_candles
+       WHERE ticker = ? AND interval = ? AND bucket_at = ?
+       LIMIT 1`,
+    );
+    let count = 0;
+    for (const candle of candles) {
+      const row = stmt.get(candle.ticker, candle.interval, candle.bucketAt);
+      if (row !== undefined) count += 1;
+    }
+    return count;
+  }
+
+  listCandles(query: PriceCandleListQuery): PriceCandle[] {
+    const interval = query.interval ?? '1m';
+    const limit = Math.max(1, Math.min(query.limit ?? 5_000, 20_000));
+    const where = ['ticker = @ticker', 'interval = @interval'];
+    const params: Record<string, unknown> = {
+      ticker: query.ticker,
+      interval,
+      limit,
+    };
+
+    if (query.from !== undefined) {
+      where.push('bucket_at >= @from');
+      params.from = query.from;
+    }
+    if (query.to !== undefined) {
+      where.push('bucket_at <= @to');
+      params.to = query.to;
+    }
+
+    const rows = this.db
+      .prepare<Record<string, unknown>, PriceCandleRow>(
+        `SELECT ticker, interval, bucket_at, session,
+                open, high, low, close, volume, sample_count,
+                source, is_partial, created_at, updated_at
+         FROM price_candles
+         WHERE ${where.join(' AND ')}
+         ORDER BY bucket_at ASC
+         LIMIT @limit`,
+      )
+      .all(params);
+
+    return rows.map(rowToPriceCandle);
+  }
+
+  pruneOldCandles(now = new Date()): number {
+    const oneMinuteCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const oneDayCutoff = new Date(now.getTime() - 2 * 365 * 24 * 60 * 60 * 1000).toISOString();
+    const result = this.db
+      .prepare(
+        `DELETE FROM price_candles
+         WHERE (interval = '1m' AND bucket_at < @oneMinuteCutoff)
+            OR (interval = '1d' AND bucket_at < @oneDayCutoff)`,
+      )
+      .run({ oneMinuteCutoff, oneDayCutoff });
+    return result.changes;
+  }
+
+  private trackedTickerSet(tickers: readonly string[]): Set<string> {
+    const unique = Array.from(new Set(tickers));
+    if (unique.length === 0) return new Set();
+    const placeholders = unique.map((_, i) => `@t${i}`).join(', ');
+    const params = Object.fromEntries(unique.map((t, i) => [`t${i}`, t]));
+    const rows = this.db
+      .prepare<Record<string, string>, { ticker: string }>(
+        `SELECT ticker FROM stocks WHERE ticker IN (${placeholders})`,
+      )
+      .all(params);
+    return new Set(rows.map((r) => r.ticker));
   }
 }

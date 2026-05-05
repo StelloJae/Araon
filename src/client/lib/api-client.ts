@@ -7,7 +7,12 @@
  * Bootstrap and useSSE can map status codes to friendly Korean copy.
  */
 
-import type { Favorite, Stock } from '@shared/types';
+import type {
+  CandleApiResponse,
+  CandleInterval,
+  Favorite,
+  Stock,
+} from '@shared/types';
 import type { SessionRealtimeCap } from './realtime-session-control';
 
 interface SuccessEnvelope<T> {
@@ -77,6 +82,79 @@ export async function removeStock(ticker: string): Promise<void> {
     const text = await res.text();
     throw new ApiError(res.status, `${res.status} ${res.statusText}`, text);
   }
+}
+
+export type CandleRange = '1d' | '1w' | '1m' | '3m' | '6m' | '1y';
+export type DailyBackfillRange = '1m' | '3m' | '6m' | '1y';
+
+export interface ServerRuntimeSettings {
+  pollingCycleDelayMs: number;
+  pollingMaxInFlight: number;
+  pollingMinStartGapMs: number;
+  pollingStartJitterMs: number;
+  rateLimiterMode: 'live' | 'paper';
+  websocketEnabled: boolean;
+  applyTicksToPriceStore: boolean;
+  backgroundDailyBackfillEnabled: boolean;
+  backgroundDailyBackfillRange: DailyBackfillRange;
+}
+
+export async function getStockCandles(
+  ticker: string,
+  options: {
+    interval: CandleInterval;
+    range: CandleRange;
+  },
+): Promise<CandleApiResponse> {
+  const params = new URLSearchParams({
+    interval: options.interval,
+    range: options.range,
+  });
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles?${params.toString()}`);
+  return unwrap<CandleApiResponse>(res);
+}
+
+export async function backfillStockCandles(
+  ticker: string,
+  options: {
+    interval: '1d';
+    range: DailyBackfillRange;
+  },
+): Promise<{
+  ticker: string;
+  requested: number;
+  inserted: number;
+  updated: number;
+  source: 'kis-daily';
+}> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles/backfill`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options),
+  });
+  return unwrap<{
+    ticker: string;
+    requested: number;
+    inserted: number;
+    updated: number;
+    source: 'kis-daily';
+  }>(res);
+}
+
+export async function getServerSettings(): Promise<ServerRuntimeSettings> {
+  const res = await fetch('/settings');
+  return unwrap<ServerRuntimeSettings>(res);
+}
+
+export async function updateServerSettings(
+  settings: ServerRuntimeSettings,
+): Promise<ServerRuntimeSettings> {
+  const res = await fetch('/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  return unwrap<ServerRuntimeSettings>(res);
 }
 
 // === Themes (sector catalog) ==============================================

@@ -319,6 +319,7 @@ export function App() {
           stock={detailStock}
           allStocks={allStockVMs}
           isFavorite={favorites.has(detailStock.code)}
+          marketStatus={marketStatus}
           onClose={closeDetail}
           onNavigate={openDetail}
           onToggleFav={(code) => void onToggleFav(code)}

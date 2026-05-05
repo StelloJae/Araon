@@ -33,6 +33,24 @@ export const kisInquirePriceOutputSchema = z.object({
   prdy_ctrt: numericString,
   /** 누적 거래량 */
   acml_vol: numericString,
+  /** 누적 거래 대금 */
+  acml_tr_pbmn: numericString,
+  /** 주식 시가 / 고가 / 저가 */
+  stck_oprc: numericString,
+  stck_hgpr: numericString,
+  stck_lwpr: numericString,
+  /** HTS 시가총액 — KIS reports this in 억원. */
+  hts_avls: numericString,
+  /** Fundamental quote fields included in KIS 현재가 시세 responses. */
+  per: numericString,
+  pbr: numericString,
+  /** HTS 외국인 소진율 (%) */
+  hts_frgn_ehrt: numericString,
+  /** 52주 최고 / 최저 */
+  w52_hgpr: numericString,
+  w52_lwpr: numericString,
+  /** Optional dividend-yield aliases. Often absent on 현재가 시세. */
+  dvd_yld: numericString,
 }).passthrough();  // 다른 KIS 필드는 무시
 
 export type KisInquirePriceOutput = z.infer<typeof kisInquirePriceOutputSchema>;
@@ -75,6 +93,17 @@ export function mapKisInquirePriceToPrice(ticker: string, raw: unknown): Price {
     changeRate: toFiniteNumber(out['prdy_ctrt' as keyof typeof out], 0),
     changeAbs: toOptionalSignedNumber(out['prdy_vrss' as keyof typeof out]),
     volume: toFiniteNumber(out['acml_vol' as keyof typeof out], 0),
+    accumulatedTradeValue: toOptionalNumber(out['acml_tr_pbmn' as keyof typeof out]),
+    openPrice: toOptionalNumber(out['stck_oprc' as keyof typeof out]),
+    highPrice: toOptionalNumber(out['stck_hgpr' as keyof typeof out]),
+    lowPrice: toOptionalNumber(out['stck_lwpr' as keyof typeof out]),
+    marketCapKrw: toMarketCapKrw(out['hts_avls' as keyof typeof out]),
+    per: toOptionalNumber(out['per' as keyof typeof out]),
+    pbr: toOptionalNumber(out['pbr' as keyof typeof out]),
+    foreignOwnershipRate: toOptionalNumber(out['hts_frgn_ehrt' as keyof typeof out]),
+    week52High: toOptionalNumber(out['w52_hgpr' as keyof typeof out]),
+    week52Low: toOptionalNumber(out['w52_lwpr' as keyof typeof out]),
+    dividendYield: toOptionalNumber(out['dvd_yld' as keyof typeof out]),
     updatedAt: new Date().toISOString(),
     isSnapshot: false,
   };
@@ -95,4 +124,15 @@ function toOptionalSignedNumber(v: unknown): number | null {
   if (v === undefined || v === null || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function toOptionalNumber(v: unknown): number | null {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toMarketCapKrw(v: unknown): number | null {
+  const eok = toOptionalNumber(v);
+  return eok === null ? null : eok * 100_000_000;
 }

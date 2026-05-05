@@ -3,10 +3,10 @@
  *
  * Honest-data policy:
  *   - Real values shown: 종목명, 코드, 시장, 즐겨찾기, 현재가, 등락률,
- *     전일대비, 거래량, 업데이트 시각, 스냅샷 여부.
- *   - "연동 예정" placeholders for fields that need backend data we don't
- *     have yet: 시가/고가/저가, 시가총액, PER, PBR, 외인보유, 52주 최고/최저,
- *     평균거래량, 배당, 뉴스/공시.
+ *     전일대비, 거래량, 업데이트 시각, 스냅샷 여부, REST quote detail
+ *     fields when present.
+ *   - Unsupported values are shown as "미제공" or "기준선 수집 중", not
+ *     fabricated. 뉴스/공시는 still explicitly 연동 예정.
  *   - Chart: rendered from `usePriceHistoryStore` only — no synthetic
  *     intraday. With <2 points, shows a "데이터 수집 중" placeholder.
  *
@@ -19,7 +19,7 @@
  * stops propagation and only toggles favorite.
  */
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   fmtAbs,
   fmtClock,
@@ -29,6 +29,10 @@ import {
   krColor,
 } from '../lib/format';
 import { CloseIcon, StarIcon } from '../lib/icons';
+import {
+  buildSignalExplanation,
+  type SignalSurgeInput,
+} from '../lib/signal-explainer';
 import { buildSparklineGeometry } from '../lib/sparkline';
 import {
   MIN_POINTS_FOR_SPARKLINE,
@@ -40,13 +44,20 @@ import {
   describeSectorSource,
   type EffectiveSector,
 } from '../lib/effective-sector';
+import type { MarketStatus } from '@shared/types';
+import { useSurgeStore } from '../stores/surge-store';
+import { SignalReasonList } from './SignalReasonList';
+import { StockCandleChart } from './StockCandleChart';
 
 const PENDING_LABEL = '연동 예정';
+const UNAVAILABLE_LABEL = '미제공';
+const COLLECTING_LABEL = '기준선 수집 중';
 
 interface StockDetailModalProps {
   stock: StockViewModel;
   allStocks: ReadonlyArray<StockViewModel>;
   isFavorite: boolean;
+  marketStatus: MarketStatus;
   onClose: () => void;
   onNavigate: (code: string) => void;
   onToggleFav: (code: string) => void;
@@ -57,12 +68,17 @@ export function StockDetailModal({
   stock,
   allStocks,
   isFavorite,
+  marketStatus,
   onClose,
   onNavigate,
   onToggleFav,
   onUntrack,
 }: StockDetailModalProps) {
+  const [activeTab, setActiveTab] = useState<'realtime' | 'chart'>('realtime');
   const history = usePriceHistoryStore((s) => selectHistory(s, stock.code));
+  const activeSurge = useSurgeStore(
+    (s) => s.feed.find((entry) => entry.code === stock.code) ?? null,
+  );
 
   // ESC close + ←/→ navigate. Single registration tied to the focused
   // stock's code so the closure always sees the current ticker index.
@@ -96,6 +112,29 @@ export function StockDetailModal({
     const d = new Date(stock.updatedAt);
     return Number.isNaN(d.getTime()) ? null : d;
   }, [stock.updatedAt]);
+  const signalSurge = useMemo<SignalSurgeInput | null>(() => {
+    if (activeSurge === null) return null;
+    return {
+      isLive: true,
+      signalType: activeSurge.signalType,
+      momentumPct: activeSurge.momentumPct,
+      momentumWindow: activeSurge.momentumWindow,
+      dailyChangePct: activeSurge.dailyChangePct,
+      volumeSurgeRatio: activeSurge.volumeSurgeRatio,
+      volumeBaselineStatus: activeSurge.volumeBaselineStatus,
+    };
+  }, [activeSurge]);
+  const explanation = useMemo(
+    () =>
+      buildSignalExplanation({
+        stock,
+        allStocks,
+        isFavorite,
+        surgeItem: signalSurge,
+        marketStatus,
+      }),
+    [stock, allStocks, isFavorite, signalSurge, marketStatus],
+  );
 
   return (
     <div
@@ -141,22 +180,39 @@ export function StockDetailModal({
 
         <div style={{ overflowY: 'auto', padding: '18px 22px 22px' }}>
           <div
+            role="tablist"
+            aria-label="종목 상세 탭"
             style={{
               display: 'flex',
-              gap: 14,
+              gap: 12,
               alignItems: 'center',
-              marginBottom: 10,
+              marginBottom: 12,
               flexWrap: 'wrap',
             }}
           >
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-              실시간 가격 추이
+            <div
+              style={{
+                display: 'inline-flex',
+                gap: 4,
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: 3,
+                background: 'var(--bg-tint)',
+              }}
+            >
+              <DetailTab
+                active={activeTab === 'realtime'}
+                onClick={() => setActiveTab('realtime')}
+              >
+                실시간
+              </DetailTab>
+              <DetailTab
+                active={activeTab === 'chart'}
+                onClick={() => setActiveTab('chart')}
+              >
+                차트
+              </DetailTab>
             </div>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {history.length === 0
-                ? '아직 수신된 가격 업데이트가 없습니다'
-                : `${history.length}개 포인트 · 세션 누적`}
-            </span>
             <div style={{ flex: 1 }} />
             <span
               style={{
@@ -173,9 +229,51 @@ export function StockDetailModal({
             </span>
           </div>
 
-          <ChartArea history={history} positive={stock.changePct >= 0} />
+          {activeTab === 'realtime' ? (
+            <ChartArea history={history} positive={stock.changePct >= 0} />
+          ) : (
+            <StockCandleChart ticker={stock.code} />
+          )}
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 14,
+              alignItems: 'center',
+              marginTop: 18,
+              marginBottom: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+              실시간 가격 추이
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {history.length === 0
+                ? '아직 수신된 가격 업데이트가 없습니다'
+                : `${history.length}개 포인트 · 세션 누적`}
+            </span>
+          </div>
 
           <MetricsGrid stock={stock} lastUpdated={lastUpdated} />
+
+          {activeTab === 'realtime' && (
+            <>
+              <div style={{ marginTop: 18 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                    marginBottom: 8,
+                  }}
+                >
+                  관찰 근거
+                </div>
+                <SignalReasonList explanation={explanation} mode="list" />
+              </div>
+            </>
+          )}
 
           <div style={{ marginTop: 18 }}>
             <div
@@ -207,6 +305,38 @@ export function StockDetailModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function DetailTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        border: 'none',
+        borderRadius: 8,
+        background: active ? 'var(--bg-card)' : 'transparent',
+        color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+        fontSize: 12,
+        fontWeight: 800,
+        padding: '7px 14px',
+        cursor: 'pointer',
+        boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -524,42 +654,56 @@ interface MetricsGridProps {
 }
 
 function MetricsGrid({ stock, lastUpdated }: MetricsGridProps) {
-  const realMetrics: Array<{ label: string; value: string; title?: string }> = [
+  const metrics: Array<{
+    label: string;
+    value: string;
+    pending: boolean;
+    title?: string | undefined;
+  }> = [
     {
       label: '거래량',
       value: stock.volume > 0 ? fmtVolMan(stock.volume) : PENDING_LABEL,
+      pending: stock.volume <= 0,
     },
     {
       label: '업데이트',
       value: lastUpdated !== null ? fmtClock(lastUpdated) : PENDING_LABEL,
+      pending: lastUpdated === null,
     },
     {
       label: '시장',
       value: stock.market,
+      pending: false,
     },
     {
       label: '데이터',
       value: stock.isSnapshot ? 'SNAPSHOT' : 'LIVE',
+      pending: false,
     },
     {
       label: '섹터',
       value: formatSectorMetricValue(stock.effectiveSector),
+      pending: false,
       title: describeSectorSource(stock.effectiveSector.source),
     },
-  ];
-
-  const pendingMetrics: string[] = [
-    '시가',
-    '고가',
-    '저가',
-    '시가총액',
-    'PER',
-    'PBR',
-    '외인 보유',
-    '52주 최고',
-    '52주 최저',
-    '평균거래량',
-    '배당수익률',
+    makeOptionalMetric('시가', formatOptionalPrice(stock.openPrice)),
+    makeOptionalMetric('고가', formatOptionalPrice(stock.highPrice)),
+    makeOptionalMetric('저가', formatOptionalPrice(stock.lowPrice)),
+    makeOptionalMetric('시가총액', formatOptionalKrw(stock.marketCapKrw)),
+    makeOptionalMetric('PER', formatOptionalMultiple(stock.per)),
+    makeOptionalMetric('PBR', formatOptionalMultiple(stock.pbr)),
+    makeOptionalMetric('외인 보유', formatOptionalPercent(stock.foreignOwnershipRate)),
+    makeOptionalMetric('52주 최고', formatOptionalPrice(stock.week52High)),
+    makeOptionalMetric('52주 최저', formatOptionalPrice(stock.week52Low)),
+    makeOptionalMetric(
+      '평균거래량',
+      formatVolumeBaselineMetric(
+        stock.volumeSurgeRatio ?? null,
+        stock.volumeBaselineStatus ?? 'unavailable',
+      ),
+      '동일 세션·동일 시간대 누적 거래량 기준선 상태',
+    ),
+    makeOptionalMetric('배당수익률', formatOptionalPercent(stock.dividendYield)),
   ];
 
   return (
@@ -574,17 +718,14 @@ function MetricsGrid({ stock, lastUpdated }: MetricsGridProps) {
         overflow: 'hidden',
       }}
     >
-      {realMetrics.map((m) => (
+      {metrics.map((m) => (
         <Metric
           key={m.label}
           label={m.label}
           value={m.value}
-          pending={false}
+          pending={m.pending}
           title={m.title}
         />
-      ))}
-      {pendingMetrics.map((label) => (
-        <Metric key={label} label={label} value={PENDING_LABEL} pending />
       ))}
     </div>
   );
@@ -593,6 +734,66 @@ function MetricsGrid({ stock, lastUpdated }: MetricsGridProps) {
 function formatSectorMetricValue(eff: EffectiveSector): string {
   if (eff.source === 'kis-industry') return `${eff.name} · KIS 공식`;
   return eff.name;
+}
+
+function makeOptionalMetric(
+  label: string,
+  value: string | null,
+  title?: string,
+): { label: string; value: string; pending: boolean; title?: string | undefined } {
+  return {
+    label,
+    value: value ?? UNAVAILABLE_LABEL,
+    pending: value === null,
+    title,
+  };
+}
+
+function formatOptionalPrice(value: number | null | undefined): string | null {
+  return value !== undefined && value !== null && value > 0
+    ? fmtPrice(value)
+    : null;
+}
+
+function formatOptionalKrw(value: number | null | undefined): string | null {
+  return value !== undefined && value !== null && value > 0
+    ? formatKrwCompact(value)
+    : null;
+}
+
+function formatOptionalMultiple(value: number | null | undefined): string | null {
+  return value !== undefined && value !== null && Number.isFinite(value)
+    ? `${value.toFixed(2)}x`
+    : null;
+}
+
+function formatOptionalPercent(value: number | null | undefined): string | null {
+  return value !== undefined && value !== null && Number.isFinite(value)
+    ? `${value.toFixed(2)}%`
+    : null;
+}
+
+function formatVolumeBaselineMetric(
+  ratio: number | null,
+  status: 'collecting' | 'ready' | 'unavailable',
+): string | null {
+  if (ratio !== null && ratio >= 0) return `기준선 대비 ${ratio.toFixed(1)}x`;
+  if (status === 'collecting') return COLLECTING_LABEL;
+  return null;
+}
+
+function formatKrwCompact(value: number): string {
+  if (value >= 1_000_000_000_000) {
+    return `${trimTrailingZero(value / 1_000_000_000_000)}조`;
+  }
+  if (value >= 100_000_000) {
+    return `${trimTrailingZero(value / 100_000_000)}억`;
+  }
+  return `${fmtPrice(value)}원`;
+}
+
+function trimTrailingZero(value: number): string {
+  return value.toFixed(1).replace(/\.0$/, '');
 }
 
 interface MetricProps {

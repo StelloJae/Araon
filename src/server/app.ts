@@ -9,6 +9,7 @@ import {
   SectorRepository,
   FavoriteRepository,
   PriceSnapshotRepository,
+  PriceCandleRepository,
   MasterStockRepository,
   MasterStockMetaRepository,
 } from './db/repositories.js';
@@ -16,7 +17,11 @@ import { createSettingsStore } from './settings-store.js';
 import { createFileCredentialStore } from './credential-store.js';
 import { PriceStore } from './price/price-store.js';
 import { SnapshotStore } from './price/snapshot-store.js';
+import { createCandleAggregator, createCandleRecorder } from './price/candle-aggregator.js';
+import { createBackgroundDailyBackfillScheduler } from './chart/background-backfill-scheduler.js';
+import { createDailyBackfillService } from './chart/daily-backfill-service.js';
 import { createKisRuntimeRef, defaultActuallyStart } from './bootstrap-kis.js';
+import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
 import { createStockService } from './services/stock-service.js';
 import { createMasterStockService } from './services/master-stock-service.js';
 import { createCredentialSetupMutex, credentialsRoutes } from './routes/credentials.js';
@@ -84,6 +89,11 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const priceStore = new PriceStore();
   const snapshotRepo = new PriceSnapshotRepository(db);
   const snapshotStore = new SnapshotStore(snapshotRepo);
+  const candleRepo = new PriceCandleRepository(db);
+  const candleRecorder = createCandleRecorder({
+    priceStore,
+    aggregator: createCandleAggregator({ writer: candleRepo }),
+  });
   const stockRepo = new StockRepository(db);
   const sectorRepo = new SectorRepository(db);
   const favoriteRepo = new FavoriteRepository(db);
@@ -98,6 +108,34 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     { db, settingsStore, credentialStore, priceStore, snapshotStore, stockRepo, favoriteRepo },
     { actuallyStart: defaultActuallyStart },
   );
+  const dailyBackfillService = createDailyBackfillService({
+    repo: candleRepo,
+    fetchDailyCandles: async ({ ticker, fromYmd, toYmd, now }) => {
+      const state = runtimeRef.get();
+      if (state.status !== 'started') {
+        throw new Error('KIS runtime is not started');
+      }
+      return fetchKisDailyCandles({
+        ticker,
+        fromYmd,
+        toYmd,
+        restClient: state.runtime.restClient,
+        now: () => now,
+      });
+    },
+  });
+  const backgroundBackfill = createBackgroundDailyBackfillScheduler({
+    settingsStore,
+    stockRepo,
+    favoriteRepo,
+    dailyBackfillService,
+    marketPhase: () => {
+      const state = runtimeRef.get();
+      return state.status === 'started'
+        ? state.runtime.marketHoursScheduler.getCurrentPhase()
+        : 'unknown';
+    },
+  });
 
   const setupMutex = createCredentialSetupMutex();
   const app = Fastify({ loggerInstance: logger });
@@ -105,6 +143,8 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(credentialsRoutes, { credentialStore, settingsStore, runtimeRef, setupMutex });
   await app.register(stockRoutes, {
     service: createStockService({ stockRepo, sectorRepo, masterRepo }),
+    candleRepo,
+    dailyBackfillService,
   });
   await app.register(themeRoutes, { stockRepo });
   await app.register(settingsRoutes, { settingsStore });
@@ -139,7 +179,9 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       shutdownHandle.unregister();
       shutdownHandle = null;
     }
+    backgroundBackfill.stop();
     await runtimeRef.stop();
+    await candleRecorder.stop();
     await snapshotStore.saveAll(priceStore);
     runCheckpoint();
     await app.close();
@@ -149,7 +191,12 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   if (options.registerProcessShutdown === true) {
     shutdownHandle = registerGracefulShutdown({
       ws: { disconnectAll: async () => { await runtimeRef.stop(); } },
-      snapshot: snapshotStore,
+      snapshot: {
+        saveAll: async (store) => {
+          await candleRecorder.stop();
+          await snapshotStore.saveAll(store);
+        },
+      },
       store: priceStore,
       checkpoint: runCheckpoint,
     });
@@ -168,6 +215,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
 
       // Background master refresh — never blocks listen / dashboard render.
       void masterService.maybeRefreshOnBoot();
+      backgroundBackfill.start();
 
       return { ...server, host, port, url };
     },

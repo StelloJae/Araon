@@ -64,6 +64,7 @@
     "better-sqlite3": "^12.9.0",
     "fastify": "^5.0.0",
     "iconv-lite": "^0.7.2",
+    "lightweight-charts": "^5.2.0",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
     "react": "^19.0.0",

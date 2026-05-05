@@ -101,6 +101,44 @@ describe('mapKisInquirePriceToPrice', () => {
     const price = mapKisInquirePriceToPrice(TICKER, raw);
     expect(price.ticker).toBe(TICKER);
   });
+
+  it('parses optional detail fields without inventing missing fundamentals', () => {
+    const raw = {
+      output: {
+        stck_prpr: '219500',
+        prdy_vrss: '-5000',
+        prdy_ctrt: '-2.23',
+        acml_vol: '19165257',
+        acml_tr_pbmn: '4210000000000',
+        stck_oprc: '222000',
+        stck_hgpr: '222500',
+        stck_lwpr: '218000',
+        hts_avls: '4710000',
+        per: '18.42',
+        pbr: '1.33',
+        hts_frgn_ehrt: '52.50',
+        w52_hgpr: '258000',
+        w52_lwpr: '171000',
+        dvd_yld: '',
+      },
+    };
+
+    const price = mapKisInquirePriceToPrice(TICKER, raw);
+
+    expect(price).toMatchObject({
+      openPrice: 222000,
+      highPrice: 222500,
+      lowPrice: 218000,
+      accumulatedTradeValue: 4210000000000,
+      marketCapKrw: 471_000_000_000_000,
+      per: 18.42,
+      pbr: 1.33,
+      foreignOwnershipRate: 52.5,
+      week52High: 258000,
+      week52Low: 171000,
+    });
+    expect(price.dividendYield).toBeNull();
+  });
 });
 
 describe('kisInquirePriceOutputSchema', () => {

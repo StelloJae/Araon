@@ -139,12 +139,13 @@ export const useStocksStore = create<StocksState>((set) => ({
 
   applyPriceUpdate: (price) =>
     set((state) => {
+      const merged = carryForwardQuoteDetails(state.quotes[price.ticker], price);
       const shouldFlash = isPriceRelevantChange(
         state.quotes[price.ticker],
-        price,
+        merged,
       );
       return {
-        quotes: { ...state.quotes, [price.ticker]: price },
+        quotes: { ...state.quotes, [price.ticker]: merged },
         ...(shouldFlash
           ? {
               flashSeeds: {
@@ -163,10 +164,11 @@ export const useStocksStore = create<StocksState>((set) => ({
       let flashSeeds: Record<string, number> | null = null;
       const updateCounts: Record<string, number> = {};
       for (const price of prices) {
-        if (isPriceRelevantChange(quotes[price.ticker], price)) {
+        const merged = carryForwardQuoteDetails(quotes[price.ticker], price);
+        if (isPriceRelevantChange(quotes[price.ticker], merged)) {
           updateCounts[price.ticker] = (updateCounts[price.ticker] ?? 0) + 1;
         }
-        quotes[price.ticker] = price;
+        quotes[price.ticker] = merged;
       }
       for (const [ticker, count] of Object.entries(updateCounts)) {
         flashSeeds ??= { ...state.flashSeeds };
@@ -219,6 +221,17 @@ export function buildStockVM(
     changePct: q?.changeRate ?? 0,
     changeAbs: q?.changeAbs ?? null,
     volume: q?.volume ?? 0,
+    accumulatedTradeValue: q?.accumulatedTradeValue ?? null,
+    openPrice: q?.openPrice ?? null,
+    highPrice: q?.highPrice ?? null,
+    lowPrice: q?.lowPrice ?? null,
+    marketCapKrw: q?.marketCapKrw ?? null,
+    per: q?.per ?? null,
+    pbr: q?.pbr ?? null,
+    foreignOwnershipRate: q?.foreignOwnershipRate ?? null,
+    week52High: q?.week52High ?? null,
+    week52Low: q?.week52Low ?? null,
+    dividendYield: q?.dividendYield ?? null,
     volumeSurgeRatio: q?.volumeSurgeRatio ?? null,
     volumeBaselineStatus:
       q?.volumeBaselineStatus ?? (q !== undefined && q.volume > 0 ? 'collecting' : 'unavailable'),
@@ -227,6 +240,32 @@ export function buildStockVM(
     sectorId: meta.sectorId,
     effectiveSector: getEffectiveSector(meta.manualSectorName, meta.autoSector),
   };
+}
+
+const QUOTE_DETAIL_KEYS = [
+  'accumulatedTradeValue',
+  'openPrice',
+  'highPrice',
+  'lowPrice',
+  'marketCapKrw',
+  'per',
+  'pbr',
+  'foreignOwnershipRate',
+  'week52High',
+  'week52Low',
+  'dividendYield',
+] as const satisfies ReadonlyArray<keyof Price>;
+
+function carryForwardQuoteDetails(previous: Price | undefined, next: Price): Price {
+  if (previous === undefined) return next;
+  let merged: Price = next;
+  for (const key of QUOTE_DETAIL_KEYS) {
+    if (key in next) continue;
+    const value = previous[key];
+    if (value === undefined) continue;
+    merged = { ...merged, [key]: value };
+  }
+  return merged;
 }
 
 function isPriceRelevantChange(previous: Price | undefined, next: Price): boolean {
