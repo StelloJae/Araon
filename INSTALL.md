@@ -9,7 +9,7 @@ credentials and does not provide trading or order-entry features.
 
 - Node.js 20 or newer
 - npm
-- A KIS OpenAPI app key/app secret pair
+- A live KIS OpenAPI app key/app secret pair
 - A browser that can open `http://127.0.0.1:5173`
 
 ## Run The npm Beta
@@ -33,9 +33,11 @@ araon
 The CLI starts Araon on `127.0.0.1`, serves the built browser UI, and opens the
 default browser. Node.js 20 or newer is required.
 
-On first run, expect the KIS credentials setup screen. Araon needs your own KIS
-OpenAPI app key/app secret pair, but it is still a read-only monitoring tool: it
-does not place orders or execute trades.
+On first run, expect the KIS credentials setup screen. Araon needs your own live
+KIS OpenAPI app key/app secret pair, but it is still a read-only monitoring
+tool: it does not place orders or execute trades. The public setup flow is
+intentionally live-only because KIS paper credentials are materially more
+rate-limited and can differ by endpoint.
 
 ## Install From Source
 
@@ -202,8 +204,8 @@ validated.
 
 1. Start Araon with `npx @stellojae/araon@beta`, `araon`, or a desktop beta app.
 2. Open the printed localhost URL if your browser did not open automatically.
-3. Use the local setup screen to enter your KIS app key/app secret.
-4. Select the KIS mode that matches your credentials.
+3. Use the local setup screen to enter your live KIS app key/app secret.
+4. Confirm the read-only setup copy, then let Araon start the KIS runtime.
 5. Add stocks from the dashboard or master catalog.
 6. Use Settings to inspect runtime status.
 
@@ -290,8 +292,9 @@ credentials, settings, SQLite state, and local volume baseline history.
 
 ### KIS credential invalid
 
-Confirm that the app key/app secret pair matches your selected paper/live mode.
-KIS paper and live environments can behave differently by endpoint.
+Confirm that you entered a live KIS app key/app secret pair. Araon's public
+first-run setup no longer exposes paper mode because KIS paper credentials are
+materially more rate-limited and can differ by endpoint.
 
 ### Approval key or WebSocket failure
 

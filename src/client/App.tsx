@@ -23,7 +23,7 @@
  *   3. user toggles fav → optimistic store update + POST/DELETE /favorites
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useSSE } from './hooks/useSSE';
 import { useMarketStore } from './stores/market-store';
 import { useStocksStore, buildStockVM } from './stores/stocks-store';
@@ -40,7 +40,6 @@ import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
 import { StockDetailModal } from './components/StockDetailModal';
 import { ToastStack } from './components/ToastStack';
-import { DevMarketSimulator } from './components/DevMarketSimulator';
 import { useAlertEvaluator } from './hooks/useAlertEvaluator';
 import { useMasterStore } from './stores/master-store';
 import { fmtClock } from './lib/format';
@@ -56,6 +55,15 @@ import {
 import type { StockViewModel } from './lib/view-models';
 
 const REALTIME_CAP = 40;
+const IS_DEV_BUILD =
+  (import.meta as ImportMeta & { env: { DEV?: boolean } }).env.DEV === true;
+const DevMarketSimulator = IS_DEV_BUILD
+  ? lazy(() =>
+      import('./components/DevMarketSimulator').then((mod) => ({
+        default: mod.DevMarketSimulator,
+      })),
+    )
+  : null;
 
 export function App() {
   useSSE();
@@ -327,7 +335,11 @@ export function App() {
         />
       )}
       {settingsOpen && <SettingsModal onClose={closeSettings} />}
-      <DevMarketSimulator />
+      {DevMarketSimulator !== null && (
+        <Suspense fallback={null}>
+          <DevMarketSimulator />
+        </Suspense>
+      )}
       <ToastStack onPickStock={openDetail} />
     </div>
   );

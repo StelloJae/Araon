@@ -71,9 +71,9 @@ intentionally.
 
 - Node.js 20 or newer
 - npm
-- A KIS OpenAPI app key/app secret pair
-  - live or paper credentials may be used
-  - paper support can differ by endpoint
+- A live KIS OpenAPI app key/app secret pair
+  - Araon's first-run UI is intentionally live-only
+  - KIS paper credentials are materially more rate-limited and can differ by endpoint
 
 ## Quick Start
 
@@ -210,8 +210,8 @@ especially because Araon uses the native `better-sqlite3` dependency.
 
 1. Run `npx @stellojae/araon@beta` or the installed `araon` command.
 2. Open the printed localhost URL if the browser did not open automatically.
-3. Enter your KIS credentials in the local setup screen.
-4. Choose paper/live mode according to your KIS app configuration.
+3. Enter your live KIS OpenAPI credentials in the local setup screen.
+4. Confirm the read-only setup copy, then let Araon start the KIS runtime.
 5. Add or favorite stocks from the dashboard.
 6. Enable realtime from Settings only when you are ready.
 
@@ -307,8 +307,9 @@ Vite client: http://127.0.0.1:5173
 
 ### KIS credentials are rejected
 
-Check that your KIS app key/app secret pair matches the selected paper/live mode.
-KIS endpoints can differ between paper and live accounts.
+Check that you entered a live KIS app key/app secret pair. Araon's public
+first-run setup no longer exposes paper mode because KIS paper credentials are
+materially more rate-limited and can differ by endpoint.
 
 ### Realtime is enabled but no ticks arrive
 
