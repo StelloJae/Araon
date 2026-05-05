@@ -40,6 +40,7 @@ import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
 import { StockDetailModal } from './components/StockDetailModal';
 import { ToastStack } from './components/ToastStack';
+import { DevMarketSimulator } from './components/DevMarketSimulator';
 import { useAlertEvaluator } from './hooks/useAlertEvaluator';
 import { useMasterStore } from './stores/master-store';
 import { fmtClock } from './lib/format';
@@ -325,6 +326,7 @@ export function App() {
         />
       )}
       {settingsOpen && <SettingsModal onClose={closeSettings} />}
+      <DevMarketSimulator />
       <ToastStack onPickStock={openDetail} />
     </div>
   );
