@@ -6,15 +6,15 @@
 
 localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fastify 5 + React 19 + KIS OpenAPI(한국투자증권). REST polling은 fallback으로 계속 유지하고, H0UNCNT0 통합 WebSocket 실시간 시세는 **이 사용자 로컬 설정에서 상시 활성**(`data/settings.json`: `websocketEnabled=true`, `applyTicksToPriceStore=true`). Fresh install / 코드 기본값은 안전하게 OFF(`false`/`false`).
 
-## 2. 현재 상태 (2026-04-29 NXT 상시 운영 전환 시점)
+## 2. 현재 상태 (2026-05-05 historical daily backfill + opt-in background 시점)
 
 - **위치**: `/Users/stello/korean-stock-follower`
 - **브랜치**: `main`
 - **Functional NXT baseline**: `11ad916` (`chore(ws): NXT2b — record redacted approval key probe metadata`)
 - **NXT3 시작 기준**: `de857c7` (`Keep runtime state out of repository status`)
-- **테스트**: 51 files / **469 tests pass** (`npm test`)
+- **테스트**: 80 files / **618 tests pass** (`npm test`)
 - **타입체크**: server + client `tsc --noEmit` clean
-- **빌드**: `vite build` 318.26 kB / gzip 95.30 kB
+- **빌드**: main client chunk 355.43 kB / gzip 106.89 kB + lazy Lightweight Charts chunk 168.07 kB / gzip 53.99 kB
 - **마스터 종목**: `master_stocks` 4341행 (KOSPI + KOSDAQ + KRX flags)
 - **라이브 가격 수집**: REST polling cycle ~14초 / 105 tracked stocks / errorCount 0 / p95 274ms / 8.09 effectiveRps (이전 라이브 검증)
 - **NXT3 라이브 WS smoke**: live approval key 1회 / WS 연결 1회 / `H0UNCNT0` + `005930` subscribe 1회 / tick frame 2개 수집 / parser 통과 / priceStore·SSE 반영 0회
@@ -46,6 +46,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **NXT final push cap20/cap40 controlled smoke**: SettingsModal UI 버튼 경로만 사용(route-level fallback 0회) / cap20은 20개 후보에서 parsed 252 / applied 100 / stale 151 / session-limit ignored 1 / `endReason=applied_tick_limit_reached` / cap40은 40개 후보에서 parsed 528 / applied 200 / stale 328 / session-limit ignored 0 / `endReason=applied_tick_limit_reached` / cap40 초과 구독 0회 / active subscriptions 0 / gates false / original favorites ticker set 복구 / persisted settings 변경 0회. cap1/3/5/10/20/40 controlled UI session hard-limit 검증 완료
 - **NXT always-on promotion**: 이 사용자 로컬 `data/settings.json`을 `websocketEnabled=true`, `applyTicksToPriceStore=true`로 전환 / fresh install 코드 기본값은 `false`/`false` 유지 / warmup 시 current realtime favorite assignment를 즉시 connect+subscribe / tier-manager runtime cap은 `WS_MAX_SUBSCRIPTIONS=40` / integrated market scheduler는 07:55 warmup, 08:00~20:00 open, 20:05 shutdown / REST polling fallback 유지 / StockRow와 SurgeBlock에 실제 누적 거래량 표시 복구. 거래량 배수는 기준선 없이는 표시하지 않음
 - **Araon runtime acceptance**: 2026-04-29 11:10~11:41 KST / always-on `H0UNCNT0` cap40 30.3분 관찰 / parsed +141,132 / applied +78,540 / stale +62,592 / reconnect 0 / parseError 0 / applyError 0 / SSE 10초 sample에서 `price-update` 510건 / 임시 favorite overlay 원복 / 이 사용자 로컬 settings true 유지, fresh install default false. Browser acceptance 중 cap40 tick burst로 client render loop 발견 후 `lastUpdate` throttle + client price update batching으로 수정. 거래량 배수 P1은 same-session/time-bucket baseline foundation 구현, 기준선 부족 시 `기준선 수집 중`. favicon 404는 Araon favicon으로 해결
+- **Persisted candle + historical daily backfill MVP**: `price_candles` SQLite table 추가 / canonical stored interval은 local `1m` + KIS daily `1d` / 3m~12h는 1m candle에서 재집계 / 1D·1W·1M은 1d candle에서 KST 기준 재집계 / daily backfill range는 `1m/3m/6m/1y`, 긴 범위는 100일 이하 창으로 pagination / Settings 연결 탭에서 background daily backfill opt-in 가능하지만 fresh install default는 OFF / StockDetailModal `차트` 탭은 TradingView Lightweight Charts로 표시 / raw tick 저장·historical minute backfill·자동 background default ON·가짜 과거 차트 없음
 
 ### NXT 시리즈 진행도
 
@@ -98,6 +99,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 ### 3.2 합성 금융 데이터 절대 금지
 - 모르는 값은 **"연동 예정"** italic으로 표시하거나 disabled.
 - sparkline은 실제 SSE history (`usePriceHistoryStore`)만, ≥2 point 있어야 그림.
+- persisted chart는 `price_candles`의 local `1m` candle과 manual KIS `1d` candle만 표시한다. 데이터가 없으면 "차트 데이터 수집 중"으로 표시하고 synthetic candle/backfill을 만들지 않는다.
 - surge/alert는 **crossing 순간만** 발동 (continuous "조건 만족 중" 폭주 금지).
 - `closed`/`snapshot`/`pre-open` 시 alert / sparkline 차단.
 
@@ -162,10 +164,19 @@ npm run dev:client &
 | `src/server/realtime/tier-manager.ts` | favorites-only realtime tiering + NXT9a `previewRealtimeCandidates()` cap20 후보/shortage preview. non-favorites는 preview에서도 WS 후보가 아님 |
 | `src/server/routes/runtime.ts` | runtime operator routes: `GET /runtime/realtime/status`, `POST /runtime/realtime/session-enable`, `POST /runtime/realtime/session-disable`, raw key/token/account 미노출 |
 | `src/server/polling/polling-scheduler.ts` | REST polling. cycle ~14초 |
+| `src/server/price/candle-aggregator.ts` | PriceStore `price-update` → local 1m candle in-memory aggregation + 5초 batch flush. snapshot restore는 candle 생성 금지 |
+| `src/server/price/candle-aggregation.ts` | KST bucket boundary + 1m → 3m/5m/10m/15m/30m/1h/2h/4h/6h/12h, 1d → 1D/1W/1M aggregation helper |
+| `src/server/chart/backfill-policy.ts` | historical backfill 허용 시간 정책. 평일 07:55~20:05 KST 차단, 20:05 이후/주말 허용 |
+| `src/server/chart/daily-backfill-service.ts` | KIS daily candle backfill service. `1d` rows만 저장, `1m/3m/6m/1y` range를 100일 이하 창으로 분할 |
+| `src/server/chart/background-backfill-scheduler.ts` | OFF-by-default background daily backfill scheduler. 장후/주말만 실행, favorites 우선, small batch |
+| `src/server/kis/kis-daily-chart.ts` | KIS 국내주식기간별시세 daily mapper/client. 테스트는 mock transport만 사용 |
+| `src/server/db/migrations/004-price-candles.sql` | `price_candles` schema: local `1m` + manual KIS `1d`. raw tick table 아님 |
+| `src/server/routes/stocks.ts` | `GET /stocks/:ticker/candles` + `POST /stocks/:ticker/candles/backfill`. backfill은 장중 차단 |
+| `src/client/components/StockCandleChart.tsx` | StockDetailModal `차트` 탭용 Lightweight Charts renderer. 1W/1M interval + 6m/1y range + manual daily backfill control 포함 |
 | `src/server/sse/sse-manager.ts` | SSE — price-update / market-status / heartbeat 이벤트 |
 | `src/shared/kis-constraints.ts` | KIS rate limit / hosts / TR_ID / WS / token 상수 단일 진실 출처 |
 | `src/shared/logger.ts` | pino + redact paths |
-| `src/server/settings-store.ts` | runtime 설정. fresh install default는 `websocketEnabled=false`, `applyTicksToPriceStore=false`; 이 사용자 로컬 `data/settings.json`만 true/true. operator rollback은 둘 다 false로 저장 가능 |
+| `src/server/settings-store.ts` | runtime 설정. fresh install default는 `websocketEnabled=false`, `applyTicksToPriceStore=false`, `backgroundDailyBackfillEnabled=false`; 이 사용자 로컬 `data/settings.json`만 WS true/true일 수 있음. operator rollback은 WS 둘 다 false로 저장 가능 |
 | `scripts/probe-kis-approval.mts` | NXT2b 1회 probe 패턴 — 다음 라이브 검증 시 패턴 재사용 |
 | `scripts/probe-kis-ws-one-ticker.mts` | NXT3 1종목 WS smoke probe — raw secret 미출력, frame 1~3개 후 disconnect |
 | `scripts/probe-kis-ws-apply-one-ticker.mts` | NXT4b isolated apply smoke — probe-local PriceStore/SSE spy만 사용, production runtime 반영 금지 |
