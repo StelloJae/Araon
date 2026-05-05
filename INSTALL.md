@@ -159,8 +159,8 @@ installation.
 Download the beta installers from the GitHub Release page:
 
 ```txt
-macOS:   Araon-1.1.0-beta.6-arm64.dmg
-Windows: Araon.Setup.1.1.0-beta.6.exe
+macOS:   Araon-1.1.0-beta.7-arm64.dmg
+Windows: Araon.Setup.1.1.0-beta.7.exe
 ```
 
 Build a local unpacked desktop app:
