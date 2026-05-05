@@ -24,7 +24,6 @@ const ERROR_MESSAGES: Record<number, string> = {
 export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
   const [appKey, setAppKey] = useState('');
   const [appSecret, setAppSecret] = useState('');
-  const [isPaper, setIsPaper] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +35,7 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
       const res = await fetch('/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appKey, appSecret, isPaper }),
+        body: JSON.stringify({ appKey, appSecret, isPaper: false }),
       });
       if (res.ok) {
         onSuccess();
@@ -93,8 +92,8 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
       </div>
 
       <div style={hintStyle}>
-        모의투자 키는 모의투자 모드로, 실전투자 키는 체크를 해제하고 등록하세요.
-        REST 폴링은 실시간을 켜지 않아도 fallback으로 유지됩니다.
+        실전 OpenAPI 키를 등록하면 REST 폴링이 기본 경로로 유지되고,
+        실시간 시세는 별도 설정에서 켤 수 있습니다.
       </div>
 
       <Field label="App Key">
@@ -121,25 +120,6 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
           style={inputStyle}
         />
       </Field>
-
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 20,
-          fontSize: 13,
-          fontWeight: 500,
-          color: 'var(--text-secondary)',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={isPaper}
-          onChange={(e) => setIsPaper(e.target.checked)}
-        />
-        <span>모의투자 계정 (권장 — 실전 전 테스트용)</span>
-      </label>
 
       {error !== null && (
         <div
