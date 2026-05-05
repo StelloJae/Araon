@@ -17,6 +17,9 @@ live probe is recorded in `docs/research/kis-daily-backfill-live-probe.md`,
 and the product-surface UI acceptance is recorded in
 `docs/research/candle-chart-ui-acceptance.md`.
 
+The closeout decision for this track is recorded in
+`docs/research/chart-backfill-mvp-closeout.md`.
+
 ## Policy
 
 Backfill is allowed only outside the integrated trading window:
@@ -178,6 +181,7 @@ No synthetic chart data is generated.
 
 - automatic background queue default ON
 - full watchlist backfill
+- background queue live operation
 - historical minute backfill
 - raw tick persistence
 - KIS weekly/monthly as canonical storage

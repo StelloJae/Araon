@@ -18,6 +18,9 @@ Historical daily backfill was added as a follow-up MVP in
 daily-only, OFF by default for automatic background runs, and blocked during
 market hours.
 
+The combined chart/backfill MVP closeout is recorded in
+`docs/research/chart-backfill-mvp-closeout.md`.
+
 ## Storage Policy
 
 `price_candles` stores observed local candles and manual daily backfill candles:
@@ -148,6 +151,7 @@ This combined candle/backfill MVP does not include:
 - raw tick persistence
 - KIS historical minute backfill
 - automatic background backfill default ON
+- background backfill live operation
 - automatic 1w/1m/3m completeness
 - historical volume baseline bootstrap
 

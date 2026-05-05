@@ -48,6 +48,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Araon runtime acceptance**: 2026-04-29 11:10~11:41 KST / always-on `H0UNCNT0` cap40 30.3분 관찰 / parsed +141,132 / applied +78,540 / stale +62,592 / reconnect 0 / parseError 0 / applyError 0 / SSE 10초 sample에서 `price-update` 510건 / 임시 favorite overlay 원복 / 이 사용자 로컬 settings true 유지, fresh install default false. Browser acceptance 중 cap40 tick burst로 client render loop 발견 후 `lastUpdate` throttle + client price update batching으로 수정. 거래량 배수 P1은 same-session/time-bucket baseline foundation 구현, 기준선 부족 시 `기준선 수집 중`. favicon 404는 Araon favicon으로 해결
 - **Persisted candle + historical daily backfill MVP**: `price_candles` SQLite table 추가 / canonical stored interval은 local `1m` + KIS daily `1d` / 3m~12h는 1m candle에서 재집계 / 1D·1W·1M은 1d candle에서 KST 기준 재집계 / daily backfill range는 `1m/3m/6m/1y`, 긴 범위는 100일 이하 창으로 pagination / Settings 연결 탭에서 background daily backfill opt-in 가능하지만 fresh install default는 OFF / StockDetailModal `차트` 탭은 TradingView Lightweight Charts로 표시 / raw tick 저장·historical minute backfill·자동 background default ON·가짜 과거 차트 없음
 - **Candle chart UI acceptance**: 005930에 저장된 `kis-daily` 20개 candle이 StockDetailModal `차트` 탭에서 `1D · 1m` 20 candles로 표시됨 / `1W · 3m` 5 candles, `1M · 1y` 2 candles 확인 / 빈 종목은 "차트 데이터 수집 중" 유지 / daily 계열 봉 선택 시 너무 짧은 range는 자동 보정(`1D→1m`, `1W→3m`, `1M→1y`) / UI acceptance 중 추가 KIS historical call·WebSocket/cap/background queue 0회
+- **Chart/backfill MVP closeout**: 단일 종목 KIS daily live probe + StockDetailModal UI acceptance 기준으로 제품 체크포인트 닫힘 / full watchlist backfill·background live operation·historical minute backfill은 계속 HOLD / background live backfill은 별도 승인 없이 켜지 말 것 / 누락 차트 데이터 합성 금지
 
 ### NXT 시리즈 진행도
 
@@ -101,6 +102,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - 모르는 값은 **"연동 예정"** italic으로 표시하거나 disabled.
 - sparkline은 실제 SSE history (`usePriceHistoryStore`)만, ≥2 point 있어야 그림.
 - persisted chart는 `price_candles`의 local `1m` candle과 manual KIS `1d` candle만 표시한다. 데이터가 없으면 "차트 데이터 수집 중"으로 표시하고 synthetic candle/backfill을 만들지 않는다.
+- chart/backfill MVP closeout 이후에도 full watchlist/background/minute historical backfill은 별도 승인 전까지 HOLD다. background live backfill을 임의로 켜지 않는다.
 - surge/alert는 **crossing 순간만** 발동 (continuous "조건 만족 중" 폭주 금지).
 - `closed`/`snapshot`/`pre-open` 시 alert / sparkline 차단.
 
