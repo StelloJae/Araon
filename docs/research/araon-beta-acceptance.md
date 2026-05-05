@@ -6,8 +6,9 @@ Date: 2026-05-06 04:30 KST
 
 ```txt
 verdict: CONDITIONAL GO
-head: 16324fa
-package: @stellojae/araon@1.1.0-beta.7
+accepted_code_head: 16324fa
+acceptance_report_commit: 69d8fce
+package_version_during_acceptance: @stellojae/araon@1.1.0-beta.7
 scope: beta user-flow acceptance, not a new feature pass
 ```
 
@@ -19,6 +20,33 @@ during an open market window.
 This pass did not execute a new KIS live probe, WebSocket cap test, background
 backfill, full watchlist backfill, historical minute backfill, npm release, tag,
 Electron build, or Docker work.
+
+## Release Consistency Note
+
+Follow-up audit on 2026-05-06 found that the accepted local code and the
+published npm/GitHub beta were not the same product build.
+
+```txt
+accepted_code_head: 16324fa
+acceptance_report_commit: 69d8fce
+published_npm_beta: 1.1.0-beta.7
+published_beta_tag: v1.1.0-beta.7
+published_beta_tag_head: 148d61f
+published_beta_contains_chart_backfill: false
+prepared_next_beta: 1.1.0-beta.8
+```
+
+So this document is a `local main` acceptance record for the product state that
+includes signal explanations, persisted candles, chart/backfill, and the
+acceptance docs. It is not proof that users installing the already-published
+`@stellojae/araon@beta` package receive those post-beta.7 changes.
+
+Release action required:
+
+```txt
+v1.1.0-beta.8 release needed before this accepted product state is available
+through npm @beta or new GitHub prerelease assets.
+```
 
 ## Current Baseline
 
