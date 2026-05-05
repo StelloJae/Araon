@@ -31,6 +31,10 @@ import {
   aggregateSurgeView,
   type SurgeViewItem,
 } from '../lib/surge-aggregator';
+import {
+  buildSignalExplanation,
+  type SignalExplanation,
+} from '../lib/signal-explainer';
 import { formatVolumeSurgeRatio } from '@shared/volume-baseline';
 import {
   SURGE_ACTIVE_MS,
@@ -45,6 +49,8 @@ import {
 import { isMarketLive, isPreOpen } from '../lib/market-status';
 import type { StockViewModel } from '../lib/view-models';
 import type { MarketStatus } from '@shared/types';
+import { useWatchlistStore } from '../stores/watchlist-store';
+import { SignalReasonList } from './SignalReasonList';
 
 interface SurgeBlockProps {
   marketStatus: MarketStatus;
@@ -66,6 +72,7 @@ export function SurgeBlock({
   const filter = useSettingsStore((s) => s.settings.surgeFilter);
   const surgeThreshold = useSettingsStore((s) => s.settings.surgeThreshold);
   const updateSettings = useSettingsStore((s) => s.update);
+  const favorites = useWatchlistStore((s) => s.favorites);
 
   const preOpen = isPreOpen(marketStatus);
   const sessionLive = isMarketLive(marketStatus);
@@ -94,6 +101,12 @@ export function SurgeBlock({
       ),
     [feed, allStocks, filter, marketStatus, surgeThreshold, now],
   );
+
+  const stockByCode = useMemo(() => {
+    const out = new Map<string, StockViewModel>();
+    for (const stock of allStocks) out.set(stock.code, stock);
+    return out;
+  }, [allStocks]);
 
   // If the user picked '실시간' but the market is closed, fall back to a
   // friendly empty state instead of silently rendering nothing.
@@ -198,15 +211,29 @@ export function SurgeBlock({
         />
       ) : (
         <div style={{ overflowY: 'auto', minHeight: 0 }}>
-          {items.map((it, i) => (
-            <SurgeRow
-              key={`${it.code}-${it.ts ?? 'today'}`}
-              item={it}
-              now={now}
-              isFirst={i === 0}
-              onOpenDetail={onOpenDetail}
-            />
-          ))}
+          {items.map((it, i) => {
+            const stock = stockByCode.get(it.code);
+            const explanation =
+              stock !== undefined
+                ? buildSignalExplanation({
+                    stock,
+                    allStocks,
+                    isFavorite: favorites.has(it.code),
+                    surgeItem: it,
+                    marketStatus,
+                  })
+                : null;
+            return (
+              <SurgeRow
+                key={`${it.code}-${it.ts ?? 'today'}`}
+                item={it}
+                now={now}
+                isFirst={i === 0}
+                explanation={explanation}
+                onOpenDetail={onOpenDetail}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -375,10 +402,17 @@ interface SurgeRowProps {
   item: SurgeViewItem;
   now: number;
   isFirst: boolean;
+  explanation: SignalExplanation | null;
   onOpenDetail: (code: string) => void;
 }
 
-function SurgeRow({ item, now, isFirst, onOpenDetail }: SurgeRowProps) {
+export function SurgeRow({
+  item,
+  now,
+  isFirst,
+  explanation,
+  onOpenDetail,
+}: SurgeRowProps) {
   const hasLiveTs = item.isLive && item.ts !== null;
   const ageMs = hasLiveTs ? Math.max(0, now - (item.ts as number)) : 0;
   const ageSec = Math.floor(ageMs / 1_000);
@@ -484,6 +518,9 @@ function SurgeRow({ item, now, isFirst, onOpenDetail }: SurgeRowProps) {
         >
           {subLabel}
         </span>
+        {explanation !== null && (
+          <SignalReasonList explanation={explanation} mode="compact" />
+        )}
       </div>
       <div
         style={{
