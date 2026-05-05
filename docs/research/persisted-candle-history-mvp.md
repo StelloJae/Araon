@@ -111,6 +111,15 @@ interval=1m
 range=1d
 ```
 
+For daily and higher intervals, the UI avoids too-short first views by widening
+the selected range to a useful minimum:
+
+```txt
+1D -> 1m
+1W -> 3m
+1M -> 1y
+```
+
 If no local candles exist, the modal shows:
 
 ```txt

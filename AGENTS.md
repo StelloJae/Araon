@@ -6,15 +6,15 @@
 
 localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fastify 5 + React 19 + KIS OpenAPI(한국투자증권). REST polling은 fallback으로 계속 유지하고, H0UNCNT0 통합 WebSocket 실시간 시세는 **이 사용자 로컬 설정에서 상시 활성**(`data/settings.json`: `websocketEnabled=true`, `applyTicksToPriceStore=true`). Fresh install / 코드 기본값은 안전하게 OFF(`false`/`false`).
 
-## 2. 현재 상태 (2026-05-05 historical daily backfill + opt-in background 시점)
+## 2. 현재 상태 (2026-05-06 candle chart UI acceptance 시점)
 
 - **위치**: `/Users/stello/korean-stock-follower`
 - **브랜치**: `main`
 - **Functional NXT baseline**: `11ad916` (`chore(ws): NXT2b — record redacted approval key probe metadata`)
 - **NXT3 시작 기준**: `de857c7` (`Keep runtime state out of repository status`)
-- **테스트**: 80 files / **618 tests pass** (`npm test`)
+- **테스트**: 80 files / **619 tests pass** (`npm test`)
 - **타입체크**: server + client `tsc --noEmit` clean
-- **빌드**: main client chunk 355.43 kB / gzip 106.89 kB + lazy Lightweight Charts chunk 168.07 kB / gzip 53.99 kB
+- **빌드**: main client chunk 349.16 kB / gzip 104.65 kB + lazy Lightweight Charts chunk 168.07 kB / gzip 53.99 kB
 - **마스터 종목**: `master_stocks` 4341행 (KOSPI + KOSDAQ + KRX flags)
 - **라이브 가격 수집**: REST polling cycle ~14초 / 105 tracked stocks / errorCount 0 / p95 274ms / 8.09 effectiveRps (이전 라이브 검증)
 - **NXT3 라이브 WS smoke**: live approval key 1회 / WS 연결 1회 / `H0UNCNT0` + `005930` subscribe 1회 / tick frame 2개 수집 / parser 통과 / priceStore·SSE 반영 0회
@@ -47,6 +47,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **NXT always-on promotion**: 이 사용자 로컬 `data/settings.json`을 `websocketEnabled=true`, `applyTicksToPriceStore=true`로 전환 / fresh install 코드 기본값은 `false`/`false` 유지 / warmup 시 current realtime favorite assignment를 즉시 connect+subscribe / tier-manager runtime cap은 `WS_MAX_SUBSCRIPTIONS=40` / integrated market scheduler는 07:55 warmup, 08:00~20:00 open, 20:05 shutdown / REST polling fallback 유지 / StockRow와 SurgeBlock에 실제 누적 거래량 표시 복구. 거래량 배수는 기준선 없이는 표시하지 않음
 - **Araon runtime acceptance**: 2026-04-29 11:10~11:41 KST / always-on `H0UNCNT0` cap40 30.3분 관찰 / parsed +141,132 / applied +78,540 / stale +62,592 / reconnect 0 / parseError 0 / applyError 0 / SSE 10초 sample에서 `price-update` 510건 / 임시 favorite overlay 원복 / 이 사용자 로컬 settings true 유지, fresh install default false. Browser acceptance 중 cap40 tick burst로 client render loop 발견 후 `lastUpdate` throttle + client price update batching으로 수정. 거래량 배수 P1은 same-session/time-bucket baseline foundation 구현, 기준선 부족 시 `기준선 수집 중`. favicon 404는 Araon favicon으로 해결
 - **Persisted candle + historical daily backfill MVP**: `price_candles` SQLite table 추가 / canonical stored interval은 local `1m` + KIS daily `1d` / 3m~12h는 1m candle에서 재집계 / 1D·1W·1M은 1d candle에서 KST 기준 재집계 / daily backfill range는 `1m/3m/6m/1y`, 긴 범위는 100일 이하 창으로 pagination / Settings 연결 탭에서 background daily backfill opt-in 가능하지만 fresh install default는 OFF / StockDetailModal `차트` 탭은 TradingView Lightweight Charts로 표시 / raw tick 저장·historical minute backfill·자동 background default ON·가짜 과거 차트 없음
+- **Candle chart UI acceptance**: 005930에 저장된 `kis-daily` 20개 candle이 StockDetailModal `차트` 탭에서 `1D · 1m` 20 candles로 표시됨 / `1W · 3m` 5 candles, `1M · 1y` 2 candles 확인 / 빈 종목은 "차트 데이터 수집 중" 유지 / daily 계열 봉 선택 시 너무 짧은 range는 자동 보정(`1D→1m`, `1W→3m`, `1M→1y`) / UI acceptance 중 추가 KIS historical call·WebSocket/cap/background queue 0회
 
 ### NXT 시리즈 진행도
 
@@ -753,6 +754,17 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - local bug fix: `PriceCandleRepository.countExistingCandles()`의 `SELECT 1 AS exists`가 SQLite에서 syntax error를 내서 alias를 `existing`으로 변경하고 regression test 추가
 - report: `docs/research/kis-daily-backfill-live-probe.md`
 - 판단: manual daily historical backfill MVP는 단일 종목 live-probe verified. full watchlist/background/minute historical backfill은 미검증 후속
+
+### Candle chart UI acceptance 결과 (2026-05-06)
+- 대상: `005930` StockDetailModal `차트` 탭, local dashboard `http://127.0.0.1:5173/`
+- preflight DB: `source=kis-daily` 20개 daily candle, `2026-04-05T15:00:00.000Z`~`2026-05-03T15:00:00.000Z`
+- API 확인: `1D&range=1m` → 20 items, `coverage.backfilled=true`, `sourceMix=["kis-daily"]`, `status.state=ready`; `1W&range=3m` → 5 items; `1M&range=1y` → 2 items
+- UI 확인: 새로고침 후 005930 모달에서 `차트` → `1D` 선택 시 `1D · 1m`, 20 candles 표시. `1W · 3m` 5 candles, `1M · 1y` 2 candles 표시
+- UI 보정: daily 계열 봉을 선택했을 때 range가 너무 짧으면 `1D→1m`, `1W→3m`, `1M→1y`로 자동 확장
+- cleanup 확인: 모달 close 후 chart host/canvas 0개, interval 전환 후 console error/warning 0
+- 추가 KIS historical call / WebSocket session / cap smoke / background queue: 0회
+- report: `docs/research/candle-chart-ui-acceptance.md`
+- 판단: chart/backfill MVP는 단일 종목 live-probe + 제품 화면 표시까지 verified. full watchlist/background/minute historical backfill은 계속 HOLD
 
 ## 7. 더 깊은 핸드오프 dump
 

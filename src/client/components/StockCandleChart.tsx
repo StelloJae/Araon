@@ -115,7 +115,13 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
           label="봉"
           value={interval}
           values={INTERVALS}
-          onChange={(value) => setInterval(value as CandleInterval)}
+          onChange={(value) => {
+            const nextInterval = value as CandleInterval;
+            setInterval(nextInterval);
+            setRange((currentRange) =>
+              normalizeCandleRangeForInterval(nextInterval, currentRange),
+            );
+          }}
         />
         <SegmentedSelect
           label="범위"
@@ -154,6 +160,42 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
 
 function dailyInterval(interval: CandleInterval): boolean {
   return interval === '1D' || interval === '1W' || interval === '1M';
+}
+
+export function normalizeCandleRangeForInterval(
+  interval: CandleInterval,
+  range: CandleRange,
+): CandleRange {
+  const minimumRange = minimumRangeForInterval(interval);
+  if (minimumRange === null) return range;
+  return rangeRank(range) < rangeRank(minimumRange) ? minimumRange : range;
+}
+
+function minimumRangeForInterval(interval: CandleInterval): CandleRange | null {
+  switch (interval) {
+    case '1D':
+      return '1m';
+    case '1W':
+      return '3m';
+    case '1M':
+      return '1y';
+    case '1m':
+    case '3m':
+    case '5m':
+    case '10m':
+    case '15m':
+    case '30m':
+    case '1h':
+    case '2h':
+    case '4h':
+    case '6h':
+    case '12h':
+      return null;
+  }
+}
+
+function rangeRank(range: CandleRange): number {
+  return RANGES.indexOf(range);
 }
 
 function dailyBackfillRange(range: CandleRange): DailyBackfillRange {

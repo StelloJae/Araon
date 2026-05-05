@@ -2,7 +2,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { CandleChartView, ChartBackfillControl } from '../StockCandleChart';
+import {
+  CandleChartView,
+  ChartBackfillControl,
+  normalizeCandleRangeForInterval,
+} from '../StockCandleChart';
 
 describe('StockCandleChart', () => {
   it('renders an honest empty state without synthetic chart data', () => {
@@ -95,5 +99,13 @@ describe('StockCandleChart', () => {
 
     expect(html).toContain('1W');
     expect(html).toContain('data-testid="stock-candle-chart-host"');
+  });
+
+  it('widens too-short ranges for daily and higher intervals', () => {
+    expect(normalizeCandleRangeForInterval('1D', '1d')).toBe('1m');
+    expect(normalizeCandleRangeForInterval('1W', '1m')).toBe('3m');
+    expect(normalizeCandleRangeForInterval('1M', '6m')).toBe('1y');
+    expect(normalizeCandleRangeForInterval('1D', '3m')).toBe('3m');
+    expect(normalizeCandleRangeForInterval('5m', '1d')).toBe('1d');
   });
 });

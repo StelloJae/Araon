@@ -12,8 +12,10 @@ complete intraday history. The first historical source is KIS daily candles
 (`1d`). Intraday history remains local-only and is collected while Araon is
 running.
 
-Implementation tests use mocked transports by default. A later single-ticker
-live probe is recorded in `docs/research/kis-daily-backfill-live-probe.md`.
+Implementation tests use mocked transports by default. The later single-ticker
+live probe is recorded in `docs/research/kis-daily-backfill-live-probe.md`,
+and the product-surface UI acceptance is recorded in
+`docs/research/candle-chart-ui-acceptance.md`.
 
 ## Policy
 
