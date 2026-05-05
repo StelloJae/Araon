@@ -275,6 +275,7 @@ describe('GET /stocks/:ticker/candles', () => {
       '2026-05-05T00:00:00.000Z',
       '2026-05-05T00:01:00.000Z',
     ]);
+    expect(repo.countExistingCandles(rows)).toBe(2);
     expect(repo.listCandles({ ticker: '999999', interval: '1m' })).toEqual([]);
   });
 });

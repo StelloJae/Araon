@@ -741,6 +741,19 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/nxt9-cap20-cap40-live-smoke.md`
 - 판단: cap40까지 controlled, session-scoped UI smoke는 검증 완료. 이후 NXT always-on promotion에서 이 사용자 로컬 persisted 운영 설정은 `websocketEnabled=true`, `applyTicksToPriceStore=true`로 전환됐으며 REST polling fallback은 유지. Fresh install 코드 기본값은 false/false
 
+### KIS daily backfill live probe 결과 (2026-05-05)
+- 실행 시각: 2026-05-05 21:35 KST, 장후 20:05 이후
+- harness: 전체 서버 listen/auto-start 없이 `stockRoutes`만 route-level `app.inject`로 등록
+- target: `005930`, `interval=1d`, `range=1m`
+- live KIS daily chart REST 호출: 최종 성공 run 1회. 최초 run도 KIS 200을 받았으나 로컬 SQLite alias 버그로 저장 전 실패해 총 daily chart 호출은 2회
+- token issuance: 0회, 기존 persisted token 재사용
+- WebSocket connection / cap smoke / background queue: 0회
+- 저장 결과: `source=kis-daily`, 20개 inserted, `2026-04-05T15:00:00.000Z`~`2026-05-03T15:00:00.000Z`
+- chart API 확인: `GET /stocks/005930/candles?interval=1D&range=3m&limit=20000` → items 20, `coverage.backfilled=true`, `localOnly=false`, `sourceMix=["kis-daily"]`, `status.state=ready`
+- local bug fix: `PriceCandleRepository.countExistingCandles()`의 `SELECT 1 AS exists`가 SQLite에서 syntax error를 내서 alias를 `existing`으로 변경하고 regression test 추가
+- report: `docs/research/kis-daily-backfill-live-probe.md`
+- 판단: manual daily historical backfill MVP는 단일 종목 live-probe verified. full watchlist/background/minute historical backfill은 미검증 후속
+
 ## 7. 더 깊은 핸드오프 dump
 
 이 프로젝트의 전체 작업 히스토리, 보안 패턴 상세, NXT3 시작 가이드는 다음 wiki 페이지에 dump:

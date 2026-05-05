@@ -786,8 +786,8 @@ export class PriceCandleRepository {
 
   countExistingCandles(candles: readonly PriceCandle[]): number {
     if (candles.length === 0) return 0;
-    const stmt = this.db.prepare<[string, string, string], { exists: 1 }>(
-      `SELECT 1 AS exists
+    const stmt = this.db.prepare<[string, string, string], { existing: 1 }>(
+      `SELECT 1 AS existing
        FROM price_candles
        WHERE ticker = ? AND interval = ? AND bucket_at = ?
        LIMIT 1`,
