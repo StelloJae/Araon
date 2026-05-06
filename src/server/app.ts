@@ -19,6 +19,7 @@ import { PriceStore } from './price/price-store.js';
 import { SnapshotStore } from './price/snapshot-store.js';
 import { createCandleAggregator, createCandleRecorder } from './price/candle-aggregator.js';
 import { createBackgroundDailyBackfillScheduler } from './chart/background-backfill-scheduler.js';
+import { createFileBackfillStateStore } from './chart/backfill-state-store.js';
 import { createDailyBackfillService } from './chart/daily-backfill-service.js';
 import { createKisRuntimeRef, defaultActuallyStart } from './bootstrap-kis.js';
 import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
@@ -129,6 +130,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     stockRepo,
     favoriteRepo,
     dailyBackfillService,
+    stateStore: createFileBackfillStateStore(),
     marketPhase: () => {
       const state = runtimeRef.get();
       return state.status === 'started'

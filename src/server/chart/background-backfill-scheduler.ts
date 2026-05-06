@@ -41,6 +41,18 @@ export interface BackgroundDailyBackfillScheduler {
   runOnce(nowOverride?: Date): Promise<BackgroundBackfillRunResult>;
 }
 
+export interface BackgroundBackfillState {
+  budgetDateKey: string | null;
+  dailyCallCount: number;
+  cooldownUntilMs: number;
+}
+
+export interface BackgroundBackfillStateStore {
+  load(): Promise<BackgroundBackfillState>;
+  save(state: BackgroundBackfillState): Promise<void>;
+  snapshot(): BackgroundBackfillState;
+}
+
 export interface CreateBackgroundDailyBackfillSchedulerOptions {
   settingsStore: Pick<SettingsStore, 'snapshot'> & Partial<Pick<SettingsStore, 'subscribe'>>;
   stockRepo: { findAll(): Stock[] };
@@ -52,6 +64,7 @@ export interface CreateBackgroundDailyBackfillSchedulerOptions {
   maxTickersPerRun?: number;
   requestGapMs?: number;
   dailyCallBudget?: number;
+  stateStore?: BackgroundBackfillStateStore;
 }
 
 export function createBackgroundDailyBackfillScheduler(
@@ -69,6 +82,7 @@ export function createBackgroundDailyBackfillScheduler(
   let budgetDateKey: string | null = null;
   let dailyCallCount = 0;
   let cooldownUntilMs = 0;
+  let stateLoaded = options.stateStore === undefined;
 
   async function runOnce(nowOverride?: Date): Promise<BackgroundBackfillRunResult> {
     if (inFlight !== null) {
@@ -91,7 +105,9 @@ export function createBackgroundDailyBackfillScheduler(
   }
 
   async function runOnceInner(runAt: Date): Promise<BackgroundBackfillRunResult> {
-    resetBudgetIfNeeded(runAt);
+    await loadStateIfNeeded();
+    const budgetReset = resetBudgetIfNeeded(runAt);
+    if (budgetReset) await persistState();
 
     const settings = options.settingsStore.snapshot();
     if (!settings.backgroundDailyBackfillEnabled) {
@@ -122,6 +138,7 @@ export function createBackgroundDailyBackfillScheduler(
         break;
       }
       dailyCallCount += 1;
+      await persistState();
       attempted += 1;
       try {
         results.push(
@@ -134,6 +151,7 @@ export function createBackgroundDailyBackfillScheduler(
       } catch (err: unknown) {
         failed += 1;
         cooldownUntilMs = runAt.getTime() + cooldownMsForError(err);
+        await persistState();
         log.warn(
           { ticker, err: err instanceof Error ? err.message : String(err) },
           'background daily backfill failed for ticker',
@@ -193,12 +211,31 @@ export function createBackgroundDailyBackfillScheduler(
 
   return { start, stop, runOnce };
 
-  function resetBudgetIfNeeded(runAt: Date): void {
+  async function loadStateIfNeeded(): Promise<void> {
+    if (stateLoaded || options.stateStore === undefined) return;
+    const state = await options.stateStore.load();
+    budgetDateKey = state.budgetDateKey;
+    dailyCallCount = state.dailyCallCount;
+    cooldownUntilMs = state.cooldownUntilMs;
+    stateLoaded = true;
+  }
+
+  async function persistState(): Promise<void> {
+    if (options.stateStore === undefined) return;
+    await options.stateStore.save({
+      budgetDateKey,
+      dailyCallCount,
+      cooldownUntilMs,
+    });
+  }
+
+  function resetBudgetIfNeeded(runAt: Date): boolean {
     const key = kstDateKey(runAt);
-    if (budgetDateKey === key) return;
+    if (budgetDateKey === key) return false;
     budgetDateKey = key;
     dailyCallCount = 0;
     cooldownUntilMs = 0;
+    return true;
   }
 }
 

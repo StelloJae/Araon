@@ -171,6 +171,56 @@ describe('createBackgroundDailyBackfillScheduler', () => {
     expect(backfillDailyCandles).toHaveBeenCalledTimes(2);
   });
 
+  it('persists the daily budget across scheduler restarts', async () => {
+    const stateStore = createMemoryBackfillStateStore();
+    const firstBackfill = vi.fn(async (input: { ticker: string }) => ({
+      ticker: input.ticker,
+      requested: 1,
+      inserted: 1,
+      updated: 0,
+      from: '2026-05-01T15:00:00.000Z',
+      to: '2026-05-01T15:00:00.000Z',
+      source: 'kis-daily' as const,
+      coverage: { backfilled: true, localOnly: false },
+    }));
+    const firstScheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: { findAll: () => [stock('005930'), stock('000660')] },
+      favoriteRepo: { findAll: () => [] },
+      dailyBackfillService: { backfillDailyCandles: firstBackfill },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:05:00.000Z'),
+      maxTickersPerRun: 2,
+      dailyCallBudget: 1,
+      requestGapMs: 0,
+      stateStore,
+    });
+
+    await expect(firstScheduler.runOnce()).resolves.toMatchObject({
+      attempted: 1,
+      skippedReason: 'budget_exhausted',
+    });
+
+    const secondBackfill = vi.fn();
+    const secondScheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: { findAll: () => [stock('005930')] },
+      favoriteRepo: { findAll: () => [] },
+      dailyBackfillService: { backfillDailyCandles: secondBackfill },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:10:00.000Z'),
+      dailyCallBudget: 1,
+      requestGapMs: 0,
+      stateStore,
+    });
+
+    await expect(secondScheduler.runOnce()).resolves.toMatchObject({
+      attempted: 0,
+      skippedReason: 'budget_exhausted',
+    });
+    expect(secondBackfill).not.toHaveBeenCalled();
+  });
+
   it('enters cooldown after a backfill failure', async () => {
     const backfillDailyCandles = vi
       .fn()
@@ -231,4 +281,63 @@ describe('createBackgroundDailyBackfillScheduler', () => {
     });
     expect(backfillDailyCandles).toHaveBeenCalledTimes(1);
   });
+
+  it('persists cooldown across scheduler restarts', async () => {
+    const stateStore = createMemoryBackfillStateStore();
+    const firstBackfill = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('429 rate limit'));
+    const firstScheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: { findAll: () => [stock('005930')] },
+      favoriteRepo: { findAll: () => [] },
+      dailyBackfillService: { backfillDailyCandles: firstBackfill },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:05:00.000Z'),
+      requestGapMs: 0,
+      stateStore,
+    });
+
+    await expect(firstScheduler.runOnce()).resolves.toMatchObject({
+      attempted: 1,
+      failed: 1,
+    });
+
+    const secondBackfill = vi.fn();
+    const secondScheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: { findAll: () => [stock('005930')] },
+      favoriteRepo: { findAll: () => [] },
+      dailyBackfillService: { backfillDailyCandles: secondBackfill },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:06:00.000Z'),
+      requestGapMs: 0,
+      stateStore,
+    });
+
+    await expect(secondScheduler.runOnce()).resolves.toMatchObject({
+      attempted: 0,
+      skippedReason: 'cooldown',
+    });
+    expect(secondBackfill).not.toHaveBeenCalled();
+  });
 });
+
+function createMemoryBackfillStateStore() {
+  let state = {
+    budgetDateKey: null as string | null,
+    dailyCallCount: 0,
+    cooldownUntilMs: 0,
+  };
+  return {
+    async load() {
+      return { ...state };
+    },
+    async save(next: typeof state) {
+      state = { ...next };
+    },
+    snapshot() {
+      return { ...state };
+    },
+  };
+}
