@@ -15,7 +15,7 @@
 import type { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { z } from 'zod';
 import type { StockService } from '../services/stock-service.js';
-import type { PriceCandleRepository } from '../db/repositories.js';
+import type { PriceCandleRepository, StockNoteRepository } from '../db/repositories.js';
 import { parseStockCsv } from '../parsers/csv-parser.js';
 import { createChildLogger } from '@shared/logger.js';
 import { aggregateCandles } from '../price/candle-aggregation.js';
@@ -27,6 +27,7 @@ import type {
   CandleInterval,
   PriceCandle,
   PriceCandleSource,
+  StockNote,
 } from '@shared/types.js';
 import type {
   DailyBackfillRange,
@@ -40,6 +41,7 @@ const log = createChildLogger('routes/stocks');
 export interface StockRoutesOptions extends FastifyPluginOptions {
   service: StockService;
   candleRepo?: PriceCandleRepository;
+  noteRepo?: StockNoteRepository;
   dailyBackfillService?: DailyBackfillService;
   now?: () => Date;
 }
@@ -89,9 +91,14 @@ const candleBackfillBodySchema = z.object({
   range: z.enum(['1m', '3m', '6m', '1y']).default('3m'),
 });
 
+const stockNoteBodySchema = z.object({
+  body: z.string().trim().min(1).max(2_000),
+});
+
 type AddOneBody = z.infer<typeof addOneBodySchema>;
 type BulkBody = z.infer<typeof bulkBodySchema>;
 type CandleBackfillBody = z.infer<typeof candleBackfillBodySchema>;
+type StockNoteBody = z.infer<typeof stockNoteBodySchema>;
 
 // === Plugin ===================================================================
 
@@ -100,6 +107,85 @@ export async function stockRoutes(
   opts: StockRoutesOptions,
 ): Promise<void> {
   const { service } = opts;
+
+  app.get<{ Params: { ticker: string } }>('/stocks/:ticker/notes', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.noteRepo === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'STOCK_NOTE_REPOSITORY_NOT_WIRED' },
+      });
+    }
+
+    return reply.send({ success: true, data: opts.noteRepo.listByTicker(ticker) });
+  });
+
+  app.post<{
+    Params: { ticker: string };
+    Body: StockNoteBody;
+  }>('/stocks/:ticker/notes', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.noteRepo === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'STOCK_NOTE_REPOSITORY_NOT_WIRED' },
+      });
+    }
+    const parsed = stockNoteBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues,
+      });
+    }
+
+    const note: StockNote = opts.noteRepo.create({
+      ticker,
+      body: parsed.data.body,
+      now: (opts.now ?? (() => new Date()))(),
+    });
+    return reply.status(201).send({ success: true, data: note });
+  });
+
+  app.delete<{ Params: { ticker: string; noteId: string } }>(
+    '/stocks/:ticker/notes/:noteId',
+    async (request, reply) => {
+      const { ticker, noteId } = request.params;
+      if (!/^\d{6}$/.test(ticker)) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'INVALID_TICKER' },
+        });
+      }
+      if (!/^[0-9a-fA-F-]{36}$/.test(noteId)) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'INVALID_NOTE_ID' },
+        });
+      }
+      if (opts.noteRepo === undefined) {
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'STOCK_NOTE_REPOSITORY_NOT_WIRED' },
+        });
+      }
+
+      opts.noteRepo.delete(ticker, noteId);
+      return reply.status(204).send();
+    },
+  );
 
   app.post<{
     Params: { ticker: string };

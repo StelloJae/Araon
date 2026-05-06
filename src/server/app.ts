@@ -10,6 +10,7 @@ import {
   FavoriteRepository,
   PriceSnapshotRepository,
   PriceCandleRepository,
+  StockNoteRepository,
   MasterStockRepository,
   MasterStockMetaRepository,
 } from './db/repositories.js';
@@ -91,6 +92,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const snapshotRepo = new PriceSnapshotRepository(db);
   const snapshotStore = new SnapshotStore(snapshotRepo);
   const candleRepo = new PriceCandleRepository(db);
+  const noteRepo = new StockNoteRepository(db);
   const candleRecorder = createCandleRecorder({
     priceStore,
     aggregator: createCandleAggregator({ writer: candleRepo }),
@@ -146,6 +148,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(stockRoutes, {
     service: createStockService({ stockRepo, sectorRepo, masterRepo }),
     candleRepo,
+    noteRepo,
     dailyBackfillService,
   });
   await app.register(themeRoutes, { stockRepo });

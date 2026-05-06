@@ -265,6 +265,14 @@ export interface CandleApiResponse {
   status: CandleApiStatus;
 }
 
+export interface StockNote {
+  id: string;
+  ticker: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // === SSE event schema =====================================================
 // Shared contract for `src/server/sse/*` event emission.
 // All events carry a monotonic `id` so consumers can detect gaps and request

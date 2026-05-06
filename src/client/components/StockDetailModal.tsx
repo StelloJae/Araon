@@ -48,6 +48,7 @@ import type { MarketStatus } from '@shared/types';
 import { useSurgeStore } from '../stores/surge-store';
 import { SignalReasonList } from './SignalReasonList';
 import { StockCandleChart } from './StockCandleChart';
+import { StockNotesPanel } from './StockNotesPanel';
 
 const PENDING_LABEL = '연동 예정';
 const UNAVAILABLE_LABEL = '미제공';
@@ -274,6 +275,8 @@ export function StockDetailModal({
               </div>
             </>
           )}
+
+          <StockNotesPanel ticker={stock.code} />
 
           <div style={{ marginTop: 18 }}>
             <div

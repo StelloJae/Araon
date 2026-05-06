@@ -773,6 +773,15 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/candle-chart-ui-acceptance.md`
 - 판단: chart/backfill MVP는 단일 종목 live-probe + 제품 화면 표시까지 verified. 이후 daily background backfill은 tracked/favorites 대상 managed default로 승격됐고, full master/minute historical backfill은 계속 HOLD
 
+### Observation memo log MVP 결과 (2026-05-06)
+- local SQLite `stock_notes` 테이블 추가. 종목별 관찰 메모는 ticker FK로 추적 종목 삭제 시 cascade된다
+- API: `GET /stocks/:ticker/notes`, `POST /stocks/:ticker/notes`, `DELETE /stocks/:ticker/notes/:noteId`
+- UI: `StockDetailModal`에 `관찰 메모` 섹션 추가. 사용자가 직접 쓴 관찰 기록만 저장하며 매수/매도 추천이나 합성 금융 데이터는 만들지 않는다
+- live KIS / WebSocket / daily backfill 호출: 0회
+- focused tests: `src/server/routes/__tests__/stock-notes.test.ts`, `src/client/components/__tests__/stock-notes-panel.test.ts`
+- report: `docs/research/observation-memo-log-mvp.md`
+- HOLD: 메모 수정, 태그/분류, candle timestamp 연결, AI 요약, export
+
 ## 7. 더 깊은 핸드오프 dump
 
 이 프로젝트의 전체 작업 히스토리, 보안 패턴 상세, NXT3 시작 가이드는 다음 wiki 페이지에 dump:

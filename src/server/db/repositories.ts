@@ -9,6 +9,7 @@
  */
 
 import type Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import type {
   Stock,
   Sector,
@@ -17,6 +18,7 @@ import type {
   PriceSnapshot,
   PriceCandle,
   StoredCandleInterval,
+  StockNote,
   Tier,
 } from '@shared/types.js';
 import { CHUNKED_INSERT_SIZE } from '@shared/constants.js';
@@ -127,6 +129,14 @@ interface PriceCandleRow {
   updated_at: string;
 }
 
+interface StockNoteRow {
+  id: string;
+  ticker: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface MasterStockRow {
   ticker: string;
   name: string;
@@ -229,6 +239,16 @@ function rowToPriceCandle(row: PriceCandleRow): PriceCandle {
     sampleCount: row.sample_count,
     source: row.source as PriceCandle['source'],
     isPartial: row.is_partial === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToStockNote(row: StockNoteRow): StockNote {
+  return {
+    id: row.id,
+    ticker: row.ticker,
+    body: row.body,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -858,5 +878,48 @@ export class PriceCandleRepository {
       )
       .all(params);
     return new Set(rows.map((r) => r.ticker));
+  }
+}
+
+// === StockNoteRepository ======================================================
+
+export class StockNoteRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  listByTicker(ticker: string): StockNote[] {
+    const rows = this.db
+      .prepare<[string], StockNoteRow>(
+        `SELECT id, ticker, body, created_at, updated_at
+         FROM stock_notes
+         WHERE ticker = ?
+         ORDER BY created_at DESC, id DESC`,
+      )
+      .all(ticker);
+    return rows.map(rowToStockNote);
+  }
+
+  create(input: { ticker: string; body: string; now?: Date }): StockNote {
+    const nowIso = (input.now ?? new Date()).toISOString();
+    const note: StockNote = {
+      id: randomUUID(),
+      ticker: input.ticker,
+      body: input.body,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    this.db
+      .prepare(
+        `INSERT INTO stock_notes (id, ticker, body, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(note.id, note.ticker, note.body, note.createdAt, note.updatedAt);
+    return note;
+  }
+
+  delete(ticker: string, id: string): boolean {
+    const result = this.db
+      .prepare('DELETE FROM stock_notes WHERE ticker = ? AND id = ?')
+      .run(ticker, id);
+    return result.changes > 0;
   }
 }

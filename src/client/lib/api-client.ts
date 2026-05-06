@@ -12,6 +12,7 @@ import type {
   CandleInterval,
   Favorite,
   Stock,
+  StockNote,
 } from '@shared/types';
 import type { SessionRealtimeCap } from './realtime-session-control';
 
@@ -78,6 +79,31 @@ export async function removeStock(ticker: string): Promise<void> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}`, {
     method: 'DELETE',
   });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new ApiError(res.status, `${res.status} ${res.statusText}`, text);
+  }
+}
+
+export async function getStockNotes(ticker: string): Promise<StockNote[]> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/notes`);
+  return unwrap<StockNote[]>(res);
+}
+
+export async function createStockNote(ticker: string, body: string): Promise<StockNote> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  return unwrap<StockNote>(res);
+}
+
+export async function deleteStockNote(ticker: string, noteId: string): Promise<void> {
+  const res = await fetch(
+    `/stocks/${encodeURIComponent(ticker)}/notes/${encodeURIComponent(noteId)}`,
+    { method: 'DELETE' },
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new ApiError(res.status, `${res.status} ${res.statusText}`, text);
