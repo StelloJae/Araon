@@ -184,8 +184,9 @@ Windows: %APPDATA%/Araon
 Linux:   ~/.local/share/araon
 ```
 
-Fresh installs still start with realtime disabled, and Araon remains a
-localhost-only read-only monitoring tool.
+Fresh installs have no credentials, so they make no external KIS calls. After
+credentials are configured, managed realtime and daily backfill are enabled by
+default. Araon remains a localhost-only read-only monitoring tool.
 
 ## Desktop Beta
 
@@ -199,8 +200,9 @@ The desktop beta is not code-signed or notarized yet:
 
 Desktop runtime data is stored under the OS app user-data directory rather than
 inside the app bundle. Credentials, settings, and SQLite state must never be
-committed. Fresh installs still keep realtime disabled until the user enables it
-from Settings.
+committed. Fresh installs have no credentials and make no external KIS calls;
+after credentials are configured, managed realtime and guarded daily backfill
+are enabled by default.
 
 Useful desktop build commands:
 

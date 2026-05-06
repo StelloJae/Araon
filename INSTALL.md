@@ -149,8 +149,9 @@ Linux:   ~/.local/share/araon
 ```
 
 Credentials, settings, and SQLite state are stored under the selected data
-directory. Fresh installs keep realtime disabled until you enable it from
-Settings.
+directory. Fresh installs have no credentials and make no external KIS calls.
+After credentials are configured, Araon manages cap40 realtime and guarded
+daily backfill by default.
 
 ## Desktop Beta
 
@@ -161,8 +162,8 @@ installation.
 Download the beta installers from the GitHub Release page:
 
 ```txt
-macOS:   Araon-1.1.0-beta.7-arm64.dmg
-Windows: Araon.Setup.1.1.0-beta.7.exe
+macOS:   Araon-1.1.0-beta.10-arm64.dmg
+Windows: Araon.Setup.1.1.0-beta.10.exe
 ```
 
 Build a local unpacked desktop app:
