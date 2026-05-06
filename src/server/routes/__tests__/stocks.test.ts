@@ -257,6 +257,36 @@ describe('GET /stocks — list', () => {
       instrumentType: 'etf',
     });
   });
+
+  it('does not classify Meritz names as REIT just because they contain 리츠', async () => {
+    db.prepare(
+      `INSERT INTO master_stocks (
+         ticker, name, market, standard_code, source, updated_at,
+         security_group_code, index_industry_large, index_industry_middle,
+         index_industry_small
+       ) VALUES (?, ?, ?, ?, 'kis_mst', '2026-04-27T00:00:00.000Z',
+         'ST', '0027', '0018', '0000')`,
+    ).run('138040', '메리츠금융지주', 'KOSPI', 'KR7138040001');
+
+    await app.inject({
+      method: 'POST',
+      url: '/stocks',
+      payload: { ticker: '138040', name: '메리츠금융지주', market: 'KOSPI' },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/stocks' });
+    const body = res.json<{
+      data: Array<{
+        ticker: string;
+        autoSector?: string | null;
+        instrumentType?: string | null;
+      }>;
+    }>();
+    const entry = body.data.find((s) => s.ticker === '138040');
+    expect(entry).toMatchObject({
+      instrumentType: 'equity',
+    });
+  });
 });
 
 describe('DELETE /stocks/:ticker', () => {

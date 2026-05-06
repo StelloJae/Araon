@@ -157,7 +157,7 @@ export function detectInstrumentType(
   const normalized = name.toUpperCase();
   if (normalized.includes('ETN')) return 'etn';
   if (normalized.includes('ETF')) return 'etf';
-  if (name.includes('리츠') || normalized.includes('REIT')) return 'reit';
+  if (isReitName(name, normalized)) return 'reit';
   if (
     /^(KODEX|TIGER|ACE|RISE|SOL|PLUS|HANARO|ARIRANG|KOSEF|KBSTAR|TIMEFOLIO)\b/i
       .test(name)
@@ -166,4 +166,9 @@ export function detectInstrumentType(
   }
   if (securityGroupCode !== null && securityGroupCode !== 'ST') return 'fund';
   return 'equity';
+}
+
+function isReitName(name: string, normalized: string): boolean {
+  if (normalized.includes('REIT')) return true;
+  return /(?:^|[^가-힣A-Z0-9])리츠$/.test(name) || /리츠(?:$|[0-9\s-])/.test(name);
 }
