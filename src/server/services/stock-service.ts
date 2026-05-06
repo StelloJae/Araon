@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { Stock } from '@shared/types.js';
+import type { InstrumentType, Stock } from '@shared/types.js';
 import type {
   StockRepository,
   SectorRepository,
@@ -140,8 +140,30 @@ export function createStockService(deps: StockServiceDeps): StockService {
         return {
           ...s,
           autoSector: result?.sector ?? null,
+          instrumentType: detectInstrumentType(
+            s.name,
+            classification?.securityGroupCode ?? null,
+          ),
         };
       });
     },
   };
+}
+
+export function detectInstrumentType(
+  name: string,
+  securityGroupCode: string | null,
+): InstrumentType {
+  const normalized = name.toUpperCase();
+  if (normalized.includes('ETN')) return 'etn';
+  if (normalized.includes('ETF')) return 'etf';
+  if (name.includes('리츠') || normalized.includes('REIT')) return 'reit';
+  if (
+    /^(KODEX|TIGER|ACE|RISE|SOL|PLUS|HANARO|ARIRANG|KOSEF|KBSTAR|TIMEFOLIO)\b/i
+      .test(name)
+  ) {
+    return 'etf';
+  }
+  if (securityGroupCode !== null && securityGroupCode !== 'ST') return 'fund';
+  return 'equity';
 }

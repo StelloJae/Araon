@@ -67,15 +67,21 @@ export type AutoSectorName =
  *
  * `autoSector` is filled in by `StockService.list()` from KIS official index
  * industry codes when a master_stocks row has them; otherwise omitted/null.
+ * `instrumentType` is a lightweight ETF/ETN/REIT/fund grouping hint derived
+ * from public master metadata and stock names.
+ *
  * Optional so callers that construct Stock literals don't have to opt into the
- * field.
+ * fields.
  */
 export interface Stock {
   ticker: string;
   name: string;
   market: 'KOSPI' | 'KOSDAQ';
   autoSector?: AutoSectorName | null;
+  instrumentType?: InstrumentType | null;
 }
+
+export type InstrumentType = 'equity' | 'etf' | 'etn' | 'reit' | 'fund' | 'other';
 
 /**
  * A thematic grouping of stocks (e.g. 반도체, 2차전지).

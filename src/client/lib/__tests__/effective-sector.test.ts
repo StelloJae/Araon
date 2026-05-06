@@ -78,16 +78,39 @@ describe('getEffectiveSector', () => {
     });
   });
 
-  it('manual takes precedence even when autoSector also has a real value', () => {
-    expect(getEffectiveSector('금융', '전기전자')).toEqual({
+  it('manual takes precedence even when autoSector and instrument type also have real values', () => {
+    expect(getEffectiveSector('금융', '전기전자', 'etf')).toEqual({
       name: '금융',
       source: 'manual',
+    });
+  });
+
+  it('uses instrument type before official KIS industry when manual is missing', () => {
+    expect(getEffectiveSector(null, '전기전자', 'etf')).toEqual({
+      name: 'ETF',
+      source: 'instrument',
+    });
+    expect(getEffectiveSector(null, '기타', 'etn')).toEqual({
+      name: 'ETN',
+      source: 'instrument',
+    });
+  });
+
+  it('falls through from equity or missing instrument type to official KIS industry', () => {
+    expect(getEffectiveSector(null, '전기전자', 'equity')).toEqual({
+      name: '전기전자',
+      source: 'kis-industry',
+    });
+    expect(getEffectiveSector(null, '운수장비', null)).toEqual({
+      name: '운수장비',
+      source: 'kis-industry',
     });
   });
 
   it('describeSectorSource returns Korean labels for each source', () => {
     expect(describeSectorSource('manual')).toBe('사용자 테마 분류');
     expect(describeSectorSource('kis-industry')).toBe('KIS 공식 지수업종 기반');
+    expect(describeSectorSource('instrument')).toBe('상품 유형 기반');
     expect(describeSectorSource('unclassified')).toBe('미분류');
   });
 

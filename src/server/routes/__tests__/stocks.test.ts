@@ -228,6 +228,35 @@ describe('GET /stocks — list', () => {
     const entry = body.data.find((s) => s.ticker === '005930');
     expect(entry?.autoSector).toBeNull();
   });
+
+  it('returns instrumentType for ETF/ETN-like tracked stocks', async () => {
+    db.prepare(
+      `INSERT INTO master_stocks (
+         ticker, name, market, standard_code, source, updated_at,
+         security_group_code
+       ) VALUES (?, ?, ?, ?, 'kis_mst', '2026-04-27T00:00:00.000Z', ?)`,
+    ).run('069500', 'KODEX 200 ETF', 'KOSPI', 'KR7069500007', 'EF');
+
+    await app.inject({
+      method: 'POST',
+      url: '/stocks',
+      payload: { ticker: '069500', name: 'KODEX 200 ETF', market: 'KOSPI' },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/stocks' });
+    const body = res.json<{
+      data: Array<{
+        ticker: string;
+        autoSector?: string | null;
+        instrumentType?: string | null;
+      }>;
+    }>();
+    const entry = body.data.find((s) => s.ticker === '069500');
+    expect(entry).toMatchObject({
+      autoSector: null,
+      instrumentType: 'etf',
+    });
+  });
 });
 
 describe('DELETE /stocks/:ticker', () => {

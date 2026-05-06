@@ -17,7 +17,7 @@
  */
 
 import { create } from 'zustand';
-import type { AutoSectorName, Price } from '@shared/types';
+import type { AutoSectorName, InstrumentType, Price } from '@shared/types';
 import type { Stock } from '@shared/types';
 import type { StockViewModel } from '../lib/view-models';
 import type { ThemeDetail } from '../lib/api-client';
@@ -40,6 +40,7 @@ export interface CatalogEntry {
    * industry exists or the mapping resolved to '기타'/unknown.
    */
   autoSector: AutoSectorName | null;
+  instrumentType: InstrumentType | null;
 }
 
 export interface SectorMeta {
@@ -84,6 +85,7 @@ export const useStocksStore = create<StocksState>((set) => ({
           sectorId: prev?.sectorId ?? null,
           manualSectorName: prev?.manualSectorName ?? null,
           autoSector: s.autoSector ?? null,
+          instrumentType: s.instrumentType ?? null,
         };
       }
       return { catalog: next };
@@ -122,6 +124,7 @@ export const useStocksStore = create<StocksState>((set) => ({
           manualSectorName:
             sectorId !== null ? (themeNameById.get(sectorId) ?? null) : null,
           autoSector: entry.autoSector,
+          instrumentType: entry.instrumentType,
         };
       }
 
@@ -238,7 +241,11 @@ export function buildStockVM(
     updatedAt: q?.updatedAt ?? '',
     isSnapshot: q?.isSnapshot ?? true,
     sectorId: meta.sectorId,
-    effectiveSector: getEffectiveSector(meta.manualSectorName, meta.autoSector),
+    effectiveSector: getEffectiveSector(
+      meta.manualSectorName,
+      meta.autoSector,
+      meta.instrumentType,
+    ),
   };
 }
 

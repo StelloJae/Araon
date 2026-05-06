@@ -75,7 +75,7 @@ describe('useStocksStore.removeStock', () => {
       });
   });
 
-  it('keeps ETF/ETN-like products without official industry as 미분류', async () => {
+  it('groups ETF/ETN-like products without official industry by instrument type', async () => {
     const { buildStockVM, useStocksStore } = await import('../stocks-store');
     const store = useStocksStore.getState();
 
@@ -85,12 +85,41 @@ describe('useStocksStore.removeStock', () => {
         name: 'KODEX 200 ETF',
         market: 'KOSPI',
         autoSector: null,
+        instrumentType: 'etf',
       },
     ]);
 
     expect(buildStockVM('069500', useStocksStore.getState().catalog, {}))
       .toMatchObject({
-        effectiveSector: { name: '미분류', source: 'unclassified' },
+        effectiveSector: { name: 'ETF', source: 'instrument' },
+      });
+  });
+
+  it('keeps manual sectors ahead of instrument grouping', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+
+    store.setCatalog([
+      {
+        ticker: '069500',
+        name: 'KODEX 200 ETF',
+        market: 'KOSPI',
+        autoSector: null,
+        instrumentType: 'etf',
+      },
+    ]);
+    store.setThemes([
+      {
+        id: 'manual-index',
+        name: '인덱스',
+        description: '',
+        stocks: [{ ticker: '069500', name: 'KODEX 200 ETF', market: 'KOSPI' }],
+      },
+    ]);
+
+    expect(buildStockVM('069500', useStocksStore.getState().catalog, {}))
+      .toMatchObject({
+        effectiveSector: { name: '인덱스', source: 'manual' },
       });
   });
 
