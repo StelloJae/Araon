@@ -807,6 +807,14 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/volume-baseline-bootstrap.md`
 - HOLD: KIS historical minute bootstrap, persisted materialized baseline table, confidence labels
 
+### Selected-ticker historical minute strategy 결과 (2026-05-06)
+- 실제 KIS minute call은 아직 실행/구현하지 않고, selected ticker manual foreground 전용 전략 가드만 코드로 고정
+- `planSelectedTickerMinuteBackfill()` 정책: 단일 6자리 ticker, 평일 20:05 이후/07:55 이전만 ready, 장중 blocked, 주말은 KIS today-minute 제약으로 hold
+- full watchlist/background minute backfill은 금지. 초기 cap은 30 rows/request, max 4 pages, max 120 rows
+- focused test: `src/server/chart/__tests__/minute-backfill-strategy.test.ts`
+- report: `docs/research/selected-ticker-minute-backfill-strategy.md`
+- HOLD: KIS 당일분봉 live probe, minute REST client, endpoint 실행, missing-bucket merge 정책
+
 ## 7. 더 깊은 핸드오프 dump
 
 이 프로젝트의 전체 작업 히스토리, 보안 패턴 상세, NXT3 시작 가이드는 다음 wiki 페이지에 dump:
