@@ -978,7 +978,7 @@ function buildCoverage(
     backfilled,
     sourceMix,
     partialCount: candles.filter((c) => c.isPartial).length,
-    gapCount: 0,
+    gapCount: countVisibleGaps(candles),
     oldestBucketAt: first?.bucketAt ?? null,
     newestBucketAt: last?.bucketAt ?? null,
   };
@@ -986,6 +986,56 @@ function buildCoverage(
     coverage.ledger = ledger;
   }
   return coverage;
+}
+
+function countVisibleGaps(candles: readonly PriceCandle[]): number {
+  if (candles.length < 2) return 0;
+  const expectedMs = intervalMs(candles[0]?.interval);
+  if (expectedMs === null) return 0;
+  let gaps = 0;
+  for (let index = 1; index < candles.length; index += 1) {
+    const prev = new Date(candles[index - 1]?.bucketAt ?? '').getTime();
+    const current = new Date(candles[index]?.bucketAt ?? '').getTime();
+    if (!Number.isFinite(prev) || !Number.isFinite(current)) continue;
+    const missing = Math.floor((current - prev) / expectedMs) - 1;
+    if (missing > 0) gaps += missing;
+  }
+  return gaps;
+}
+
+function intervalMs(interval: PriceCandle['interval'] | undefined): number | null {
+  switch (interval) {
+    case '1m':
+      return 60_000;
+    case '3m':
+      return 3 * 60_000;
+    case '5m':
+      return 5 * 60_000;
+    case '10m':
+      return 10 * 60_000;
+    case '15m':
+      return 15 * 60_000;
+    case '30m':
+      return 30 * 60_000;
+    case '1h':
+      return 60 * 60_000;
+    case '2h':
+      return 2 * 60 * 60_000;
+    case '4h':
+      return 4 * 60 * 60_000;
+    case '6h':
+      return 6 * 60 * 60_000;
+    case '12h':
+      return 12 * 60 * 60_000;
+    case '1d':
+    case '1D':
+      return 24 * 60 * 60_000;
+    case '1W':
+      return 7 * 24 * 60 * 60_000;
+    case '1M':
+    default:
+      return null;
+  }
 }
 
 function buildStatus(

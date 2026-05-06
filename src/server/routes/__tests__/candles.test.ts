@@ -145,6 +145,29 @@ describe('GET /stocks/:ticker/candles', () => {
     ]);
   });
 
+  it('reports visible candle gaps in coverage metadata', async () => {
+    const repo = new PriceCandleRepository(db);
+    await repo.bulkUpsertCandles([
+      candle('2026-05-05T00:00:00.000Z'),
+      candle('2026-05-05T00:02:00.000Z'),
+      candle('2026-05-05T00:03:00.000Z'),
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: repo,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/candles?interval=1m&from=2026-05-05T00:00:00.000Z&to=2026-05-05T00:04:00.000Z',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.coverage.gapCount).toBe(1);
+  });
+
   it('filters synthetic REST and no-trade minute rows from intraday chart output', async () => {
     const repo = new PriceCandleRepository(db);
     await repo.bulkUpsertCandles([

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CandleChartView,
   ChartAutoBackfillStatus,
+  CandleDataInspector,
   PinnedCandlePanel,
   formatCandleTooltipRows,
   normalizeCandleRangeForInterval,
@@ -52,6 +53,36 @@ describe('StockCandleChart', () => {
     expect(html).toContain('1m');
     expect(html).toContain('마우스를 올리면 OHLCV 표시');
     expect(html).toContain('클릭하면 봉 고정');
+  });
+
+  it('renders a compact chart data inspector from coverage metadata', () => {
+    const html = renderToStaticMarkup(
+      createElement(CandleDataInspector, {
+        coverage: {
+          from: '2026-05-05T00:00:00.000Z',
+          to: '2026-05-05T01:00:00.000Z',
+          localOnly: false,
+          backfilled: true,
+          sourceMix: ['kis-time-daily'],
+          partialCount: 0,
+          gapCount: 2,
+          oldestBucketAt: '2026-05-05T00:00:00.000Z',
+          newestBucketAt: '2026-05-05T01:00:00.000Z',
+          ledger: {
+            completeSegments: 1,
+            partialSegments: 0,
+            failedSegments: 0,
+            skippedSegments: 0,
+            latestCompletedAt: '2026-05-05T11:10:00.000Z',
+          },
+        },
+      }),
+    );
+
+    expect(html).toContain('데이터 검사');
+    expect(html).toContain('KIS 과거 분봉');
+    expect(html).toContain('공백 2');
+    expect(html).toContain('장부 완료 1');
   });
 
   it('renders a pinned candle inspection panel from actual candle rows', () => {

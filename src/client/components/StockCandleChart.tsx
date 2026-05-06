@@ -5,7 +5,7 @@ import type {
   MouseEventParams,
   UTCTimestamp,
 } from 'lightweight-charts';
-import type { CandleApiItem, CandleInterval } from '@shared/types';
+import type { CandleApiCoverage, CandleApiItem, CandleInterval } from '@shared/types';
 import { fmtPrice, fmtVolMan } from '../lib/format';
 import {
   ensureStockCandleCoverage,
@@ -43,6 +43,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
   const [range, setRange] = useState<CandleRange>('1d');
   const [status, setStatus] = useState<ChartStatus>('loading');
   const [items, setItems] = useState<CandleApiItem[]>([]);
+  const [coverage, setCoverage] = useState<CandleApiCoverage | null>(null);
   const [coveragePending, setCoveragePending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [dataSourceText, setDataSourceText] = useState('로컬 저장 candle');
@@ -78,6 +79,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       .then((data) => {
         if (cancelled) return;
         setItems(data.items);
+        setCoverage(data.coverage);
         setStatus(data.items.length === 0 ? 'empty' : 'ready');
         const sources = data.coverage.sourceMix;
         setDataSourceText(
@@ -96,6 +98,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       .catch(() => {
         if (cancelled) return;
         setItems([]);
+        setCoverage(null);
         setStatus('error');
         setDataSourceText('로컬 저장 candle');
       });
@@ -152,6 +155,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       <CandleChartView
         status={status}
         items={items}
+        coverage={coverage}
         interval={interval}
         range={range}
       />
@@ -297,11 +301,13 @@ function SegmentedSelect({
 export function CandleChartView({
   status,
   items,
+  coverage,
   interval,
   range,
 }: {
   status: ChartStatus;
   items: readonly CandleApiItem[];
+  coverage?: CandleApiCoverage | null;
   interval: CandleInterval;
   range: CandleRange;
 }) {
@@ -347,9 +353,47 @@ export function CandleChartView({
           {items.length} candles · 마우스를 올리면 OHLCV 표시 · 클릭하면 봉 고정
         </span>
       </div>
+      {coverage !== undefined && coverage !== null && (
+        <CandleDataInspector coverage={coverage} />
+      )}
       <LightweightCandleCanvas items={items} />
     </div>
   );
+}
+
+export function CandleDataInspector({ coverage }: { coverage: CandleApiCoverage }) {
+  const sourceText = sourceMixLabel(coverage.sourceMix);
+  return (
+    <div
+      style={{
+        borderBottom: '1px solid var(--border-soft)',
+        padding: '7px 10px',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 10,
+        alignItems: 'center',
+        fontSize: 11,
+        color: 'var(--text-muted)',
+        background: 'rgba(132, 142, 156, 0.05)',
+      }}
+    >
+      <strong style={{ color: 'var(--text-primary)' }}>데이터 검사</strong>
+      <span>{sourceText}</span>
+      <span>공백 {coverage.gapCount}</span>
+      <span>부분 {coverage.partialCount}</span>
+      {coverage.ledger !== undefined && (
+        <span>장부 완료 {coverage.ledger.completeSegments}</span>
+      )}
+    </div>
+  );
+}
+
+function sourceMixLabel(sources: readonly string[]): string {
+  if (sources.includes('kis-time-daily')) return 'KIS 과거 분봉';
+  if (sources.includes('kis-time-today')) return 'KIS 당일분봉';
+  if (sources.includes('kis-daily')) return 'KIS 일봉';
+  if (sources.length === 0) return '저장 데이터 없음';
+  return sources.join(', ');
 }
 
 function ChartMessage({ title, detail }: { title: string; detail: string }) {
