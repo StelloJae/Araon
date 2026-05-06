@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CandleChartView,
   ChartBackfillControl,
+  MinuteBackfillControl,
   formatCandleTooltipRows,
   normalizeCandleRangeForInterval,
 } from '../StockCandleChart';
@@ -99,6 +100,30 @@ describe('StockCandleChart', () => {
 
     expect(weekly).toContain('과거 일봉 가져오기');
     expect(intraday).not.toContain('과거 일봉 가져오기');
+  });
+
+  it('renders a today-minute backfill control for intraday intervals only', () => {
+    const intraday = renderToStaticMarkup(
+      createElement(MinuteBackfillControl, {
+        interval: '5m',
+        disabled: false,
+        pending: false,
+        message: '선택 종목의 오늘 1분봉 일부만 보강합니다.',
+        onBackfill: () => undefined,
+      }),
+    );
+    const daily = renderToStaticMarkup(
+      createElement(MinuteBackfillControl, {
+        interval: '1D',
+        disabled: false,
+        pending: false,
+        message: null,
+        onBackfill: () => undefined,
+      }),
+    );
+
+    expect(intraday).toContain('오늘 분봉 가져오기');
+    expect(daily).not.toContain('오늘 분봉 가져오기');
   });
 
   it('can render weekly chart metadata without synthetic data', () => {

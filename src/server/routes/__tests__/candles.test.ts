@@ -256,6 +256,67 @@ describe('GET /stocks/:ticker/candles', () => {
     });
   });
 
+  it('rejects selected ticker minute backfill during market hours', async () => {
+    const backfillTodayMinuteCandles = vi.fn();
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      todayMinuteBackfillService: { backfillTodayMinuteCandles },
+      now: () => new Date('2026-05-05T06:00:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/backfill-minute',
+      payload: { interval: '1m', maxPages: 2 },
+    });
+
+    expect(res.statusCode).toBe(423);
+    expect(JSON.parse(res.body).error.code).toBe('MARKET_HOURS');
+    expect(backfillTodayMinuteCandles).not.toHaveBeenCalled();
+  });
+
+  it('runs selected ticker minute backfill after close with a mock service', async () => {
+    const backfillTodayMinuteCandles = vi.fn().mockResolvedValue({
+      ticker: '005930',
+      requested: 60,
+      inserted: 58,
+      updated: 2,
+      from: '2026-05-05T05:30:00.000Z',
+      to: '2026-05-05T06:30:00.000Z',
+      source: 'kis-time-today',
+      pages: 2,
+      coverage: { backfilled: true, localOnly: false },
+    });
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      todayMinuteBackfillService: { backfillTodayMinuteCandles },
+      now: () => new Date('2026-05-05T11:10:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/backfill-minute',
+      payload: { interval: '1m', maxPages: 2 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(backfillTodayMinuteCandles).toHaveBeenCalledWith({
+      ticker: '005930',
+      now: new Date('2026-05-05T11:10:00.000Z'),
+      maxPages: 2,
+    });
+    expect(JSON.parse(res.body).data).toMatchObject({
+      ticker: '005930',
+      requested: 60,
+      source: 'kis-time-today',
+      pages: 2,
+    });
+  });
+
   it('repository lists stored local candles and skips untracked tickers', async () => {
     const repo = new PriceCandleRepository(db);
     await repo.bulkUpsertCandles([

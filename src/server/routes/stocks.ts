@@ -24,6 +24,7 @@ import { parseStockCsv } from '../parsers/csv-parser.js';
 import { createChildLogger } from '@shared/logger.js';
 import { aggregateCandles } from '../price/candle-aggregation.js';
 import { isBackfillAllowed } from '../chart/backfill-policy.js';
+import { planSelectedTickerMinuteBackfill } from '../chart/minute-backfill-strategy.js';
 import type {
   CandleApiCoverage,
   CandleApiItem,
@@ -40,6 +41,7 @@ import type {
   DailyBackfillRange,
   DailyBackfillService,
 } from '../chart/daily-backfill-service.js';
+import type { TodayMinuteBackfillService } from '../chart/today-minute-backfill-service.js';
 
 const log = createChildLogger('routes/stocks');
 
@@ -51,6 +53,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   noteRepo?: StockNoteRepository;
   signalEventRepo?: StockSignalEventRepository;
   dailyBackfillService?: DailyBackfillService;
+  todayMinuteBackfillService?: TodayMinuteBackfillService;
   now?: () => Date;
 }
 
@@ -99,6 +102,11 @@ const candleBackfillBodySchema = z.object({
   range: z.enum(['1m', '3m', '6m', '1y']).default('3m'),
 });
 
+const minuteBackfillBodySchema = z.object({
+  interval: z.literal('1m').default('1m'),
+  maxPages: z.coerce.number().int().positive().max(4).default(4),
+});
+
 const stockNoteBodySchema = z.object({
   body: z.string().trim().min(1).max(2_000),
 });
@@ -126,6 +134,7 @@ const timelineQuerySchema = z.object({
 type AddOneBody = z.infer<typeof addOneBodySchema>;
 type BulkBody = z.infer<typeof bulkBodySchema>;
 type CandleBackfillBody = z.infer<typeof candleBackfillBodySchema>;
+type MinuteBackfillBody = z.infer<typeof minuteBackfillBodySchema>;
 type StockNoteBody = z.infer<typeof stockNoteBodySchema>;
 type SignalEventBody = z.infer<typeof signalEventBodySchema>;
 
@@ -365,6 +374,60 @@ export async function stockRoutes(
     }
   });
 
+  app.post<{
+    Params: { ticker: string };
+    Body: MinuteBackfillBody;
+  }>('/stocks/:ticker/candles/backfill-minute', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.todayMinuteBackfillService === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'TODAY_MINUTE_BACKFILL_NOT_WIRED' },
+      });
+    }
+
+    const parsed = minuteBackfillBodySchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues,
+      });
+    }
+
+    const now = (opts.now ?? (() => new Date()))();
+    const strategy = planSelectedTickerMinuteBackfill({ tickers: [ticker], now });
+    if (strategy.state !== 'ready') {
+      return reply.status(strategy.state === 'hold' ? 409 : 423).send({
+        success: false,
+        error: { code: strategy.reason ?? 'MINUTE_BACKFILL_NOT_ALLOWED' },
+      });
+    }
+
+    try {
+      const result = await opts.todayMinuteBackfillService.backfillTodayMinuteCandles({
+        ticker,
+        now,
+        maxPages: parsed.data.maxPages,
+      });
+      return reply.send({ success: true, data: result });
+    } catch (err: unknown) {
+      log.warn(
+        { ticker, err: err instanceof Error ? err.message : String(err) },
+        'today minute candle backfill failed',
+      );
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'TODAY_MINUTE_BACKFILL_FAILED' },
+      });
+    }
+  });
+
   app.get<{
     Params: { ticker: string };
     Querystring: z.input<typeof candlesQuerySchema>;
@@ -535,7 +598,8 @@ function buildCoverage(
         .filter((source): source is PriceCandleSource => source !== null),
     ),
   ).sort();
-  const backfilled = sourceMix.includes('kis-daily');
+  const backfilled =
+    sourceMix.includes('kis-daily') || sourceMix.includes('kis-time-today');
   return {
     from: first?.bucketAt ?? null,
     to: last?.bucketAt ?? null,

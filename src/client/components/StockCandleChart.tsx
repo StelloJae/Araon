@@ -10,6 +10,7 @@ import { fmtPrice, fmtVolMan } from '../lib/format';
 import {
   ApiError,
   backfillStockCandles,
+  backfillTodayMinuteCandles,
   getStockCandles,
   type CandleRange,
   type DailyBackfillRange,
@@ -47,6 +48,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
   const [items, setItems] = useState<CandleApiItem[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [backfillPending, setBackfillPending] = useState(false);
+  const [minuteBackfillPending, setMinuteBackfillPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [dataSourceText, setDataSourceText] = useState('로컬 저장 candle');
 
@@ -58,7 +60,14 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
         if (cancelled) return;
         setItems(data.items);
         setStatus(data.items.length === 0 ? 'empty' : 'ready');
-        setDataSourceText(data.coverage.backfilled ? 'KIS 일봉 백필 포함' : '로컬 저장 candle');
+        const sources = data.coverage.sourceMix;
+        setDataSourceText(
+          sources.includes('kis-time-today')
+            ? 'KIS 당일분봉 포함'
+            : data.coverage.backfilled
+              ? 'KIS 일봉 백필 포함'
+              : '로컬 저장 candle',
+        );
         setMessage(data.status.message);
       })
       .catch(() => {
@@ -95,11 +104,36 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
     }
   }
 
+  async function handleMinuteBackfill(): Promise<void> {
+    if (dailyInterval(interval)) return;
+    setMinuteBackfillPending(true);
+    setMessage(null);
+    try {
+      const result = await backfillTodayMinuteCandles(ticker, { maxPages: 4 });
+      setMessage(`당일 분봉 보강 완료: ${result.inserted + result.updated}개 candle 반영`);
+      setRefreshKey((key) => key + 1);
+    } catch (err: unknown) {
+      if (err instanceof ApiError && (err.status === 409 || err.status === 423)) {
+        setMessage('당일 분봉 보강은 장 종료 후 평일에만 실행합니다.');
+      } else {
+        setMessage('당일 분봉을 가져오지 못했습니다. 설정과 KIS 런타임 상태를 확인해 주세요.');
+      }
+    } finally {
+      setMinuteBackfillPending(false);
+    }
+  }
+
   const backfillWindow = isManualBackfillWindow(new Date());
+  const minuteBackfillWindow = isMinuteBackfillWindow(new Date());
   const backfillMessage = dailyInterval(interval)
     ? (backfillWindow
       ? 'KIS 과거 일봉을 가져와 1D/1W/1M 차트를 채웁니다.'
       : '장중에는 과거 데이터 가져오기를 멈춥니다.')
+    : null;
+  const minuteBackfillMessage = !dailyInterval(interval)
+    ? (minuteBackfillWindow
+      ? '선택 종목의 오늘 1분봉 일부만 보강합니다.'
+      : '장중/주말에는 당일 분봉 보강을 실행하지 않습니다.')
     : null;
 
   return (
@@ -140,6 +174,15 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
             void handleBackfill();
           }}
         />
+        <MinuteBackfillControl
+          interval={interval}
+          disabled={!minuteBackfillWindow}
+          pending={minuteBackfillPending}
+          message={minuteBackfillMessage}
+          onBackfill={() => {
+            void handleMinuteBackfill();
+          }}
+        />
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           {dataSourceText}
@@ -162,6 +205,10 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
 
 function dailyInterval(interval: CandleInterval): boolean {
   return interval === '1D' || interval === '1W' || interval === '1M';
+}
+
+function intradayInterval(interval: CandleInterval): boolean {
+  return !dailyInterval(interval);
 }
 
 export function normalizeCandleRangeForInterval(
@@ -221,6 +268,14 @@ function isManualBackfillWindow(now: Date): boolean {
   return minutes >= 20 * 60 + 5 || minutes < 7 * 60 + 55;
 }
 
+function isMinuteBackfillWindow(now: Date): boolean {
+  const shifted = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const day = shifted.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const minutes = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+  return minutes >= 20 * 60 + 5 || minutes < 7 * 60 + 55;
+}
+
 export function ChartBackfillControl({
   interval,
   disabled,
@@ -262,6 +317,57 @@ export function ChartBackfillControl({
         }}
       >
         {pending ? '가져오는 중' : '과거 일봉 가져오기'}
+      </button>
+      {message !== null && (
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {message}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function MinuteBackfillControl({
+  interval,
+  disabled,
+  pending,
+  message,
+  onBackfill,
+}: {
+  interval: CandleInterval;
+  disabled: boolean;
+  pending: boolean;
+  message: string | null;
+  onBackfill: () => void;
+}) {
+  if (!intradayInterval(interval)) return null;
+
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        flexWrap: 'wrap',
+      }}
+    >
+      <button
+        type="button"
+        disabled={disabled || pending}
+        onClick={onBackfill}
+        style={{
+          height: 30,
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          background: disabled ? 'var(--bg-muted)' : '#F0B90B',
+          color: disabled ? 'var(--text-muted)' : '#1E2026',
+          fontSize: 12,
+          fontWeight: 800,
+          padding: '0 10px',
+          cursor: disabled || pending ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {pending ? '가져오는 중' : '오늘 분봉 가져오기'}
       </button>
       {message !== null && (
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>

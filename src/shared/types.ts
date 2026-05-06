@@ -203,7 +203,7 @@ export type StoredCandleInterval = '1m' | '1d';
 
 export type CandleSession = 'pre' | 'regular' | 'after' | 'unknown';
 
-export type PriceCandleSource = PriceSource | 'kis-daily' | 'mixed';
+export type PriceCandleSource = PriceSource | 'kis-daily' | 'kis-time-today' | 'mixed';
 
 /**
  * Local-only OHLCV candle derived from observed Price updates.

@@ -23,9 +23,11 @@ import { createCandleAggregator, createCandleRecorder } from './price/candle-agg
 import { createBackgroundDailyBackfillScheduler } from './chart/background-backfill-scheduler.js';
 import { createFileBackfillStateStore } from './chart/backfill-state-store.js';
 import { createDailyBackfillService } from './chart/daily-backfill-service.js';
+import { createTodayMinuteBackfillService } from './chart/today-minute-backfill-service.js';
 import { createVolumeBaselineEnricher } from './volume/volume-baseline-service.js';
 import { createKisRuntimeRef, defaultActuallyStart } from './bootstrap-kis.js';
 import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
+import { fetchKisTodayMinuteCandles } from './kis/kis-today-minute-chart.js';
 import { createStockService } from './services/stock-service.js';
 import { createMasterStockService } from './services/master-stock-service.js';
 import { createCredentialSetupMutex, credentialsRoutes } from './routes/credentials.js';
@@ -136,6 +138,21 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       });
     },
   });
+  const todayMinuteBackfillService = createTodayMinuteBackfillService({
+    repo: candleRepo,
+    fetchMinuteCandles: async ({ ticker, toHms, now }) => {
+      const state = runtimeRef.get();
+      if (state.status !== 'started') {
+        throw new Error('KIS runtime is not started');
+      }
+      return fetchKisTodayMinuteCandles({
+        ticker,
+        toHms,
+        restClient: state.runtime.restClient,
+        now: () => now,
+      });
+    },
+  });
   const backgroundBackfill = createBackgroundDailyBackfillScheduler({
     settingsStore,
     stockRepo,
@@ -160,6 +177,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     noteRepo,
     signalEventRepo,
     dailyBackfillService,
+    todayMinuteBackfillService,
   });
   await app.register(themeRoutes, { stockRepo });
   await app.register(settingsRoutes, { settingsStore });

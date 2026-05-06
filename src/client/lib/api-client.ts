@@ -186,6 +186,32 @@ export async function backfillStockCandles(
   }>(res);
 }
 
+export async function backfillTodayMinuteCandles(
+  ticker: string,
+  options: { maxPages?: number } = {},
+): Promise<{
+  ticker: string;
+  requested: number;
+  inserted: number;
+  updated: number;
+  source: 'kis-time-today';
+  pages: number;
+}> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles/backfill-minute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ interval: '1m', maxPages: options.maxPages ?? 4 }),
+  });
+  return unwrap<{
+    ticker: string;
+    requested: number;
+    inserted: number;
+    updated: number;
+    source: 'kis-time-today';
+    pages: number;
+  }>(res);
+}
+
 export async function getServerSettings(): Promise<ServerRuntimeSettings> {
   const res = await fetch('/settings');
   return unwrap<ServerRuntimeSettings>(res);
