@@ -247,6 +247,13 @@ Full desktop release: CONDITIONAL GO
 - Browser-downloaded quarantine/Gatekeeper path remains unverified.
 - Windows EXE execution remains pending.
 
+Follow-up:
+
+- `docs/research/desktop-packaging-hardening.md` records the root cause and
+  beta packaging fix. New macOS desktop artifacts should use ad-hoc signing
+  (`mac.identity="-"`) to avoid the broken resource-seal state. Developer ID
+  signing/notarization remains pending.
+
 ## Remaining Work
 
 P0:
