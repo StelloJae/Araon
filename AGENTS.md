@@ -798,6 +798,15 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/candle-chart-tooltip-polish.md`
 - HOLD: tooltip pinning, 외부 metric panel 동기화, keyboard chart inspection
 
+### Volume baseline bootstrap 결과 (2026-05-06)
+- 기존 snapshot-history baseline model을 live price pipeline에 연결. `PriceStore`가 저장/emit 전에 `createVolumeBaselineEnricher`를 통해 `volumeSurgeRatio`와 `volumeBaselineStatus`를 보강한다
+- 기준선 source는 local `price_snapshots` history만 사용. same ticker/session/KST minute 기준, sampleCount가 충분할 때만 ratio 표시
+- missing/insufficient samples는 `collecting`, invalid volume/unknown session은 `unavailable`. full-day average나 synthetic baseline 없음
+- 고빈도 WS tick마다 DB를 읽지 않도록 KST date/session/minute bucket 단위 cache를 사용
+- focused tests: `src/server/volume/__tests__/volume-baseline-service.test.ts`, `src/server/price/__tests__/price-store.test.ts`
+- report: `docs/research/volume-baseline-bootstrap.md`
+- HOLD: KIS historical minute bootstrap, persisted materialized baseline table, confidence labels
+
 ## 7. 더 깊은 핸드오프 dump
 
 이 프로젝트의 전체 작업 히스토리, 보안 패턴 상세, NXT3 시작 가이드는 다음 wiki 페이지에 dump:

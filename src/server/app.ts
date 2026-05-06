@@ -22,6 +22,7 @@ import { createCandleAggregator, createCandleRecorder } from './price/candle-agg
 import { createBackgroundDailyBackfillScheduler } from './chart/background-backfill-scheduler.js';
 import { createFileBackfillStateStore } from './chart/backfill-state-store.js';
 import { createDailyBackfillService } from './chart/daily-backfill-service.js';
+import { createVolumeBaselineEnricher } from './volume/volume-baseline-service.js';
 import { createKisRuntimeRef, defaultActuallyStart } from './bootstrap-kis.js';
 import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
 import { createStockService } from './services/stock-service.js';
@@ -88,16 +89,22 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await settingsStore.load();
 
   const credentialStore = createFileCredentialStore();
-  const priceStore = new PriceStore();
   const snapshotRepo = new PriceSnapshotRepository(db);
+  const stockRepo = new StockRepository(db);
   const snapshotStore = new SnapshotStore(snapshotRepo);
   const candleRepo = new PriceCandleRepository(db);
+  const volumeBaselineEnricher = createVolumeBaselineEnricher({
+    stockRepo,
+    snapshotRepo,
+  });
+  const priceStore = new PriceStore({
+    enrichPrice: (price) => volumeBaselineEnricher.enrich(price),
+  });
   const noteRepo = new StockNoteRepository(db);
   const candleRecorder = createCandleRecorder({
     priceStore,
     aggregator: createCandleAggregator({ writer: candleRepo }),
   });
-  const stockRepo = new StockRepository(db);
   const sectorRepo = new SectorRepository(db);
   const favoriteRepo = new FavoriteRepository(db);
   const masterRepo = new MasterStockRepository(db);

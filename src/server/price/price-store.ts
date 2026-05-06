@@ -20,6 +20,10 @@ interface PriceStoreEvents {
   'price-update': [price: Price];
 }
 
+export interface PriceStoreOptions {
+  enrichPrice?: (price: Price) => Price;
+}
+
 // Extend EventEmitter with a typed interface so callers get narrowed event
 // signatures without falling back to `any`.
 export declare interface PriceStore {
@@ -35,14 +39,21 @@ export declare interface PriceStore {
 
 export class PriceStore extends EventEmitter {
   private readonly _prices = new Map<string, Price>();
+  private readonly enrichPrice: (price: Price) => Price;
+
+  constructor(options: PriceStoreOptions = {}) {
+    super();
+    this.enrichPrice = options.enrichPrice ?? ((price) => price);
+  }
 
   /**
    * Store the price and emit `'price-update'`.
    * Signature matches `PriceStoreLike.setPrice` from `polling-scheduler.ts`.
    */
   setPrice(price: Price): void {
-    this._prices.set(price.ticker, price);
-    this.emit('price-update', price);
+    const enriched = this.enrichPrice(price);
+    this._prices.set(enriched.ticker, enriched);
+    this.emit('price-update', enriched);
   }
 
   getPrice(ticker: string): Price | undefined {

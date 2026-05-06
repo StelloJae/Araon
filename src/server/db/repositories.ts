@@ -686,6 +686,26 @@ export class PriceSnapshotRepository {
     return rows.map(rowToSnapshot);
   }
 
+  findSinceForTickers(tickers: readonly string[], sinceIso: string): PriceSnapshot[] {
+    const unique = Array.from(new Set(tickers));
+    if (unique.length === 0) return [];
+    const placeholders = unique.map((_, i) => `@t${i}`).join(', ');
+    const params: Record<string, string> = {
+      sinceIso,
+      ...Object.fromEntries(unique.map((ticker, i) => [`t${i}`, ticker])),
+    };
+    const rows = this.db
+      .prepare<Record<string, string>, PriceSnapshotRow>(
+        `SELECT ticker, price, change_rate, volume, snapshot_at
+         FROM price_snapshots
+         WHERE ticker IN (${placeholders})
+           AND snapshot_at >= @sinceIso
+         ORDER BY snapshot_at DESC`,
+      )
+      .all(params);
+    return rows.map(rowToSnapshot);
+  }
+
   insert(snapshot: PriceSnapshot): void {
     this.db
       .prepare(

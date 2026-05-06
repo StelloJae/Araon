@@ -100,6 +100,39 @@ describe('T4 — price-update event', () => {
     expect(received).toHaveLength(1);
     expect(received[0]).toEqual(price);
   });
+
+  it('runs a configured price enricher before storing and emitting', () => {
+    const store = new PriceStore({
+      enrichPrice: (price) => ({
+        ...price,
+        volumeSurgeRatio: 2.4,
+        volumeBaselineStatus: 'ready',
+      }),
+    });
+    const received: Price[] = [];
+    store.on('price-update', (p) => {
+      received.push(p);
+    });
+
+    const price: Price = {
+      ticker: '005930',
+      price: 75000,
+      changeRate: 0.015,
+      volume: 500000,
+      updatedAt: new Date().toISOString(),
+      isSnapshot: false,
+    };
+    store.setPrice(price);
+
+    expect(store.getPrice('005930')).toMatchObject({
+      volumeSurgeRatio: 2.4,
+      volumeBaselineStatus: 'ready',
+    });
+    expect(received[0]).toMatchObject({
+      volumeSurgeRatio: 2.4,
+      volumeBaselineStatus: 'ready',
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
