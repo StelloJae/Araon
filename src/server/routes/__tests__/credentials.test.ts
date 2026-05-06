@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { credentialsRoutes } from '../credentials.js';
 import type { KisRuntimeRef } from '../../bootstrap-kis.js';
 import type { CredentialStore } from '../../credential-store.js';
-import type { SettingsStore } from '../../settings-store.js';
+import { DEFAULT_SETTINGS, type SettingsStore } from '../../settings-store.js';
 
 function makeFakes(initial?: { configured?: boolean; isPaper?: boolean; runtime?: 'unconfigured' | 'starting' | 'started' | 'failed' }) {
   const stored = initial?.configured
@@ -17,10 +17,10 @@ function makeFakes(initial?: { configured?: boolean; isPaper?: boolean; runtime?
     clearCredentials: vi.fn(async () => {}),
   };
   const settingsStore: SettingsStore = {
-    load: vi.fn(async () => ({ pollingCycleDelayMs: 1000, rateLimiterMode: 'paper', websocketEnabled: false })),
+    load: vi.fn(async () => DEFAULT_SETTINGS),
     save: vi.fn(async () => {}),
     subscribe: vi.fn(() => () => {}),
-    snapshot: vi.fn(() => ({ pollingCycleDelayMs: 1000, rateLimiterMode: 'paper', websocketEnabled: false })),
+    snapshot: vi.fn(() => DEFAULT_SETTINGS),
   };
   const runtimeRef: KisRuntimeRef = {
     get: vi.fn(() => initial?.runtime === 'started' ? { status: 'started', runtime: {} as never } : { status: initial?.runtime ?? 'unconfigured' } as never),
@@ -86,9 +86,14 @@ describe('POST /credentials', () => {
       payload: { appKey: 'a'.repeat(36), appSecret: 'b'.repeat(180), isPaper: true },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ success: true, data: { configured: true, isPaper: true, runtime: 'started' } });
+    expect(res.json()).toEqual({ success: true, data: { configured: true, isPaper: false, runtime: 'started' } });
     expect(fakes.credentialStore.saveCredentials).toHaveBeenCalledTimes(1);
-    expect(fakes.settingsStore.save).toHaveBeenCalledWith(expect.objectContaining({ rateLimiterMode: 'paper' }));
+    expect(fakes.settingsStore.save).toHaveBeenCalledWith(expect.objectContaining({
+      rateLimiterMode: 'live',
+      websocketEnabled: true,
+      applyTicksToPriceStore: true,
+      backgroundDailyBackfillEnabled: true,
+    }));
     expect(fakes.runtimeRef.start).toHaveBeenCalledTimes(1);
   });
 
@@ -127,7 +132,12 @@ describe('POST /credentials', () => {
     let state: 'unconfigured' | 'failed' = 'unconfigured';
     fakes.runtimeRef.get = vi.fn(() => ({ status: state } as never));
     fakes.runtimeRef.start = vi.fn(async () => { state = 'failed'; throw new Error('BOOM'); });
-    fakes.settingsStore.snapshot = vi.fn(() => ({ pollingCycleDelayMs: 1000, rateLimiterMode: 'paper', websocketEnabled: false }));
+    fakes.settingsStore.snapshot = vi.fn(() => ({
+      ...DEFAULT_SETTINGS,
+      websocketEnabled: false,
+      applyTicksToPriceStore: false,
+      backgroundDailyBackfillEnabled: false,
+    }));
 
     const app = await build(fakes);
     const res = await app.inject({ method: 'POST', url: '/credentials', payload: { appKey: 'a'.repeat(36), appSecret: 'b'.repeat(180), isPaper: false } });
@@ -135,7 +145,12 @@ describe('POST /credentials', () => {
     expect(fakes.credentialStore.clearCredentials).toHaveBeenCalled();
     // settings는 previous snapshot으로 복구돼야 함
     const lastSaveArg = (fakes.settingsStore.save as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
-    expect(lastSaveArg).toMatchObject({ rateLimiterMode: 'paper' });
+    expect(lastSaveArg).toMatchObject({
+      rateLimiterMode: 'live',
+      websocketEnabled: false,
+      applyTicksToPriceStore: false,
+      backgroundDailyBackfillEnabled: false,
+    });
   });
 });
 

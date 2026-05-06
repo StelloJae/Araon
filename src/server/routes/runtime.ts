@@ -14,6 +14,7 @@ import {
   sessionLimitEndReason,
   SESSION_REALTIME_CAPS,
   NXT_CAP20_PREVIEW_CAP,
+  operatorDisableRealtimeRuntime,
   type RealtimeOperatorState,
   type RealtimeOperatorStatus,
   type RealtimeSessionState,
@@ -277,6 +278,34 @@ export async function runtimeRoutes(
       success: true,
       data: session,
     });
+  });
+
+  app.post('/runtime/realtime/emergency-disable', async (_request, reply) => {
+    const runtimeState = opts.runtimeRef.get();
+    if (runtimeState.status !== 'started') {
+      const current = opts.settingsStore.snapshot();
+      await opts.settingsStore.save({
+        ...current,
+        websocketEnabled: false,
+        applyTicksToPriceStore: false,
+      });
+      return reply.send({
+        success: true,
+        data: {
+          state: 'manual-disabled',
+          persistedSettingsChanged: true,
+        },
+      });
+    }
+
+    const result = await operatorDisableRealtimeRuntime(
+      {
+        bridge: runtimeState.runtime.bridge,
+        settingsStore: opts.settingsStore,
+      },
+      { persistSettings: true },
+    );
+    return reply.send({ success: true, data: result });
   });
 }
 

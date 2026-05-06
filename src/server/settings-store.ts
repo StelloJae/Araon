@@ -40,9 +40,9 @@ export const settingsSchema = z.object({
   /** Random jitter added to start gap to avoid lock-step bursts. */
   pollingStartJitterMs: z.number().int().min(0).max(500),
   rateLimiterMode: z.enum(['live', 'paper']),
-  websocketEnabled: z.boolean().default(false),
-  applyTicksToPriceStore: z.boolean().default(false),
-  backgroundDailyBackfillEnabled: z.boolean().default(false),
+  websocketEnabled: z.boolean().default(true),
+  applyTicksToPriceStore: z.boolean().default(true),
+  backgroundDailyBackfillEnabled: z.boolean().default(true),
   backgroundDailyBackfillRange: z.enum(['1m', '3m', '6m', '1y']).default('3m'),
 });
 
@@ -53,10 +53,10 @@ export const DEFAULT_SETTINGS: Settings = {
   pollingMaxInFlight: 5,
   pollingMinStartGapMs: 125,
   pollingStartJitterMs: 20,
-  rateLimiterMode: 'paper',
-  websocketEnabled: false,
-  applyTicksToPriceStore: false,
-  backgroundDailyBackfillEnabled: false,
+  rateLimiterMode: 'live',
+  websocketEnabled: true,
+  applyTicksToPriceStore: true,
+  backgroundDailyBackfillEnabled: true,
   backgroundDailyBackfillRange: '3m',
 };
 

@@ -28,6 +28,31 @@ afterEach(async () => {
 });
 
 describe('launcher routes', () => {
+  it('keeps clean first-run external calls blocked until credentials exist', async () => {
+    server = await createAraonServer({ dataDir: await makeTempDir() });
+
+    const settings = await server.app.inject({ method: 'GET', url: '/settings' });
+    const credentials = await server.app.inject({ method: 'GET', url: '/credentials/status' });
+    const realtime = await server.app.inject({ method: 'GET', url: '/runtime/realtime/status' });
+
+    expect(settings.json().data).toMatchObject({
+      websocketEnabled: true,
+      applyTicksToPriceStore: true,
+      backgroundDailyBackfillEnabled: true,
+    });
+    expect(credentials.json().data).toEqual({
+      configured: false,
+      isPaper: null,
+      runtime: 'unconfigured',
+    });
+    expect(realtime.json().data).toMatchObject({
+      configured: false,
+      runtimeStatus: 'unconfigured',
+      canApplyTicksToPriceStore: false,
+      subscribedTickerCount: 0,
+    });
+  });
+
   it('keeps launcher heartbeat disabled by default and exposes no credential material', async () => {
     server = await createAraonServer({ dataDir: await makeTempDir() });
 

@@ -217,8 +217,10 @@ Known limitations:
 - Local `1m` candles are incomplete for periods when Araon was not running.
 - Historical minute backfill is not implemented.
 - Full watchlist backfill is not live-validated.
-- Background daily backfill exists as opt-in infrastructure, but live operation
-  remains HOLD.
+- Background daily backfill has since been promoted to managed default
+  infrastructure after credentials are configured. It remains limited to
+  tracked/favorite tickers, budgeted, cooldown-protected, and blocked during the
+  integrated market window.
 - `gapCount` is still a light contract field, not a full data-quality audit.
 - Corporate action / adjusted-price semantics follow KIS returned values and
   are not deeply modeled yet.
@@ -229,7 +231,6 @@ Known limitations:
 These remain HOLD and require separate approval:
 
 - full watchlist backfill
-- automatic background backfill live operation
 - historical minute backfill
 - KIS weekly/monthly canonical storage
 - chart tooltip/crosshair polish
@@ -240,7 +241,8 @@ These remain HOLD and require separate approval:
 
 ## Operating Guardrails
 
-Do not enable background live backfill without separate approval.
+Do not widen managed daily backfill beyond tracked/favorite tickers without
+separate approval.
 
 Do not synthesize missing chart data.
 
@@ -248,7 +250,7 @@ Do not run historical backfill during the integrated market window.
 
 Do not add raw tick persistence.
 
-Do not treat this closeout as approval for full watchlist or background live
+Do not treat this closeout as approval for full watchlist or historical minute
 backfill.
 
 ## Recommended Next Work
@@ -267,7 +269,7 @@ and documented beta readiness.
 Not recommended immediately:
 
 ```txt
-background backfill expansion
+full watchlist backfill expansion
 historical minute strategy
 news/disclosure feature
 memo/observation log

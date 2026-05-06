@@ -416,7 +416,7 @@ export function buildInactiveRealtimeOperatorStatus(
     source: 'integrated',
     enabledGates: {
       ...gates,
-      canApplyTicksToPriceStore: shouldApplyRuntimeWsTicks(gates, session),
+      canApplyTicksToPriceStore: false,
     },
     subscribedTickerCount: 0,
     subscribedTickers: [],

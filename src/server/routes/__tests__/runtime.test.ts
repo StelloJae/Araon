@@ -148,8 +148,8 @@ describe('GET /runtime/realtime/status', () => {
         runtimeStatus: 'unconfigured',
         state: 'disabled',
         source: 'integrated',
-        websocketEnabled: false,
-        applyTicksToPriceStore: false,
+        websocketEnabled: true,
+        applyTicksToPriceStore: true,
         canApplyTicksToPriceStore: false,
         subscribedTickerCount: 0,
         subscribedTickers: [],
@@ -729,5 +729,46 @@ describe('POST /runtime/realtime/session-disable', () => {
     expect(stopSession).toHaveBeenCalledTimes(1);
     expect(pollingStop).not.toHaveBeenCalled();
     expect(settings.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /runtime/realtime/emergency-disable', () => {
+  it('disconnects realtime, persists disabled gates, and leaves REST polling running', async () => {
+    const disconnectAll = vi.fn(async () => undefined);
+    const pollingStop = vi.fn(async () => undefined);
+    const settings = settingsStore({
+      websocketEnabled: true,
+      applyTicksToPriceStore: true,
+    });
+    const runtime = startedRuntime({
+      bridge: { disconnectAll },
+      pollingStop,
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/emergency-disable',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      success: true,
+      data: {
+        state: 'manual-disabled',
+        persistedSettingsChanged: true,
+      },
+    });
+    expect(disconnectAll).toHaveBeenCalledTimes(1);
+    expect(pollingStop).not.toHaveBeenCalled();
+    expect(settings.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        websocketEnabled: false,
+        applyTicksToPriceStore: false,
+      }),
+    );
   });
 });

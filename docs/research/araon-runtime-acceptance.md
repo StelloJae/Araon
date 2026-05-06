@@ -18,10 +18,10 @@ subscription cap=40
 REST polling fallback=enabled
 ```
 
-Fresh installs remain conservative: code defaults are
-`websocketEnabled=false` and `applyTicksToPriceStore=false`. This report is
-evidence for this single-user local runtime, not an automatic fresh-install
-rollout.
+At the time of this acceptance, fresh installs remained conservative. The later
+auto-operations promotion changed the product policy: clean installs still make
+no external KIS calls before credentials exist, but after credentials are
+configured Araon defaults to managed cap40 realtime and guarded daily backfill.
 
 The run used a smoke-only favorite overlay to exercise the full 40-ticker
 runtime path. The original favorite ticker set was restored after observation.
@@ -32,9 +32,10 @@ runtime path. The original favorite ticker set was restored after observation.
 - Runtime settings before observation:
   - `websocketEnabled=true`
   - `applyTicksToPriceStore=true`
-- Fresh-install code defaults:
-  - `websocketEnabled=false`
-  - `applyTicksToPriceStore=false`
+- Current managed defaults after credentials:
+  - `websocketEnabled=true`
+  - `applyTicksToPriceStore=true`
+  - `backgroundDailyBackfillEnabled=true`
 - Original favorites snapshot: 5 tickers
   - `005930`, `000660`, `042700`, `277810`, `017510`
 - Temporary overlay: 35 tracked stocks selected by recent REST snapshot volume
@@ -140,8 +141,8 @@ The only remaining browser console error observed after the fix was the missing
 - Persisted runtime settings remained:
   - `websocketEnabled=true`
   - `applyTicksToPriceStore=true`
-- Fresh-install defaults remain off; this workstation's persisted settings are
-  intentionally on for local operation.
+- Explicit persisted emergency-disable settings remain respected. Clean installs
+  still do not call KIS until credentials are configured.
 - No credential file changes were made.
 
 ## Volume Surge Decision

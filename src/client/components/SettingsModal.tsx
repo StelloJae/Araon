@@ -41,6 +41,7 @@ import { ensureAudioUnlocked, playBleep } from '../lib/sound';
 import {
   ApiError,
   disableRealtimeSession,
+  emergencyDisableRealtime,
   enableRealtimeSession,
   getFavorites,
   getRealtimeStatus,
@@ -55,7 +56,6 @@ import {
 } from '../lib/api-client';
 import {
   REALTIME_ADVANCED_RECHECK_LABEL,
-  REALTIME_CONTROL_BADGE_LABEL,
   REALTIME_STATUS_FETCH_ERROR_MESSAGE,
   getRealtimeCap20PreviewLabel,
   getRealtimeCap20ReadinessLabel,
@@ -299,6 +299,7 @@ function ConnectionTab() {
 
   async function saveServerSettings(
     patch: Partial<ServerRuntimeSettings>,
+    message = '운영 설정을 저장했습니다',
   ): Promise<void> {
     if (serverSettings === null) return;
     const next = { ...serverSettings, ...patch };
@@ -308,7 +309,7 @@ function ConnectionTab() {
       setServerSettings(saved);
       setServerSettingsPhase({
         kind: 'success',
-        message: '백필 설정을 저장했습니다',
+        message,
       });
     } catch (err) {
       setServerSettingsPhase({
@@ -376,6 +377,28 @@ function ConnectionTab() {
       setOperatorPhase({
         kind: 'success',
         message: '이 세션의 실시간 시세를 껐습니다',
+      });
+    } catch (err) {
+      setOperatorPhase({
+        kind: 'error',
+        message: operatorErrorMessage(err),
+      });
+    }
+  }
+
+  async function handleRealtimeEmergencyDisable(): Promise<void> {
+    setOperatorPhase({ kind: 'running', action: 'disable' });
+    try {
+      await emergencyDisableRealtime();
+      const [realtime, settings] = await Promise.all([
+        getRealtimeStatus(),
+        getServerSettings(),
+      ]);
+      setRealtimeStatus(realtime);
+      setServerSettings(settings);
+      setOperatorPhase({
+        kind: 'success',
+        message: '통합 실시간 시세를 비상정지했습니다. REST 폴링은 계속 유지됩니다.',
       });
     } catch (err) {
       setOperatorPhase({
@@ -517,16 +540,17 @@ function ConnectionTab() {
         onConfirmChange={setOperatorConfirmed}
         onEnable={() => void handleSessionEnable()}
         onDisable={() => void handleSessionDisable()}
+        onEmergencyDisable={() => void handleRealtimeEmergencyDisable()}
       />
       <BackgroundBackfillControl
         settings={serverSettings}
         phase={serverSettingsPhase}
         runtimeStarted={status.runtime === 'started'}
-        onEnabledChange={(enabled) => {
-          void saveServerSettings({ backgroundDailyBackfillEnabled: enabled });
-        }}
-        onRangeChange={(range) => {
-          void saveServerSettings({ backgroundDailyBackfillRange: range });
+        onEmergencyDisable={() => {
+          void saveServerSettings(
+            { backgroundDailyBackfillEnabled: false },
+            '과거 일봉 자동 보강을 비상정지했습니다',
+          );
         }}
       />
 
@@ -663,7 +687,7 @@ function ConnectionTab() {
   );
 }
 
-function RealtimeSessionControl({
+export function RealtimeSessionControl({
   status,
   selectedCap,
   confirmed,
@@ -673,6 +697,7 @@ function RealtimeSessionControl({
   onConfirmChange,
   onEnable,
   onDisable,
+  onEmergencyDisable,
 }: {
   status: RealtimeStatusPayload | null;
   selectedCap: SessionRealtimeCap;
@@ -683,6 +708,7 @@ function RealtimeSessionControl({
   onConfirmChange: (confirmed: boolean) => void;
   onEnable: () => void;
   onDisable: () => void;
+  onEmergencyDisable: () => void;
 }) {
   const busy = phase.kind === 'running';
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -742,18 +768,40 @@ function RealtimeSessionControl({
             padding: '2px 5px',
           }}
         >
-          {REALTIME_CONTROL_BADGE_LABEL}
+          자동 운영
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        통합 실시간 시세는 H0UNCNT0 기반으로 검증 완료됐습니다.
+        통합 실시간 시세는 H0UNCNT0 기반으로 검증 완료됐고, credentials 등록 후 자동 운영됩니다.
         <br />
-        REST 폴링은 항상 fallback으로 유지됩니다.
+        최대 40종목까지 통합 시세로 받고 REST 폴링 fallback은 항상 유지됩니다.
         <br />
-        이 로컬 설정에서는 상시 실시간이 켜져 있을 수 있지만, 새 설치 기본값은 OFF입니다.
+        일반 설정을 켤 필요 없이 Araon이 favorites와 추적 종목을 관리합니다.
         <br />
         raw key / account / secret 정보는 표시하지 않습니다.
       </div>
+      <button
+        type="button"
+        onClick={onEmergencyDisable}
+        disabled={busy}
+        data-testid="realtime-emergency-disable"
+        style={{
+          marginTop: 12,
+          padding: '8px 10px',
+          borderRadius: 7,
+          border: '1px solid rgba(246, 70, 93, 0.45)',
+          background: 'var(--bg-card)',
+          color: 'var(--kr-down)',
+          fontFamily: 'inherit',
+          fontSize: 12,
+          fontWeight: 800,
+          cursor: busy ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {phase.kind === 'running' && phase.action === 'disable'
+          ? '비상정지 중…'
+          : '실시간 비상정지'}
+      </button>
       <button
         type="button"
         onClick={() => setAdvancedOpen((open) => !open)}
@@ -981,18 +1029,16 @@ function RealtimeSessionControl({
   );
 }
 
-function BackgroundBackfillControl({
+export function BackgroundBackfillControl({
   settings,
   phase,
   runtimeStarted,
-  onEnabledChange,
-  onRangeChange,
+  onEmergencyDisable,
 }: {
   settings: ServerRuntimeSettings | null;
   phase: ServerSettingsPhase;
   runtimeStarted: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-  onRangeChange: (range: ServerRuntimeSettings['backgroundDailyBackfillRange']) => void;
+  onEmergencyDisable: () => void;
 }) {
   const saving = phase.kind === 'saving';
   const enabled = settings?.backgroundDailyBackfillEnabled === true;
@@ -1015,10 +1061,10 @@ function BackgroundBackfillControl({
           marginBottom: 8,
         }}
       >
-        과거 일봉 백필
+        과거 일봉 자동 보강
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        기본값은 OFF입니다. 켜면 장후/주말에만 즐겨찾기 종목부터 낮은 우선순위로 KIS 일봉을 채웁니다.
+        credentials 등록 후 자동 운영됩니다. 장후/주말에만 favorites와 추적 종목을 낮은 속도로 보강합니다.
         <br />
         장중 07:55~20:05에는 서버 정책으로 자동 실행되지 않습니다.
       </div>
@@ -1031,53 +1077,23 @@ function BackgroundBackfillControl({
           marginTop: 12,
         }}
       >
-        <Toggle
-          value={enabled}
-          disabled={settings === null || saving}
-          label={enabled ? '자동 백필 켜짐' : '자동 백필 꺼짐'}
-          onChange={onEnabledChange}
-        />
-        <label
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 11,
-            fontWeight: 700,
-            color: 'var(--text-muted)',
-          }}
-        >
-          범위
-          <select
-            value={range}
-            disabled={settings === null || saving}
-            onChange={(e) =>
-              onRangeChange(
-                e.currentTarget.value as ServerRuntimeSettings['backgroundDailyBackfillRange'],
-              )
-            }
-            style={{
-              height: 30,
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              background: 'var(--bg-card)',
-              color: 'var(--text-primary)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '0 8px',
-            }}
-          >
-            <option value="1m">1m</option>
-            <option value="3m">3m</option>
-            <option value="6m">6m</option>
-            <option value="1y">1y</option>
-          </select>
-        </label>
+        <span style={{ fontSize: 11, color: enabled ? 'var(--kr-up)' : 'var(--kr-down)', fontWeight: 800 }}>
+          {enabled ? `자동 운영 · ${range}` : '비상정지됨'}
+        </span>
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           {runtimeStarted
             ? 'KIS 런타임 준비됨'
             : 'KIS 런타임 시작 후 실행 가능'}
         </span>
+        <button
+          type="button"
+          onClick={onEmergencyDisable}
+          disabled={settings === null || saving || !enabled}
+          data-testid="backfill-emergency-disable"
+          style={operatorButtonStyle(settings !== null && !saving && enabled)}
+        >
+          {saving ? '저장 중…' : '일봉 보강 비상정지'}
+        </button>
       </div>
       {phase.kind === 'success' && (
         <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-up)' }}>

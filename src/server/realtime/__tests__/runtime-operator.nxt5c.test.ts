@@ -49,19 +49,34 @@ function sub(ticker: string): WsSubscription {
 }
 
 describe('NXT5c runtime apply gates', () => {
-  it('keeps realtime WebSocket apply gates off for fresh installs', () => {
+  it('enables managed realtime WebSocket apply gates for fresh settings', () => {
     const legacy = {
       pollingCycleDelayMs: 1000,
       pollingMaxInFlight: 5,
       pollingMinStartGapMs: 125,
       pollingStartJitterMs: 20,
-      rateLimiterMode: 'paper',
+      rateLimiterMode: 'live',
     };
 
     const parsed = settingsSchema.parse(legacy);
 
-    expect(DEFAULT_SETTINGS.websocketEnabled).toBe(false);
-    expect(DEFAULT_SETTINGS.applyTicksToPriceStore).toBe(false);
+    expect(DEFAULT_SETTINGS.websocketEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.applyTicksToPriceStore).toBe(true);
+    expect(parsed.websocketEnabled).toBe(true);
+    expect(parsed.applyTicksToPriceStore).toBe(true);
+  });
+
+  it('preserves explicitly disabled persisted realtime gates', () => {
+    const parsed = settingsSchema.parse({
+      pollingCycleDelayMs: 1000,
+      pollingMaxInFlight: 5,
+      pollingMinStartGapMs: 125,
+      pollingStartJitterMs: 20,
+      rateLimiterMode: 'live',
+      websocketEnabled: false,
+      applyTicksToPriceStore: false,
+    });
+
     expect(parsed.websocketEnabled).toBe(false);
     expect(parsed.applyTicksToPriceStore).toBe(false);
   });

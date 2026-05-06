@@ -63,14 +63,15 @@ both with `endReason=applied_tick_limit_reached`, active subscriptions returned
 to 0, persisted settings stayed unchanged, and the smoke-only favorite overlay
 was restored to the original five favorites.
 
-NXT always-on promotion then changed this workstation's local persisted runtime
+NXT always-on promotion first changed this workstation's local persisted runtime
 settings from session-only manual operation to steady-state integrated
-realtime. Fresh-install code defaults remain off:
+realtime. Auto-operations promotion later made this the managed product default
+after credentials are configured:
 
-- Local `data/settings.json`: `websocketEnabled=true`.
-- Local `data/settings.json`: `applyTicksToPriceStore=true`.
-- Fresh install: `websocketEnabled=false`.
-- Fresh install: `applyTicksToPriceStore=false`.
+- Clean install without credentials: no external KIS calls.
+- Managed default after credentials: `websocketEnabled=true`.
+- Managed default after credentials: `applyTicksToPriceStore=true`.
+- Managed default after credentials: `backgroundDailyBackfillEnabled=true`.
 - Market-hour scheduling now follows the integrated H0UNCNT0 window:
   warmup 07:55 KST, open 08:00 KST, close 20:00 KST, shutdown 20:05 KST.
 - Warmup connects the WebSocket and subscribes the current realtime favorite
@@ -225,18 +226,16 @@ Internal stop:
 Operator rollback:
 
 - Invoke the realtime operator action with persisted rollback.
-- Expected persisted settings:
+- Expected persisted settings after emergency realtime pause:
   - `websocketEnabled: false`
   - `applyTicksToPriceStore: false`
 - Keep favorites unchanged; overflow favorites remain polling tier.
-- In SettingsModal, the realtime control can end a session-scoped run. For this
-  workstation's persisted always-on mode, use the settings rollback path below
-  so the server restarts with both gates off.
+- In SettingsModal, use "실시간 비상정지" for managed operation rollback.
 - HTTP fallback if the UI is unavailable: call `PUT /settings` with the current
   settings snapshot but `websocketEnabled=false` and
   `applyTicksToPriceStore=false`.
-- After server restart, fresh-install defaults are already off; this
-  workstation remains on only while its local persisted settings stay true.
+- After server restart, explicit persisted `false` values are respected even
+  though fresh defaults are managed ON after credentials.
 
 Session disable:
 

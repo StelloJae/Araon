@@ -88,12 +88,12 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
 
       <div style={noticeStyle}>
         <div>Araon은 localhost에서만 실행되는 읽기 전용 모니터링 도구입니다.</div>
-        <div>주문/매매 기능은 없고, 새 설치의 실시간 시세는 기본 OFF입니다.</div>
+        <div>주문/매매 기능은 없고, KIS credentials 등록 후 실시간 시세와 일봉 보강을 자동으로 관리합니다.</div>
       </div>
 
       <div style={hintStyle}>
-        실전 OpenAPI 키를 등록하면 REST 폴링이 기본 경로로 유지되고,
-        실시간 시세는 별도 설정에서 켤 수 있습니다.
+        최대 40종목까지 통합 시세로 운영하며 REST 폴링 fallback은 계속 유지됩니다.
+        문제가 있으면 설정에서 비상정지할 수 있습니다.
       </div>
 
       <Field label="App Key">

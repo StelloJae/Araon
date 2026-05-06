@@ -368,6 +368,18 @@ export async function disableRealtimeSession(): Promise<RealtimeSessionStatePayl
   return unwrap<RealtimeSessionStatePayload>(res);
 }
 
+export interface RealtimeEmergencyDisablePayload {
+  state: 'manual-disabled';
+  persistedSettingsChanged: boolean;
+}
+
+export async function emergencyDisableRealtime(): Promise<RealtimeEmergencyDisablePayload> {
+  const res = await fetch('/runtime/realtime/emergency-disable', {
+    method: 'POST',
+  });
+  return unwrap<RealtimeEmergencyDisablePayload>(res);
+}
+
 // === Imports ==============================================================
 
 export interface KisWatchlistImportResult {

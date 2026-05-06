@@ -56,7 +56,7 @@ export async function credentialsRoutes(app: FastifyInstance, opts: CredentialsR
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: { code: 'INVALID_BODY', issues: parsed.error.issues } });
     }
-    const creds = parsed.data;
+    const creds = { ...parsed.data, isPaper: false };
 
     return setupMutex.run(async () => {
       const existing = await credentialStore.load();

@@ -37,7 +37,9 @@ On first run, expect the KIS credentials setup screen. Araon needs your own live
 KIS OpenAPI app key/app secret pair, but it is still a read-only monitoring
 tool: it does not place orders or execute trades. The public setup flow is
 intentionally live-only because KIS paper credentials are materially more
-rate-limited and can differ by endpoint.
+rate-limited and can differ by endpoint. Until credentials are configured,
+Araon makes no external KIS calls. After credentials are configured, Araon
+automatically manages cap40 integrated realtime and guarded daily backfill.
 
 ## Install From Source
 
@@ -185,11 +187,13 @@ the safe path for release validation.
 
 The desktop app stores credentials, settings, and SQLite state under the OS
 app user-data directory. It does not write runtime data into the app bundle.
-Fresh installs still start with realtime disabled:
+Fresh installs have no credentials, so they do not call KIS. After credentials
+are configured, managed operation defaults are:
 
 ```txt
-websocketEnabled=false
-applyTicksToPriceStore=false
+websocketEnabled=true
+applyTicksToPriceStore=true
+backgroundDailyBackfillEnabled=true
 ```
 
 Unsigned beta artifacts can show OS warnings:
@@ -219,30 +223,53 @@ For source development this is usually `data/`. For the CLI it is `--data-dir`,
 `ARAON_DATA_DIR`, or the OS default user-data directory. For desktop beta apps it
 is the OS app user-data directory. Runtime data must not be committed.
 
-## Realtime
+## Managed Realtime
 
-Fresh installs start with realtime disabled:
+Araon does not start realtime before credentials exist. Once live credentials
+are registered, integrated realtime is managed automatically:
 
 ```txt
-websocketEnabled=false
-applyTicksToPriceStore=false
+websocketEnabled=true
+applyTicksToPriceStore=true
 ```
 
-After credentials are configured, realtime can be enabled from Settings. Araon
-uses the KIS `H0UNCNT0` integrated WebSocket feed for KRX+NXT realtime prices.
+Araon uses the KIS `H0UNCNT0` integrated WebSocket feed for up to 40 tracked or
+favorite tickers.
 
 REST polling remains available as a fallback when realtime is disabled, inactive,
 or not receiving ticks.
 
-## Disable Realtime
+## Managed Daily Backfill
 
-Use Settings to disable the realtime session. If you need to force runtime
-settings back to the conservative state, make sure these values are false:
+Daily historical candle backfill is enabled by default after credentials are
+configured:
+
+```txt
+backgroundDailyBackfillEnabled=true
+```
+
+It only targets favorites and tracked stocks. It does not backfill the full KIS
+master catalog, does not store raw ticks, and does not run historical minute
+backfill. The scheduler is low-priority, sequential, budgeted, and guarded so
+it does not run during the KRX/NXT trading window.
+
+## Emergency Pause
+
+Use Settings if you need to pause managed realtime or daily backfill. Realtime
+emergency pause disconnects the WebSocket path and persists:
 
 ```json
 {
   "websocketEnabled": false,
   "applyTicksToPriceStore": false
+}
+```
+
+Daily backfill emergency pause persists:
+
+```json
+{
+  "backgroundDailyBackfillEnabled": false
 }
 ```
 

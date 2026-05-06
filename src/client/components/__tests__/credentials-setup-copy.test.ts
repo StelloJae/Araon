@@ -14,9 +14,10 @@ describe('CredentialsSetup first-run copy', () => {
 
     expect(html).toContain('읽기 전용 모니터링 도구');
     expect(html).toContain('주문/매매 기능은 없고');
-    expect(html).toContain('실시간 시세는 기본 OFF');
-    expect(html).toContain('REST 폴링이 기본 경로');
-    expect(html).toContain('실시간 시세는 별도 설정');
+    expect(html).toContain('실시간 시세와 일봉 보강을 자동으로 관리');
+    expect(html).toContain('최대 40종목까지 통합 시세');
+    expect(html).toContain('REST 폴링 fallback');
+    expect(html).toContain('비상정지');
     expect(html).not.toContain('모의투자 계정');
   });
 });

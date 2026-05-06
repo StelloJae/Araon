@@ -30,7 +30,8 @@ fallback.
 - KIS REST polling fallback for tracked stocks
 - KIS `H0UNCNT0` integrated KRX+NXT WebSocket realtime feed
 - cap40 controlled realtime acceptance completed for the v1 release
-- Session-scoped realtime controls with rollback from the local UI
+- Managed cap40 realtime by default after credentials are configured
+- Emergency realtime/backfill pause from the local UI
 - KIS master catalog for searchable KOSPI/KOSDAQ universe data
 - KIS official index industry grouping with manual sector override support
 - 한국어 초성 검색 for stock names
@@ -47,25 +48,31 @@ Araon is designed for a **single-user localhost setup**:
 - You run the server and browser UI on your own machine.
 - KIS credentials are entered in the local UI.
 - Runtime state is stored under `data/`, which is ignored by git.
-- Fresh installs start with realtime disabled for safety.
+- Fresh installs make no external KIS calls until credentials are configured.
+- After credentials are configured, Araon manages realtime and daily candle
+  backfill automatically.
 
 This is not a hosted SaaS app, a trading bot, or an order-entry system.
 
-## Realtime Defaults
+## Managed Operations
 
-Fresh installs are conservative:
+Fresh installs have no credentials, so Araon does not start KIS REST,
+WebSocket, or daily backfill calls. Once you register live KIS credentials,
+managed operations are enabled by default:
 
 ```txt
-websocketEnabled=false
-applyTicksToPriceStore=false
+websocketEnabled=true
+applyTicksToPriceStore=true
+backgroundDailyBackfillEnabled=true
 ```
 
-After credentials are configured, you can enable realtime from the Settings UI.
-REST polling remains available as a fallback.
+Realtime uses the integrated `H0UNCNT0` feed for up to 40 tracked/favorite
+tickers. REST polling remains available as a fallback. Daily historical candle
+backfill runs only after close/weekends, stays within tracked/favorite tickers,
+and never synthesizes missing chart data.
 
-The original development environment has been validated for always-on local
-operation, but the open-source default remains OFF so new users opt in
-intentionally.
+Settings shows managed status and diagnostics instead of ordinary enable
+toggles. Emergency pause remains available for realtime and daily backfill.
 
 ## Requirements
 
@@ -94,9 +101,9 @@ araon
 ```
 
 On first run, Araon shows the local KIS credentials setup screen. You need your
-own KIS OpenAPI app key/app secret pair. Fresh installs keep realtime OFF until
-you enable it from Settings, and Araon remains read-only: no orders, no trading,
-no brokerage actions.
+own KIS OpenAPI app key/app secret pair. After credentials are configured,
+Araon automatically manages cap40 integrated realtime and guarded daily
+backfill. Araon remains read-only: no orders, no trading, no brokerage actions.
 
 For local development from source:
 
@@ -323,7 +330,8 @@ same-time-bucket baseline samples before showing a volume-surge ratio.
 
 ## Known Limitations
 
-- Fresh installs keep realtime OFF until the user enables it.
+- Clean installs make no external KIS calls until credentials exist; after
+  credentials, managed realtime/backfill are enabled by default.
 - Volume-surge ratios appear only after enough local baseline samples exist.
 - Desktop beta artifacts are unsigned and may trigger OS security warnings.
 - Docker Compose packaging is planned after v1.0.0.

@@ -53,11 +53,12 @@ through npm @beta or new GitHub prerelease assets.
 - Chart/backfill MVP is closed at single-ticker daily live probe plus UI
   acceptance.
 - Realtime cap40 controlled acceptance is already recorded separately.
-- Fresh installs keep realtime OFF by default.
+- Auto-operations defaults supersede the earlier OFF-by-default policy:
+  clean installs still make no external KIS calls until credentials exist, then
+  realtime cap40 and daily backfill are managed defaults.
 - The current local data directory is a user operation profile and can have
-  realtime settings enabled.
-- Full watchlist backfill, background live backfill, and historical minute
-  backfill remain HOLD.
+  realtime/backfill settings enabled or emergency-disabled.
+- Full master backfill and historical minute backfill remain HOLD.
 
 ## Clean DataDir Acceptance
 
@@ -72,8 +73,8 @@ Result:
 ```txt
 server: started on 127.0.0.1:43920
 credentials/status: configured=false, isPaper=null, runtime=unconfigured
-settings: websocketEnabled=false, applyTicksToPriceStore=false,
-          backgroundDailyBackfillEnabled=false
+settings at acceptance time: websocketEnabled=false, applyTicksToPriceStore=false,
+                             backgroundDailyBackfillEnabled=false
 credentials.enc: not created
 browser console errors: 0
 ```
@@ -84,7 +85,7 @@ Observed first-run screen:
 - KIS OpenAPI app key / app secret guidance
 - localhost-only read-only monitoring notice
 - explicit no order/trading copy
-- fresh install realtime OFF notice
+- pre-auto-operations realtime OFF notice
 - REST polling fallback copy
 - app key and app secret inputs
 
@@ -232,10 +233,12 @@ actual intraday surge cadence were not executed.
 
 - Desktop DMG/EXE GUI install and launch remain manually pending.
 - Desktop artifacts are unsigned.
-- Existing local dataDir is live-capable; fresh install defaults remain safer
-  and OFF.
-- Full watchlist daily backfill remains HOLD.
-- Background live backfill remains HOLD.
+- Existing local dataDir is live-capable; after the auto-operations default
+  promotion, clean installs still make no KIS calls until credentials exist, then
+  managed realtime/backfill defaults apply.
+- Full master daily backfill remains HOLD; managed daily backfill is limited to
+  tracked/favorites scope.
+- Historical background minute backfill remains HOLD.
 - Historical minute backfill remains out of scope.
 - Live surge frequency was not observed during this closed-market acceptance.
 - Volume-surge ratios depend on local baseline sample accumulation.
