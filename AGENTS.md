@@ -50,6 +50,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Persisted candle + historical daily backfill MVP**: `price_candles` SQLite table 추가 / canonical stored interval은 local `1m` + KIS daily `1d` / 3m~12h는 1m candle에서 재집계 / 1D·1W·1M은 1d candle에서 KST 기준 재집계 / daily backfill range는 `1m/3m/6m/1y`, 긴 범위는 100일 이하 창으로 pagination / StockDetailModal `차트` 탭은 TradingView Lightweight Charts로 표시 / raw tick 저장·historical minute backfill·full master backfill·가짜 과거 차트 없음
 - **Candle chart UI acceptance**: 005930에 저장된 `kis-daily` 20개 candle이 StockDetailModal `차트` 탭에서 `1D · 1m` 20 candles로 표시됨 / `1W · 3m` 5 candles, `1M · 1y` 2 candles 확인 / 빈 종목은 "차트 데이터 수집 중" 유지 / daily 계열 봉 선택 시 너무 짧은 range는 자동 보정(`1D→1m`, `1W→3m`, `1M→1y`) / UI acceptance 중 추가 KIS historical call·WebSocket/cap/background queue 0회
 - **Chart/backfill MVP closeout**: 단일 종목 KIS daily live probe + StockDetailModal UI acceptance 기준으로 제품 체크포인트 닫힘 / 이후 daily background backfill은 tracked/favorites 대상 managed default로 승격 / full master backfill·historical minute backfill은 계속 HOLD / 누락 차트 데이터 합성 금지
+- **Managed defaults acceptance**: `bd7dbe8` 기준 no-live acceptance 완료 / fresh no-credentials는 defaults true여도 runtime unconfigured·KIS 호출 0회·credentials.enc 미생성 / persisted false emergency-disabled 설정 보존 / emergency disable route·Settings UI·backfill guard 검증 / existing local live UI smoke는 장중 live runtime 회피를 위해 not executed, 판정 CONDITIONAL GO
 
 ### NXT 시리즈 진행도
 
