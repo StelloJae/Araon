@@ -339,6 +339,16 @@ export interface StockNewsItem {
   fetchedAt: string;
 }
 
+export type StockNewsFetchStatusValue = 'success' | 'failed';
+
+export interface StockNewsFetchStatus {
+  ticker: string;
+  lastFetchStatus: StockNewsFetchStatusValue;
+  lastFetchErrorCode: string | null;
+  lastFetchedAt: string;
+  updatedAt: string;
+}
+
 // === SSE event schema =====================================================
 // Shared contract for `src/server/sse/*` event emission.
 // All events carry a monotonic `id` so consumers can detect gaps and request

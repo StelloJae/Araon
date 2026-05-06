@@ -489,6 +489,36 @@ export interface RuntimeDataHealthPayload {
     collecting: number;
     unavailable: number;
   };
+  growth: {
+    signals: {
+      eventCount: number;
+      oldestSignalEventAt: string | null;
+      newestSignalEventAt: string | null;
+      retentionDays: number;
+    };
+    notes: {
+      noteCount: number;
+      oldestNoteAt: string | null;
+      newestNoteAt: string | null;
+    };
+    news: {
+      itemCount: number;
+      staleItemCount: number;
+      oldestFetchedAt: string | null;
+      newestFetchedAt: string | null;
+      failedFetchCount: number;
+      lastFetchStatus: 'success' | 'failed' | null;
+      lastFetchErrorCode: string | null;
+      lastFetchedAt: string | null;
+      ttlHours: number;
+      pruneAfterDays: number;
+    };
+  };
+  maintenance: {
+    lastRunAt: string | null;
+    candlePruneLastRunAt: string | null;
+    candlePruneLastError: string | null;
+  };
 }
 
 export async function getRuntimeDataHealth(): Promise<RuntimeDataHealthPayload> {

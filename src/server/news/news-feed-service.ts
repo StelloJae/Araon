@@ -9,7 +9,7 @@ export interface StockNewsFeedService {
 }
 
 export interface CreateStockNewsFeedServiceOptions {
-  repo: Pick<StockNewsRepository, 'listByTicker' | 'upsertMany'>;
+  repo: Pick<StockNewsRepository, 'listByTicker' | 'upsertMany' | 'recordFetchStatus'>;
   fetchHtml?: (url: string) => Promise<string>;
 }
 
@@ -26,11 +26,29 @@ export function createStockNewsFeedService(
 
   async function refresh(input: { ticker: string; now: Date }): Promise<StockNewsItem[]> {
     const url = `${NAVER_FINANCE_NEWS_URL}?code=${encodeURIComponent(input.ticker)}&page=1`;
-    const html = await fetchHtml(url);
     const fetchedAt = input.now.toISOString();
-    const items = parseNaverFinanceNews(html, input.ticker, fetchedAt);
-    if (items.length === 0) return options.repo.listByTicker(input.ticker);
-    return options.repo.upsertMany(items);
+    try {
+      const html = await fetchHtml(url);
+      const items = parseNaverFinanceNews(html, input.ticker, fetchedAt);
+      options.repo.recordFetchStatus({
+        ticker: input.ticker,
+        lastFetchStatus: 'success',
+        lastFetchErrorCode: null,
+        lastFetchedAt: fetchedAt,
+        updatedAt: fetchedAt,
+      });
+      if (items.length === 0) return options.repo.listByTicker(input.ticker);
+      return options.repo.upsertMany(items);
+    } catch (err: unknown) {
+      options.repo.recordFetchStatus({
+        ticker: input.ticker,
+        lastFetchStatus: 'failed',
+        lastFetchErrorCode: sanitizeNewsFetchErrorCode(err),
+        lastFetchedAt: fetchedAt,
+        updatedAt: fetchedAt,
+      });
+      throw err;
+    }
   }
 
   return { list, refresh };
@@ -95,4 +113,13 @@ function decodeHtml(value: string): string {
     .replaceAll('&quot;', '"')
     .replaceAll('&#39;', "'")
     .replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
+}
+
+export function sanitizeNewsFetchErrorCode(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const status = message.match(/\b([45]\d{2})\b/)?.[1];
+  if (status !== undefined) return `HTTP_${status}`;
+  if (/timeout/i.test(message)) return 'TIMEOUT';
+  if (/network|fetch/i.test(message)) return 'NETWORK_ERROR';
+  return 'FETCH_FAILED';
 }

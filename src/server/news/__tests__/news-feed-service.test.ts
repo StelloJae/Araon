@@ -34,8 +34,9 @@ describe('stock news feed service', () => {
       items.map((item: any, index: number) => ({ id: `news-${index}`, ...item })),
     );
     const listByTicker = vi.fn(() => []);
+    const recordFetchStatus = vi.fn();
     const service = createStockNewsFeedService({
-      repo: { upsertMany, listByTicker },
+      repo: { upsertMany, listByTicker, recordFetchStatus },
       fetchHtml: vi.fn(async () =>
         '<a href="/item/news_read.naver?article_id=2&office_id=001&code=005930">새 뉴스</a>',
       ),
@@ -53,6 +54,13 @@ describe('stock news feed service', () => {
         source: 'naver-finance',
       }),
     ]);
+    expect(recordFetchStatus).toHaveBeenCalledWith({
+      ticker: '005930',
+      lastFetchStatus: 'success',
+      lastFetchErrorCode: null,
+      lastFetchedAt: '2026-05-06T09:00:00.000Z',
+      updatedAt: '2026-05-06T09:00:00.000Z',
+    });
     expect(items[0]).toMatchObject({ id: 'news-0', title: '새 뉴스' });
   });
 });

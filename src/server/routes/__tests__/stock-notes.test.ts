@@ -61,6 +61,21 @@ describe('StockNoteRepository', () => {
     expect(repo.listByTicker('005930')).toEqual([newer, older]);
   });
 
+  it('limits and offsets notes per ticker without pruning user records', () => {
+    const repo = new StockNoteRepository(db);
+    for (let i = 0; i < 55; i += 1) {
+      repo.create({
+        ticker: '005930',
+        body: `note-${i}`,
+        now: new Date(Date.UTC(2026, 4, 5, 0, i)),
+      });
+    }
+
+    expect(repo.listByTicker('005930')).toHaveLength(50);
+    expect(repo.listByTicker('005930', { limit: 2, offset: 1 }).map((note) => note.body))
+      .toEqual(['note-53', 'note-52']);
+  });
+
   it('cascades notes when a tracked stock is removed', () => {
     const stockRepo = new StockRepository(db);
     const repo = new StockNoteRepository(db);
@@ -95,6 +110,24 @@ describe('stock note routes', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it('supports bounded note pagination for a tracked ticker', async () => {
+    for (const body of ['oldest', 'middle', 'newest']) {
+      await app.inject({
+        method: 'POST',
+        url: '/stocks/005930/notes',
+        payload: { body },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+
+    const res = await app.inject({ method: 'GET', url: '/stocks/005930/notes?limit=1&offset=1' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ success: true; data: Array<{ body: string }> }>();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0]?.body).toBe('middle');
   });
 
   it('creates trimmed local observation notes', async () => {

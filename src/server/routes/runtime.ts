@@ -11,7 +11,16 @@ import type {
 } from '../chart/background-backfill-scheduler.js';
 import type {
   PriceCandleCoverageSummary,
+  StockNewsGrowthSummary,
+  StockNoteGrowthSummary,
+  StockSignalGrowthSummary,
 } from '../db/repositories.js';
+import {
+  NEWS_PRUNE_AFTER_DAYS,
+  NEWS_STALE_AFTER_MS,
+  SIGNAL_RETENTION_DAYS,
+  type DataRetentionSnapshot,
+} from '../maintenance/data-retention.js';
 import {
   buildInactiveRealtimeOperatorStatus,
   buildRealtimeOperatorStatus,
@@ -42,6 +51,10 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   candleRepo?: { summarizeCoverage(): PriceCandleCoverageSummary[] };
   priceStore?: { getAllPrices(): Price[] };
   backfillStateStore?: BackgroundBackfillStateStore;
+  signalEventRepo?: { summarizeGrowth(): StockSignalGrowthSummary };
+  noteRepo?: { summarizeGrowth(): StockNoteGrowthSummary };
+  newsRepo?: { summarizeGrowth(now?: Date, staleAfterMs?: number): StockNewsGrowthSummary };
+  dataRetention?: { snapshot(): DataRetentionSnapshot };
 }
 
 export interface RuntimeRealtimeStatusPayload {
@@ -130,6 +143,7 @@ export async function runtimeRoutes(
   opts: RuntimeRoutesOptions,
 ): Promise<void> {
   app.get('/runtime/data-health', async (_request, reply) => {
+    const now = new Date();
     const settings = opts.settingsStore.snapshot();
     const backfillState =
       opts.backfillStateStore !== undefined
@@ -137,6 +151,11 @@ export async function runtimeRoutes(
         : { budgetDateKey: null, dailyCallCount: 0, cooldownUntilMs: 0 };
     const prices = opts.priceStore?.getAllPrices() ?? [];
     const baselineCounts = countVolumeBaselineStatuses(prices);
+    const signalGrowth = opts.signalEventRepo?.summarizeGrowth() ?? emptySignalGrowth();
+    const noteGrowth = opts.noteRepo?.summarizeGrowth() ?? emptyNoteGrowth();
+    const newsGrowth = opts.newsRepo?.summarizeGrowth(now, NEWS_STALE_AFTER_MS)
+      ?? emptyNewsGrowth();
+    const maintenance = opts.dataRetention?.snapshot() ?? emptyMaintenance();
 
     return reply.send({
       success: true,
@@ -160,6 +179,19 @@ export async function runtimeRoutes(
           cooldownActive: backfillState.cooldownUntilMs > Date.now(),
         },
         volumeBaseline: baselineCounts,
+        growth: {
+          signals: {
+            ...signalGrowth,
+            retentionDays: SIGNAL_RETENTION_DAYS,
+          },
+          notes: noteGrowth,
+          news: {
+            ...newsGrowth,
+            ttlHours: Math.round(NEWS_STALE_AFTER_MS / (60 * 60 * 1000)),
+            pruneAfterDays: NEWS_PRUNE_AFTER_DAYS,
+          },
+        },
+        maintenance,
       },
     });
   });
@@ -442,6 +474,43 @@ function countVolumeBaselineStatuses(prices: readonly Price[]): {
     ready: counts.ready,
     collecting: counts.collecting,
     unavailable: counts.unavailable,
+  };
+}
+
+function emptySignalGrowth(): StockSignalGrowthSummary {
+  return {
+    eventCount: 0,
+    oldestSignalEventAt: null,
+    newestSignalEventAt: null,
+  };
+}
+
+function emptyNoteGrowth(): StockNoteGrowthSummary {
+  return {
+    noteCount: 0,
+    oldestNoteAt: null,
+    newestNoteAt: null,
+  };
+}
+
+function emptyNewsGrowth(): StockNewsGrowthSummary {
+  return {
+    itemCount: 0,
+    staleItemCount: 0,
+    oldestFetchedAt: null,
+    newestFetchedAt: null,
+    failedFetchCount: 0,
+    lastFetchStatus: null,
+    lastFetchErrorCode: null,
+    lastFetchedAt: null,
+  };
+}
+
+function emptyMaintenance(): DataRetentionSnapshot {
+  return {
+    lastRunAt: null,
+    candlePruneLastRunAt: null,
+    candlePruneLastError: null,
   };
 }
 

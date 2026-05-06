@@ -61,11 +61,12 @@ describe('stock signal timeline routes', () => {
   let db: Database.Database;
   let app: ReturnType<typeof buildApp>['app'];
   let noteRepo: StockNoteRepository;
+  let signalEventRepo: StockSignalEventRepository;
   let candleRepo: PriceCandleRepository;
 
   beforeEach(() => {
     db = openMemoryDb();
-    ({ app, noteRepo, candleRepo } = buildApp(db));
+    ({ app, noteRepo, signalEventRepo, candleRepo } = buildApp(db));
   });
 
   afterEach(async () => {
@@ -147,5 +148,71 @@ describe('stock signal timeline routes', () => {
       expect.objectContaining({ horizon: '15m', state: 'ready', price: 70_350 }),
       expect.objectContaining({ horizon: '30m', state: 'pending', price: null }),
     ]);
+  });
+
+  it('prunes old signal events while retaining recent observation history', () => {
+    signalEventRepo.create({
+      ticker: '005930',
+      name: '삼성전자',
+      signalType: 'scalp',
+      source: 'realtime-momentum',
+      signalPrice: 70_000,
+      signalAt: '2026-01-01T00:00:00.000Z',
+      baselinePrice: null,
+      baselineAt: null,
+      momentumPct: 0.8,
+      momentumWindow: '30s',
+      dailyChangePct: null,
+      volume: null,
+      volumeSurgeRatio: null,
+      volumeBaselineStatus: 'collecting',
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    const recent = signalEventRepo.create({
+      ticker: '005930',
+      name: '삼성전자',
+      signalType: 'strong_scalp',
+      source: 'realtime-momentum',
+      signalPrice: 71_000,
+      signalAt: '2026-05-01T00:00:00.000Z',
+      baselinePrice: null,
+      baselineAt: null,
+      momentumPct: 1.2,
+      momentumWindow: '30s',
+      dailyChangePct: null,
+      volume: null,
+      volumeSurgeRatio: null,
+      volumeBaselineStatus: 'collecting',
+      now: new Date('2026-05-01T00:00:00.000Z'),
+    });
+
+    const pruned = signalEventRepo.pruneOldSignalEvents(new Date('2026-05-06T00:00:00.000Z'), 90);
+
+    expect(pruned).toBe(1);
+    expect(signalEventRepo.listByTicker('005930')).toEqual([recent]);
+  });
+
+  it('clamps signal event reads to the repository max limit', () => {
+    for (let i = 0; i < 205; i += 1) {
+      signalEventRepo.create({
+        ticker: '005930',
+        name: '삼성전자',
+        signalType: 'scalp',
+        source: 'realtime-momentum',
+        signalPrice: 70_000 + i,
+        signalAt: new Date(Date.UTC(2026, 4, 6, 0, i)).toISOString(),
+        baselinePrice: null,
+        baselineAt: null,
+        momentumPct: 0.8,
+        momentumWindow: '30s',
+        dailyChangePct: null,
+        volume: null,
+        volumeSurgeRatio: null,
+        volumeBaselineStatus: 'collecting',
+        now: new Date(Date.UTC(2026, 4, 6, 0, i)),
+      });
+    }
+
+    expect(signalEventRepo.listByTicker('005930', 500)).toHaveLength(200);
   });
 });

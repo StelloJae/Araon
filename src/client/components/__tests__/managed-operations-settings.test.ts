@@ -93,6 +93,36 @@ describe('managed operations settings copy', () => {
             collecting: 5,
             unavailable: 0,
           },
+          growth: {
+            signals: {
+              eventCount: 9,
+              oldestSignalEventAt: '2026-05-01T09:00:00.000Z',
+              newestSignalEventAt: '2026-05-06T09:00:00.000Z',
+              retentionDays: 90,
+            },
+            notes: {
+              noteCount: 4,
+              oldestNoteAt: '2026-05-02T09:00:00.000Z',
+              newestNoteAt: '2026-05-06T09:00:00.000Z',
+            },
+            news: {
+              itemCount: 6,
+              staleItemCount: 1,
+              oldestFetchedAt: '2026-05-05T09:00:00.000Z',
+              newestFetchedAt: '2026-05-06T09:00:00.000Z',
+              failedFetchCount: 0,
+              lastFetchStatus: 'success',
+              lastFetchErrorCode: null,
+              lastFetchedAt: '2026-05-06T09:00:00.000Z',
+              ttlHours: 24,
+              pruneAfterDays: 7,
+            },
+          },
+          maintenance: {
+            lastRunAt: '2026-05-06T06:00:00.000Z',
+            candlePruneLastRunAt: '2026-05-06T06:00:00.000Z',
+            candlePruneLastError: null,
+          },
         },
       }),
     );
@@ -102,5 +132,9 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('일봉 coverage');
     expect(html).toContain('거래량 기준선');
     expect(html).toContain('7/12 준비');
+    expect(html).toContain('신호 기록');
+    expect(html).toContain('관찰 메모');
+    expect(html).toContain('뉴스 캐시');
+    expect(html).toContain('candle 정리');
   });
 });

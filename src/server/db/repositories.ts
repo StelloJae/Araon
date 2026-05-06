@@ -19,6 +19,7 @@ import type {
   PriceCandle,
   StoredCandleInterval,
   StockNote,
+  StockNewsFetchStatus,
   StockNewsItem,
   StockSignalEvent,
   Tier,
@@ -167,6 +168,14 @@ interface StockNewsItemRow {
   url: string;
   published_at: string | null;
   fetched_at: string;
+}
+
+interface StockNewsFetchStatusRow {
+  ticker: string;
+  last_fetch_status: string;
+  last_fetch_error_code: string | null;
+  last_fetched_at: string;
+  updated_at: string;
 }
 
 interface MasterStockRow {
@@ -318,6 +327,16 @@ function rowToStockNewsItem(row: StockNewsItemRow): StockNewsItem {
     url: row.url,
     publishedAt: row.published_at,
     fetchedAt: row.fetched_at,
+  };
+}
+
+function rowToStockNewsFetchStatus(row: StockNewsFetchStatusRow): StockNewsFetchStatus {
+  return {
+    ticker: row.ticker,
+    lastFetchStatus: row.last_fetch_status as StockNewsFetchStatus['lastFetchStatus'],
+    lastFetchErrorCode: row.last_fetch_error_code,
+    lastFetchedAt: row.last_fetched_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -1029,19 +1048,57 @@ export class PriceCandleRepository {
 
 // === StockNoteRepository ======================================================
 
+export interface StockNoteListOptions {
+  limit?: number;
+  offset?: number;
+}
+
+export interface StockNoteGrowthSummary {
+  noteCount: number;
+  oldestNoteAt: string | null;
+  newestNoteAt: string | null;
+}
+
+const STOCK_NOTE_DEFAULT_LIMIT = 50;
+const STOCK_NOTE_MAX_LIMIT = 200;
+
 export class StockNoteRepository {
   constructor(private readonly db: Database.Database) {}
 
-  listByTicker(ticker: string): StockNote[] {
+  listByTicker(ticker: string, options: StockNoteListOptions = {}): StockNote[] {
+    const limit = Math.max(1, Math.min(options.limit ?? STOCK_NOTE_DEFAULT_LIMIT, STOCK_NOTE_MAX_LIMIT));
+    const offset = Math.max(0, options.offset ?? 0);
     const rows = this.db
-      .prepare<[string], StockNoteRow>(
+      .prepare<[string, number, number], StockNoteRow>(
         `SELECT id, ticker, body, created_at, updated_at
          FROM stock_notes
          WHERE ticker = ?
-         ORDER BY created_at DESC, id DESC`,
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?
+         OFFSET ?`,
       )
-      .all(ticker);
+      .all(ticker, limit, offset);
     return rows.map(rowToStockNote);
+  }
+
+  summarizeGrowth(): StockNoteGrowthSummary {
+    const row = this.db
+      .prepare<[], {
+        note_count: number;
+        oldest_note_at: string | null;
+        newest_note_at: string | null;
+      }>(
+        `SELECT COUNT(*) AS note_count,
+                MIN(created_at) AS oldest_note_at,
+                MAX(created_at) AS newest_note_at
+         FROM stock_notes`,
+      )
+      .get();
+    return {
+      noteCount: row?.note_count ?? 0,
+      oldestNoteAt: row?.oldest_note_at ?? null,
+      newestNoteAt: row?.newest_note_at ?? null,
+    };
   }
 
   create(input: { ticker: string; body: string; now?: Date }): StockNote {
@@ -1079,11 +1136,20 @@ export type StockSignalEventCreateInput = Omit<
   now?: Date;
 };
 
+export interface StockSignalGrowthSummary {
+  eventCount: number;
+  oldestSignalEventAt: string | null;
+  newestSignalEventAt: string | null;
+}
+
+const STOCK_SIGNAL_DEFAULT_LIMIT = 100;
+const STOCK_SIGNAL_MAX_LIMIT = 200;
+
 export class StockSignalEventRepository {
   constructor(private readonly db: Database.Database) {}
 
-  listByTicker(ticker: string, limit = 50): StockSignalEvent[] {
-    const safeLimit = Math.max(1, Math.min(limit, 200));
+  listByTicker(ticker: string, limit = STOCK_SIGNAL_DEFAULT_LIMIT): StockSignalEvent[] {
+    const safeLimit = Math.max(1, Math.min(limit, STOCK_SIGNAL_MAX_LIMIT));
     const rows = this.db
       .prepare<[string, number], StockSignalEventRow>(
         `SELECT id, ticker, name, signal_type, source, signal_price, signal_at,
@@ -1097,6 +1163,35 @@ export class StockSignalEventRepository {
       )
       .all(ticker, safeLimit);
     return rows.map(rowToStockSignalEvent);
+  }
+
+  pruneOldSignalEvents(now = new Date(), retentionDays = 90): number {
+    const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000)
+      .toISOString();
+    const result = this.db
+      .prepare('DELETE FROM stock_signal_events WHERE signal_at < ?')
+      .run(cutoff);
+    return result.changes;
+  }
+
+  summarizeGrowth(): StockSignalGrowthSummary {
+    const row = this.db
+      .prepare<[], {
+        event_count: number;
+        oldest_signal_event_at: string | null;
+        newest_signal_event_at: string | null;
+      }>(
+        `SELECT COUNT(*) AS event_count,
+                MIN(signal_at) AS oldest_signal_event_at,
+                MAX(signal_at) AS newest_signal_event_at
+         FROM stock_signal_events`,
+      )
+      .get();
+    return {
+      eventCount: row?.event_count ?? 0,
+      oldestSignalEventAt: row?.oldest_signal_event_at ?? null,
+      newestSignalEventAt: row?.newest_signal_event_at ?? null,
+    };
   }
 
   create(input: StockSignalEventCreateInput): StockSignalEvent {
@@ -1190,6 +1285,25 @@ export class StockSignalEventRepository {
 
 export type StockNewsItemInput = Omit<StockNewsItem, 'id'>;
 
+export interface StockNewsFetchStatusInput {
+  ticker: string;
+  lastFetchStatus: StockNewsFetchStatus['lastFetchStatus'];
+  lastFetchErrorCode: string | null;
+  lastFetchedAt: string;
+  updatedAt?: string;
+}
+
+export interface StockNewsGrowthSummary {
+  itemCount: number;
+  staleItemCount: number;
+  oldestFetchedAt: string | null;
+  newestFetchedAt: string | null;
+  failedFetchCount: number;
+  lastFetchStatus: StockNewsFetchStatus['lastFetchStatus'] | null;
+  lastFetchErrorCode: string | null;
+  lastFetchedAt: string | null;
+}
+
 export class StockNewsRepository {
   constructor(private readonly db: Database.Database) {}
 
@@ -1235,5 +1349,92 @@ export class StockNewsRepository {
       for (const row of rows) stmt.run(row);
     })();
     return this.listByTicker(items[0]!.ticker, items.length);
+  }
+
+  recordFetchStatus(input: StockNewsFetchStatusInput): void {
+    this.db
+      .prepare(
+        `INSERT INTO stock_news_fetch_status (
+           ticker, last_fetch_status, last_fetch_error_code, last_fetched_at, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(ticker) DO UPDATE SET
+           last_fetch_status = excluded.last_fetch_status,
+           last_fetch_error_code = excluded.last_fetch_error_code,
+           last_fetched_at = excluded.last_fetched_at,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.ticker,
+        input.lastFetchStatus,
+        input.lastFetchErrorCode,
+        input.lastFetchedAt,
+        input.updatedAt ?? input.lastFetchedAt,
+      );
+  }
+
+  getFetchStatus(ticker: string): StockNewsFetchStatus | null {
+    const row = this.db
+      .prepare<[string], StockNewsFetchStatusRow>(
+        `SELECT ticker, last_fetch_status, last_fetch_error_code, last_fetched_at, updated_at
+         FROM stock_news_fetch_status
+         WHERE ticker = ?`,
+      )
+      .get(ticker);
+    return row === undefined ? null : rowToStockNewsFetchStatus(row);
+  }
+
+  pruneOldNewsItems(now = new Date(), retentionDays = 7): number {
+    const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000)
+      .toISOString();
+    const result = this.db
+      .prepare('DELETE FROM stock_news_items WHERE fetched_at < ?')
+      .run(cutoff);
+    return result.changes;
+  }
+
+  summarizeGrowth(now = new Date(), staleAfterMs = 24 * 60 * 60 * 1000): StockNewsGrowthSummary {
+    const staleCutoff = new Date(now.getTime() - staleAfterMs).toISOString();
+    const item = this.db
+      .prepare<Record<string, string>, {
+        item_count: number;
+        stale_item_count: number;
+        oldest_fetched_at: string | null;
+        newest_fetched_at: string | null;
+      }>(
+        `SELECT COUNT(*) AS item_count,
+                SUM(CASE WHEN fetched_at < @staleCutoff THEN 1 ELSE 0 END) AS stale_item_count,
+                MIN(fetched_at) AS oldest_fetched_at,
+                MAX(fetched_at) AS newest_fetched_at
+         FROM stock_news_items`,
+      )
+      .get({ staleCutoff });
+    const status = this.db
+      .prepare<[], {
+        failed_fetch_count: number;
+        last_fetch_status: string | null;
+        last_fetch_error_code: string | null;
+        last_fetched_at: string | null;
+      }>(
+        `SELECT
+           (SELECT COUNT(*) FROM stock_news_fetch_status WHERE last_fetch_status = 'failed') AS failed_fetch_count,
+           last_fetch_status,
+           last_fetch_error_code,
+           last_fetched_at
+         FROM stock_news_fetch_status
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+      )
+      .get();
+    return {
+      itemCount: item?.item_count ?? 0,
+      staleItemCount: item?.stale_item_count ?? 0,
+      oldestFetchedAt: item?.oldest_fetched_at ?? null,
+      newestFetchedAt: item?.newest_fetched_at ?? null,
+      failedFetchCount: status?.failed_fetch_count ?? 0,
+      lastFetchStatus: (status?.last_fetch_status ?? null) as StockNewsGrowthSummary['lastFetchStatus'],
+      lastFetchErrorCode: status?.last_fetch_error_code ?? null,
+      lastFetchedAt: status?.last_fetched_at ?? null,
+    };
   }
 }

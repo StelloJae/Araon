@@ -120,6 +120,10 @@ async function build(
     stockRepo?: { findAll(): Array<{ ticker: string; name: string; market: 'KOSPI' | 'KOSDAQ' }> };
     favoriteRepo?: { findAll(): Array<{ ticker: string; tier: 'realtime' | 'polling'; addedAt: string }> };
     candleRepo?: { summarizeCoverage(): Array<{ interval: '1m' | '1d'; tickerCount: number; candleCount: number; newestBucketAt: string | null }> };
+    signalEventRepo?: { summarizeGrowth(): { eventCount: number; oldestSignalEventAt: string | null; newestSignalEventAt: string | null } };
+    noteRepo?: { summarizeGrowth(): { noteCount: number; oldestNoteAt: string | null; newestNoteAt: string | null } };
+    newsRepo?: { summarizeGrowth(now: Date, staleAfterMs: number): { itemCount: number; staleItemCount: number; oldestFetchedAt: string | null; newestFetchedAt: string | null; failedFetchCount: number; lastFetchStatus: 'success' | 'failed' | null; lastFetchErrorCode: string | null; lastFetchedAt: string | null } };
+    dataRetention?: { snapshot(): { lastRunAt: string | null; candlePruneLastRunAt: string | null; candlePruneLastError: string | null } };
     priceStore?: { getAllPrices(): Array<{ ticker: string; price: number; changeRate: number; volume: number; updatedAt: string; isSnapshot: boolean; volumeBaselineStatus?: 'ready' | 'collecting' | 'unavailable' }> };
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
   },
@@ -132,6 +136,10 @@ async function build(
     stockRepo: opts.stockRepo,
     favoriteRepo: opts.favoriteRepo,
     candleRepo: opts.candleRepo,
+    signalEventRepo: opts.signalEventRepo,
+    noteRepo: opts.noteRepo,
+    newsRepo: opts.newsRepo,
+    dataRetention: opts.dataRetention,
     priceStore: opts.priceStore,
     backfillStateStore: opts.backfillStateStore,
   });
@@ -162,6 +170,39 @@ describe('GET /runtime/data-health', () => {
           { interval: '1m', tickerCount: 1, candleCount: 120, newestBucketAt: '2026-05-06T06:30:00.000Z' },
           { interval: '1d', tickerCount: 2, candleCount: 40, newestBucketAt: '2026-05-05T15:00:00.000Z' },
         ]),
+      },
+      signalEventRepo: {
+        summarizeGrowth: vi.fn(() => ({
+          eventCount: 12,
+          oldestSignalEventAt: '2026-05-01T00:00:00.000Z',
+          newestSignalEventAt: '2026-05-06T06:00:00.000Z',
+        })),
+      },
+      noteRepo: {
+        summarizeGrowth: vi.fn(() => ({
+          noteCount: 3,
+          oldestNoteAt: '2026-05-02T00:00:00.000Z',
+          newestNoteAt: '2026-05-06T06:10:00.000Z',
+        })),
+      },
+      newsRepo: {
+        summarizeGrowth: vi.fn(() => ({
+          itemCount: 4,
+          staleItemCount: 1,
+          oldestFetchedAt: '2026-05-01T00:00:00.000Z',
+          newestFetchedAt: '2026-05-06T06:00:00.000Z',
+          failedFetchCount: 1,
+          lastFetchStatus: 'failed',
+          lastFetchErrorCode: 'HTTP_503',
+          lastFetchedAt: '2026-05-06T06:00:00.000Z',
+        })),
+      },
+      dataRetention: {
+        snapshot: vi.fn(() => ({
+          lastRunAt: '2026-05-06T06:00:00.000Z',
+          candlePruneLastRunAt: '2026-05-06T06:00:00.000Z',
+          candlePruneLastError: null,
+        })),
       },
       priceStore: {
         getAllPrices: vi.fn(() => [
@@ -204,6 +245,36 @@ describe('GET /runtime/data-health', () => {
           ready: 1,
           collecting: 1,
           unavailable: 0,
+        },
+        growth: {
+          signals: {
+            eventCount: 12,
+            oldestSignalEventAt: '2026-05-01T00:00:00.000Z',
+            newestSignalEventAt: '2026-05-06T06:00:00.000Z',
+            retentionDays: 90,
+          },
+          notes: {
+            noteCount: 3,
+            oldestNoteAt: '2026-05-02T00:00:00.000Z',
+            newestNoteAt: '2026-05-06T06:10:00.000Z',
+          },
+          news: {
+            itemCount: 4,
+            staleItemCount: 1,
+            oldestFetchedAt: '2026-05-01T00:00:00.000Z',
+            newestFetchedAt: '2026-05-06T06:00:00.000Z',
+            ttlHours: 24,
+            pruneAfterDays: 7,
+            failedFetchCount: 1,
+            lastFetchStatus: 'failed',
+            lastFetchErrorCode: 'HTTP_503',
+            lastFetchedAt: '2026-05-06T06:00:00.000Z',
+          },
+        },
+        maintenance: {
+          lastRunAt: '2026-05-06T06:00:00.000Z',
+          candlePruneLastRunAt: '2026-05-06T06:00:00.000Z',
+          candlePruneLastError: null,
         },
       },
     });

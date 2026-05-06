@@ -54,6 +54,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Restart-safe daily backfill budget/cooldown**: `background-backfill-state.json`에 `budgetDateKey`, `dailyCallCount`, `cooldownUntilMs`를 저장 / 앱 재시작 후에도 daily budget exhausted와 429/5xx cooldown이 유지됨 / missing/malformed state는 empty state fallback / live KIS 호출 0회 focused tests로 검증
 - **Existing local data UI smoke**: Computer Use로 CLI `http://127.0.0.1:4173` 기존 local data profile 확인 / credentials configured, runtime started, REST polling active, WebSocket waiting, daily backfill auto card 표시 / 005930 detail 실시간·차트 탭 렌더링 확인 / 기존 profile은 explicit realtime false + paper mode라 managed-ON 강제 검증이 아니라 emergency-disabled compatibility smoke로 판정
 - **Desktop beta.9 install validation**: GitHub Release `Araon-1.1.0-beta.9-arm64-mac.zip`을 `/tmp`에 받아 압축 해제 후 `ARAON_DATA_DIR=/tmp/araon-desktop-smoke-data`로 실행 / Computer Use로 first-run KIS 앱키 등록 화면과 managed defaults copy 확인 / credentials configured=false, runtime unconfigured, defaults true/live, `credentials.enc` 미생성 / DMG drag install·Windows EXE·desktop credentials entry는 not executed
+- **P1 data-growth hardening**: `stock_signal_events` 90일 retention + max 200 read clamp / `stock_notes` limit+offset pagination, no auto-prune / `stock_news_items` 24h stale + 7일 prune + sanitized fetch failure status / `price_candles` prune는 server start 후 daily maintenance로 호출 / `/runtime/data-health`가 signal/news/note growth와 candle prune 상태를 표시 / live KIS·WS·selected minute probe 0회
 
 ### NXT 시리즈 진행도
 
@@ -177,8 +178,10 @@ npm run dev:client &
 | `src/server/chart/backfill-policy.ts` | historical backfill 허용 시간 정책. 평일 07:55~20:05 KST 차단, 20:05 이후/주말 허용 |
 | `src/server/chart/daily-backfill-service.ts` | KIS daily candle backfill service. `1d` rows만 저장, `1m/3m/6m/1y` range를 100일 이하 창으로 분할 |
 | `src/server/chart/background-backfill-scheduler.ts` | Managed-default background daily backfill scheduler. 장후/주말만 실행, favorites/tracked 우선, sequential low-rate, daily budget + cooldown |
+| `src/server/maintenance/data-retention.ts` | P1 data-growth maintenance. startup + daily prune: 1m candle 30일, 1d candle 2년, signal 90일, news 7일. 실패는 sanitized diagnostic으로 격리 |
 | `src/server/kis/kis-daily-chart.ts` | KIS 국내주식기간별시세 daily mapper/client. 테스트는 mock transport만 사용 |
 | `src/server/db/migrations/004-price-candles.sql` | `price_candles` schema: local `1m` + manual KIS `1d`. raw tick table 아님 |
+| `src/server/db/migrations/008-stock-news-fetch-status.sql` | `stock_news_fetch_status` schema: success/failed, sanitized error code, fetched timestamp만 저장 |
 | `src/server/routes/stocks.ts` | `GET /stocks/:ticker/candles` + `POST /stocks/:ticker/candles/backfill`. backfill은 장중 차단 |
 | `src/client/components/StockCandleChart.tsx` | StockDetailModal `차트` 탭용 Lightweight Charts renderer. 1W/1M interval + 6m/1y range + manual daily backfill control 포함 |
 | `src/server/sse/sse-manager.ts` | SSE — price-update / market-status / heartbeat 이벤트 |

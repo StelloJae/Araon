@@ -113,6 +113,11 @@ const stockNoteBodySchema = z.object({
   body: z.string().trim().min(1).max(2_000),
 });
 
+const stockNoteQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+
 const signalEventBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
   signalType: z.enum(['scalp', 'strong_scalp', 'overheat', 'trend']),
@@ -138,6 +143,7 @@ type BulkBody = z.infer<typeof bulkBodySchema>;
 type CandleBackfillBody = z.infer<typeof candleBackfillBodySchema>;
 type MinuteBackfillBody = z.infer<typeof minuteBackfillBodySchema>;
 type StockNoteBody = z.infer<typeof stockNoteBodySchema>;
+type StockNoteQuery = z.input<typeof stockNoteQuerySchema>;
 type SignalEventBody = z.infer<typeof signalEventBodySchema>;
 
 // === Plugin ===================================================================
@@ -148,7 +154,9 @@ export async function stockRoutes(
 ): Promise<void> {
   const { service } = opts;
 
-  app.get<{ Params: { ticker: string } }>('/stocks/:ticker/notes', async (request, reply) => {
+  app.get<{ Params: { ticker: string }; Querystring: StockNoteQuery }>(
+    '/stocks/:ticker/notes',
+    async (request, reply) => {
     const ticker = request.params.ticker;
     if (!/^\d{6}$/.test(ticker)) {
       return reply.status(400).send({
@@ -162,9 +170,20 @@ export async function stockRoutes(
         error: { code: 'STOCK_NOTE_REPOSITORY_NOT_WIRED' },
       });
     }
+    const parsed = stockNoteQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues,
+      });
+    }
 
-    return reply.send({ success: true, data: opts.noteRepo.listByTicker(ticker) });
-  });
+    return reply.send({
+      success: true,
+      data: opts.noteRepo.listByTicker(ticker, parsed.data),
+    });
+  },
+  );
 
   app.post<{
     Params: { ticker: string };
@@ -298,7 +317,7 @@ export async function stockRoutes(
     }
 
     const notes: StockTimelineItem[] = opts.noteRepo
-      .listByTicker(ticker)
+      .listByTicker(ticker, { limit: parsed.data.limit })
       .map((note) => ({
         kind: 'note',
         id: note.id,

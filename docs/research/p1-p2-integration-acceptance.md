@@ -20,6 +20,11 @@ fallback. Selected-ticker minute backfill was intentionally not executed live,
 news refresh was not executed live, and long-run retention/data-growth behavior
 remains a P1/P2 operational follow-up.
 
+Post-acceptance update: P1 data-growth hardening now adds 90-day signal
+retention, bounded note pagination, 24-hour news staleness with 7-day pruning,
+candle prune maintenance invocation, and data-health growth diagnostics.
+Selected ticker today-minute live probe remains a separate follow-up.
+
 ## Scope
 
 Recently added P1/P2 surfaces covered by this acceptance:
@@ -193,8 +198,8 @@ Result: **PASS with operational follow-up**
 
 Follow-up:
 
-- `stock_signal_events` has bounded reads but no retention/prune job yet.
-- Recommend 90 or 180 day retention before heavy long-run usage.
+- `stock_signal_events` now has 90-day retention and prune coverage.
+- Direct signal listing remains clamped to max `200` rows.
 
 ### Selected Ticker Minute Backfill
 
@@ -300,14 +305,13 @@ Current protections:
 
 Remaining gaps:
 
-- Confirm whether `pruneOldCandles()` is scheduled automatically in production
-  runtime; it exists as repository behavior but this acceptance did not prove
-  scheduler invocation.
-- `stock_signal_events` lacks retention/prune.
-- `stock_notes` lacks pagination/retention.
-- `stock_news_items` lacks TTL/prune and parser-failure fallback metadata.
-- Data health panel surfaces candle/backfill/baseline status but not
-  signal/news/note table growth.
+- `pruneOldCandles()` is now invoked by daily data-retention maintenance.
+- `stock_signal_events` has 90-day retention/prune.
+- `stock_notes` has bounded limit/offset pagination; notes are not auto-pruned.
+- `stock_news_items` has 24-hour stale detection, 7-day prune coverage, and
+  sanitized parser/fetch failure metadata.
+- Data health panel now surfaces signal/news/note table growth and candle prune
+  maintenance status.
 
 ## Browser / Computer Verification Note
 
@@ -333,11 +337,8 @@ None found.
 
 ### P1
 
-- Add retention/prune policy for `stock_signal_events`.
-- Add pagination or bounded repository query for `stock_notes`.
-- Add TTL/prune/failure-state policy for `stock_news_items`.
-- Prove candle prune scheduling, not only repository behavior.
 - Run one controlled selected-ticker today-minute live backfill probe.
+- Observe data-retention maintenance on a real local profile after longer use.
 - Keep Browser Use backend health on the validation checklist; Computer Use
   fallback worked, but Browser Use itself was unavailable in this run.
 

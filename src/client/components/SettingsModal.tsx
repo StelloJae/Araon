@@ -1184,6 +1184,26 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               v={`${health.volumeBaseline.ready}/${health.volumeBaseline.total} 준비`}
               chipColor={health.volumeBaseline.ready > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
             />
+            <Row
+              k="신호 기록"
+              v={`${health.growth.signals.eventCount}개 · ${health.growth.signals.retentionDays}일 보관`}
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="관찰 메모"
+              v={`${health.growth.notes.noteCount}개`}
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="뉴스 캐시"
+              v={`${health.growth.news.itemCount}개 · stale ${health.growth.news.staleItemCount}개`}
+              chipColor={health.growth.news.staleItemCount > 0 ? 'var(--kr-down)' : 'var(--text-muted)'}
+            />
+            <Row
+              k="candle 정리"
+              v={health.maintenance.candlePruneLastError ?? formatMaybeLocal(health.maintenance.candlePruneLastRunAt)}
+              chipColor={health.maintenance.candlePruneLastError === null ? 'var(--text-muted)' : 'var(--kr-down)'}
+            />
           </div>
           <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
             최신 1분봉: {formatMaybeLocal(oneMinute?.newestBucketAt ?? null)} · 최신 일봉:{' '}

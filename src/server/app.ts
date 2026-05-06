@@ -31,6 +31,7 @@ import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
 import { fetchKisTodayMinuteCandles } from './kis/kis-today-minute-chart.js';
 import { createStockService } from './services/stock-service.js';
 import { createStockNewsFeedService } from './news/news-feed-service.js';
+import { createDataRetentionScheduler } from './maintenance/data-retention.js';
 import { createMasterStockService } from './services/master-stock-service.js';
 import { createCredentialSetupMutex, credentialsRoutes } from './routes/credentials.js';
 import { stockRoutes } from './routes/stocks.js';
@@ -171,6 +172,11 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
         : 'unknown';
     },
   });
+  const dataRetention = createDataRetentionScheduler({
+    candleRepo,
+    signalEventRepo,
+    newsRepo,
+  });
 
   const setupMutex = createCredentialSetupMutex();
   const app = Fastify({ loggerInstance: logger });
@@ -200,6 +206,10 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     candleRepo,
     priceStore,
     backfillStateStore,
+    signalEventRepo,
+    noteRepo,
+    newsRepo,
+    dataRetention,
   });
   await app.register(launcherRoutes, options.launcher ?? {});
 
@@ -228,6 +238,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       shutdownHandle = null;
     }
     backgroundBackfill.stop();
+    dataRetention.stop();
     await runtimeRef.stop();
     await candleRecorder.stop();
     await snapshotStore.saveAll(priceStore);
@@ -263,6 +274,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
 
       // Background master refresh — never blocks listen / dashboard render.
       void masterService.maybeRefreshOnBoot();
+      dataRetention.start();
       backgroundBackfill.start();
 
       return { ...server, host, port, url };
