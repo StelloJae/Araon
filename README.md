@@ -193,7 +193,9 @@ default. Araon remains a localhost-only read-only monitoring tool.
 Araon also has an unsigned desktop beta packaging path for macOS and Windows.
 This channel wraps the same local Fastify server and React UI in Electron.
 
-The desktop beta is not code-signed or notarized yet:
+The desktop beta is not Developer ID-signed or notarized yet. macOS beta
+artifacts are ad-hoc signed for local bundle integrity, but they can still show
+OS security warnings:
 
 - macOS may show a Gatekeeper warning.
 - Windows may show a SmartScreen warning.

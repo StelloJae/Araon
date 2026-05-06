@@ -162,8 +162,8 @@ installation.
 Download the beta installers from the GitHub Release page:
 
 ```txt
-macOS:   Araon-1.1.0-beta.10-arm64.dmg
-Windows: Araon.Setup.1.1.0-beta.10.exe
+macOS:   Araon-1.1.0-beta.12-arm64.dmg
+Windows: Araon.Setup.1.1.0-beta.12.exe
 ```
 
 Build a local unpacked desktop app:
@@ -197,7 +197,9 @@ applyTicksToPriceStore=true
 backgroundDailyBackfillEnabled=true
 ```
 
-Unsigned beta artifacts can show OS warnings:
+Desktop beta artifacts can show OS warnings. macOS beta artifacts are ad-hoc
+signed for local bundle integrity, but they are not Apple Developer ID-signed or
+notarized:
 
 - macOS: Gatekeeper warning or manual allow step.
 - Windows: SmartScreen warning.

@@ -73,6 +73,24 @@ Info.plist entries=32
 Sealed Resources version=2 rules=13 files=58
 ```
 
+During beta.12 release validation, local direct launch also exposed a native
+module packaging issue: `better-sqlite3` was copied with host Node ABI 141 while
+Electron 41 requires ABI 145. The desktop build config now pins:
+
+```json
+{
+  "nativeRebuilder": "legacy"
+}
+```
+
+The legacy native dependency rebuild path produced:
+
+```txt
+_node_register_module_v145
+```
+
+for the packaged `better_sqlite3.node`.
+
 `codesign --verify --deep --strict --verbose=4` now passes:
 
 ```txt
