@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CandleChartView,
   ChartBackfillControl,
+  formatCandleTooltipRows,
   normalizeCandleRangeForInterval,
 } from '../StockCandleChart';
 
@@ -48,6 +49,32 @@ describe('StockCandleChart', () => {
 
     expect(html).toContain('data-testid="stock-candle-chart-host"');
     expect(html).toContain('1m');
+    expect(html).toContain('차트 위에 마우스를 올리면');
+  });
+
+  it('formats crosshair tooltip rows from actual candle values', () => {
+    const rows = formatCandleTooltipRows({
+      time: 1777939200,
+      bucketAt: '2026-05-05T00:00:00.000Z',
+      open: 70_000,
+      high: 70_500,
+      low: 69_800,
+      close: 70_200,
+      volume: 123_456,
+      sampleCount: 3,
+      source: 'kis-daily',
+      isPartial: false,
+    });
+
+    expect(rows).toEqual([
+      ['시각', '2026. 05. 05. 09:00'],
+      ['시가', '70,000'],
+      ['고가', '70,500'],
+      ['저가', '69,800'],
+      ['종가', '70,200'],
+      ['거래량', '12.3만'],
+      ['데이터', 'kis-daily'],
+    ]);
   });
 
   it('renders a daily backfill control for weekly/monthly intervals only', () => {

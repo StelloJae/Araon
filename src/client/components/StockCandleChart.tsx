@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CandlestickData,
   HistogramData,
+  MouseEventParams,
   UTCTimestamp,
 } from 'lightweight-charts';
 import type { CandleApiItem, CandleInterval } from '@shared/types';
+import { fmtPrice, fmtVolMan } from '../lib/format';
 import {
   ApiError,
   backfillStockCandles,
@@ -366,7 +368,7 @@ export function CandleChartView({
         <span>
           {interval} · {range}
         </span>
-        <span>{items.length} candles</span>
+        <span>{items.length} candles · 차트 위에 마우스를 올리면 OHLCV 표시</span>
       </div>
       <LightweightCandleCanvas items={items} />
     </div>
@@ -395,6 +397,11 @@ function ChartMessage({ title, detail }: { title: string; detail: string }) {
 
 function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    x: number;
+    y: number;
+    rows: Array<[string, string]>;
+  } | null>(null);
   const candleData = useMemo<CandlestickData[]>(
     () =>
       items.map((item) => ({
@@ -418,6 +425,13 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
       })),
     [items],
   );
+  const itemByTime = useMemo(() => {
+    const map = new Map<number, CandleApiItem>();
+    for (const item of items) {
+      map.set(item.time, item);
+    }
+    return map;
+  }, [items]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -465,6 +479,30 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
           scaleMargins: { top: 0.78, bottom: 0 },
         });
         volumeSeries.setData(volumeData);
+        chart.subscribeCrosshairMove((param: MouseEventParams) => {
+          const point = param.point;
+          if (
+            point === undefined ||
+            point.x < 0 ||
+            point.y < 0 ||
+            point.x > host.clientWidth ||
+            point.y > host.clientHeight ||
+            param.time === undefined
+          ) {
+            setTooltip(null);
+            return;
+          }
+          const item = itemByTime.get(Number(param.time));
+          if (item === undefined) {
+            setTooltip(null);
+            return;
+          }
+          setTooltip({
+            x: Math.min(point.x + 12, Math.max(12, host.clientWidth - 190)),
+            y: Math.min(point.y + 12, Math.max(12, host.clientHeight - 164)),
+            rows: formatCandleTooltipRows(item),
+          });
+        });
         chart.timeScale().fitContent();
         removeChart = () => chart.remove();
       },
@@ -477,13 +515,78 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
   }, [candleData, volumeData]);
 
   return (
-    <div
-      ref={hostRef}
-      data-testid="stock-candle-chart-host"
-      style={{
-        height: 320,
-        width: '100%',
-      }}
-    />
+    <div style={{ position: 'relative' }}>
+      <div
+        ref={hostRef}
+        data-testid="stock-candle-chart-host"
+        style={{
+          height: 320,
+          width: '100%',
+        }}
+      />
+      {tooltip !== null && (
+        <div
+          style={{
+            position: 'absolute',
+            left: tooltip.x,
+            top: tooltip.y,
+            width: 178,
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            background: 'var(--bg-card)',
+            boxShadow: '0 8px 20px rgba(0,0,0,0.12)',
+            padding: '8px 9px',
+            pointerEvents: 'none',
+            fontSize: 11,
+            color: 'var(--text-primary)',
+            zIndex: 2,
+          }}
+        >
+          {tooltip.rows.map(([label, value]) => (
+            <div
+              key={label}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+                lineHeight: 1.55,
+              }}
+            >
+              <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+              <span style={{ fontWeight: 700, textAlign: 'right' }}>{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
+}
+
+export function formatCandleTooltipRows(
+  item: CandleApiItem,
+): Array<[string, string]> {
+  const rows: Array<[string, string]> = [
+    ['시각', formatKstMinute(item.bucketAt)],
+    ['시가', fmtPrice(item.open)],
+    ['고가', fmtPrice(item.high)],
+    ['저가', fmtPrice(item.low)],
+    ['종가', fmtPrice(item.close)],
+    ['거래량', fmtVolMan(item.volume)],
+  ];
+  if (item.source !== undefined && item.source !== null) {
+    rows.push(['데이터', item.source]);
+  }
+  return rows;
+}
+
+function formatKstMinute(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const shifted = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  const hour = String(shifted.getUTCHours()).padStart(2, '0');
+  const minute = String(shifted.getUTCMinutes()).padStart(2, '0');
+  return `${year}. ${month}. ${day}. ${hour}:${minute}`;
 }

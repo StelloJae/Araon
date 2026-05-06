@@ -791,6 +791,13 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/news-disclosure-link-mvp.md`
 - HOLD: DART/KIND API 연동, 뉴스 feed 저장, 공시 알림, AI 요약/감성 분석
 
+### Candle chart tooltip polish 결과 (2026-05-06)
+- `StockCandleChart`가 Lightweight Charts crosshair move에서 실제 candle item을 찾아 KST 시각/OHLCV/source tooltip을 표시
+- tooltip은 `GET /stocks/:ticker/candles` 응답 item 값만 사용한다. synthetic candle, 추론 가격, 가짜 거래량 배수 없음
+- focused test: `src/client/components/__tests__/stock-candle-chart.test.ts`
+- report: `docs/research/candle-chart-tooltip-polish.md`
+- HOLD: tooltip pinning, 외부 metric panel 동기화, keyboard chart inspection
+
 ## 7. 더 깊은 핸드오프 dump
 
 이 프로젝트의 전체 작업 히스토리, 보안 패턴 상세, NXT3 시작 가이드는 다음 wiki 페이지에 dump:
