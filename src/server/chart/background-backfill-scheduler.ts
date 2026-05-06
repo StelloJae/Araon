@@ -14,7 +14,7 @@ const log = createChildLogger('background-backfill');
 const DEFAULT_INTERVAL_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_TICKERS_PER_RUN = 5;
 const DEFAULT_REQUEST_GAP_MS = 2_500;
-export const DEFAULT_DAILY_CALL_BUDGET = 30;
+export const DEFAULT_DAILY_CALL_BUDGET = 300;
 const DEFAULT_5XX_COOLDOWN_MS = 5 * 60 * 1000;
 const DEFAULT_429_COOLDOWN_MS = 10 * 60 * 1000;
 

@@ -212,9 +212,27 @@ describe('RealtimeBridge NXT4a — guarded tick apply', () => {
       changeAbs: 4000,
       changeRate: 1.82,
       volume: 39260243,
+      tradeAt: '2026-04-27T08:14:05.000Z',
       updatedAt: '2026-04-27T08:14:05.000Z',
       isSnapshot: false,
       source: 'ws-integrated',
+    });
+  });
+
+  it('keeps receive updatedAt while exposing KST trade time for candle bucketing', () => {
+    const { ws, writes } = bridgeWith(
+      ticksFrame({
+        ...liveTick('005930', '2026-04-27T08:15:30.000Z'),
+        tradeTime: '171405',
+      }),
+      { applyTicksToPriceStore: true },
+    );
+
+    ws.emitMessage('LIVE-TICK');
+
+    expect(writes[0]).toMatchObject({
+      updatedAt: '2026-04-27T08:15:30.000Z',
+      tradeAt: '2026-04-27T08:14:05.000Z',
     });
   });
 

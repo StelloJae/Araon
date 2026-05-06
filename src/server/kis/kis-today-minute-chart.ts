@@ -74,7 +74,7 @@ export function mapKisTodayMinuteItemChartRows(
     const open = parseFiniteNumber(parsed.data.stck_oprc);
     const high = parseFiniteNumber(parsed.data.stck_hgpr);
     const low = parseFiniteNumber(parsed.data.stck_lwpr);
-    const volume = parseFiniteNumber(parsed.data.cntg_vol ?? parsed.data.acml_vol);
+    const volume = parseFiniteNumber(parsed.data.cntg_vol) ?? 0;
 
     if (
       bucketAt === null ||
@@ -82,7 +82,7 @@ export function mapKisTodayMinuteItemChartRows(
       high === null ||
       low === null ||
       close === null ||
-      volume === null
+      !Number.isFinite(volume)
     ) {
       continue;
     }

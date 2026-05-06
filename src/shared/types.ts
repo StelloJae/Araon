@@ -155,6 +155,8 @@ export interface Price {
   changeRate: number;
   changeAbs?: number | null;
   volume: number;
+  /** Exchange trade timestamp when available. `updatedAt` remains the receive/update timestamp. */
+  tradeAt?: string | null;
   /** Current-session accumulated trade value in KRW, when provided by REST quote. */
   accumulatedTradeValue?: number | null;
   /** Current-session open/high/low in KRW, when provided by REST quote. */

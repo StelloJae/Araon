@@ -45,6 +45,7 @@ import type { TodayMinuteBackfillService } from '../chart/today-minute-backfill-
 import type { StockNewsFeedService } from '../news/news-feed-service.js';
 
 const log = createChildLogger('routes/stocks');
+const MAX_DISPLAY_MINUTE_TRADE_VALUE_KRW = 5_000_000_000_000;
 
 // === Plugin options ===========================================================
 
@@ -665,9 +666,9 @@ function dailyBaseInterval(interval: CandleInterval): boolean {
 
 function isDisplayableIntradayCandle(candle: PriceCandle): boolean {
   if (candle.source === null || candle.source === 'rest') return false;
+  if (isSuspiciousRealtimeMinuteCandle(candle)) return false;
   if (
     candle.source === 'kis-time-today' &&
-    candle.volume <= 0 &&
     candle.sampleCount <= 1 &&
     candle.open === candle.high &&
     candle.high === candle.low &&
@@ -676,6 +677,19 @@ function isDisplayableIntradayCandle(candle: PriceCandle): boolean {
     return false;
   }
   return true;
+}
+
+function isSuspiciousRealtimeMinuteCandle(candle: PriceCandle): boolean {
+  if (
+    candle.source !== 'ws-krx' &&
+    candle.source !== 'ws-integrated' &&
+    candle.source !== 'ws-nxt'
+  ) {
+    return false;
+  }
+  if (candle.interval !== '1m') return false;
+  if (candle.volume <= 0 || candle.close <= 0) return false;
+  return candle.volume * candle.close > MAX_DISPLAY_MINUTE_TRADE_VALUE_KRW;
 }
 
 function buildCoverage(

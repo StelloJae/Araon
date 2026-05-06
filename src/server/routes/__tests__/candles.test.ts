@@ -158,7 +158,7 @@ describe('GET /stocks/:ticker/candles', () => {
         high: 101,
         low: 101,
         close: 101,
-        volume: 0,
+        volume: 3_262_125,
         sampleCount: 1,
         source: 'kis-time-today',
       }),
@@ -191,6 +191,48 @@ describe('GET /stocks/:ticker/candles', () => {
       source: 'ws-integrated',
     });
     expect(body.data.coverage.sourceMix).toEqual(['ws-integrated']);
+  });
+
+  it('filters implausible realtime minute candles from old corrupted local history', async () => {
+    const repo = new PriceCandleRepository(db);
+    await repo.bulkUpsertCandles([
+      candle('2026-05-05T00:00:00.000Z', {
+        open: 269_500,
+        high: 269_500,
+        low: 266_000,
+        close: 269_500,
+        volume: 195_294_719,
+        sampleCount: 270,
+        source: 'ws-integrated',
+      }),
+      candle('2026-05-05T00:01:00.000Z', {
+        open: 70_000,
+        high: 70_200,
+        low: 69_900,
+        close: 70_100,
+        volume: 1_000,
+        sampleCount: 10,
+        source: 'ws-integrated',
+      }),
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: repo,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/candles?interval=1m&from=2026-05-05T00:00:00.000Z&to=2026-05-05T00:02:00.000Z',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.items).toHaveLength(1);
+    expect(body.data.items[0]).toMatchObject({
+      bucketAt: '2026-05-05T00:01:00.000Z',
+      volume: 1_000,
+    });
   });
 
   it('returns weekly candles from stored 1d historical candles', async () => {

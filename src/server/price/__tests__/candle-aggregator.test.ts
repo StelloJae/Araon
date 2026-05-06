@@ -101,6 +101,56 @@ describe('candle aggregator', () => {
     expect(batches[0]?.[0]?.isPartial).toBe(true);
   });
 
+  it('uses exchange trade time for candle bucket while keeping receive time separate', async () => {
+    const { repo, batches } = writer();
+    const aggregator = createCandleAggregator({ writer: repo });
+
+    aggregator.recordPrice(
+      price({
+        price: 100,
+        volume: 1_000,
+        updatedAt: '2026-05-05T08:14:05.000Z',
+        tradeAt: '2026-05-05T00:14:05.000Z',
+      }),
+    );
+    aggregator.recordPrice(
+      price({
+        price: 102,
+        volume: 1_010,
+        updatedAt: '2026-05-05T08:14:20.000Z',
+        tradeAt: '2026-05-05T00:14:20.000Z',
+      }),
+    );
+
+    await aggregator.flushDirty();
+
+    expect(batches[0]?.[0]).toMatchObject({
+      bucketAt: '2026-05-05T00:14:00.000Z',
+      open: 100,
+      close: 102,
+      volume: 10,
+    });
+  });
+
+  it('does not let out-of-order cumulative volume ticks reset the baseline', async () => {
+    const { repo, batches } = writer();
+    const aggregator = createCandleAggregator({ writer: repo });
+
+    aggregator.recordPrice(price({ price: 100, volume: 1_000, tradeAt: '2026-05-05T00:00:30.000Z' }));
+    aggregator.recordPrice(price({ price: 99, volume: 900, tradeAt: '2026-05-05T00:00:10.000Z' }));
+    aggregator.recordPrice(price({ price: 101, volume: 1_020, tradeAt: '2026-05-05T00:00:40.000Z' }));
+
+    await aggregator.flushDirty();
+
+    expect(batches[0]?.[0]).toMatchObject({
+      low: 99,
+      close: 101,
+      volume: 20,
+      sampleCount: 3,
+      isPartial: true,
+    });
+  });
+
   it('ignores snapshot restore prices', async () => {
     const { repo } = writer();
     const aggregator = createCandleAggregator({ writer: repo });

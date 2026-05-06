@@ -37,30 +37,46 @@ interface VolumeDelta {
   partial: boolean;
 }
 
+interface LastCumulativeVolume {
+  volume: number;
+  observedAtMs: number;
+}
+
 export function createCandleAggregator(options: CandleAggregatorOptions): CandleAggregator {
   const now = options.now ?? (() => new Date());
   const candles = new Map<string, PriceCandle>();
   const dirtyKeys = new Set<string>();
-  const lastCumulativeVolume = new Map<string, number>();
+  const lastCumulativeVolume = new Map<string, LastCumulativeVolume>();
+
+  function candleTimestamp(price: Price): string {
+    return price.tradeAt ?? price.updatedAt;
+  }
 
   function volumeKey(price: Price): string {
-    const session = sessionForTimestamp(price.updatedAt);
-    return `${price.ticker}:${kstDateKey(price.updatedAt)}:${session}`;
+    const timestamp = candleTimestamp(price);
+    const session = sessionForTimestamp(timestamp);
+    return `${price.ticker}:${kstDateKey(timestamp)}:${session}`;
   }
 
   function cumulativeDelta(price: Price): VolumeDelta {
     const key = volumeKey(price);
     const current = Math.max(0, Math.trunc(price.volume));
+    const observedAtMs = Date.parse(candleTimestamp(price));
     const previous = lastCumulativeVolume.get(key);
-    lastCumulativeVolume.set(key, current);
 
     if (previous === undefined) {
+      lastCumulativeVolume.set(key, { volume: current, observedAtMs });
       return { delta: 0, partial: true };
     }
-    if (current < previous) {
+    if (Number.isFinite(observedAtMs) && observedAtMs < previous.observedAtMs) {
       return { delta: 0, partial: true };
     }
-    return { delta: current - previous, partial: false };
+    if (current < previous.volume) {
+      lastCumulativeVolume.set(key, { volume: current, observedAtMs });
+      return { delta: 0, partial: true };
+    }
+    lastCumulativeVolume.set(key, { volume: current, observedAtMs });
+    return { delta: current - previous.volume, partial: false };
   }
 
   function candleKey(ticker: string, bucketAt: string): string {
@@ -81,25 +97,26 @@ export function createCandleAggregator(options: CandleAggregatorOptions): Candle
     if (!isRealtimeCandleSource(price.source)) return false;
     if (!Number.isFinite(price.price) || price.price <= 0) return false;
     if (!Number.isFinite(price.volume) || price.volume < 0) return false;
-    return !Number.isNaN(new Date(price.updatedAt).getTime());
+    return !Number.isNaN(new Date(candleTimestamp(price)).getTime());
   }
 
   function recordPrice(price: Price): void {
     if (!validPrice(price)) return;
 
-    const bucketAt = bucketAtForInterval(price.updatedAt, '1m');
+    const timestamp = candleTimestamp(price);
+    const bucketAt = bucketAtForInterval(timestamp, '1m');
     const key = candleKey(price.ticker, bucketAt);
     const volume = cumulativeDelta(price);
     const source = price.source ?? null;
     const existing = candles.get(key);
-    const timestamp = now().toISOString();
+    const updatedTimestamp = now().toISOString();
 
     if (existing === undefined) {
       candles.set(key, {
         ticker: price.ticker,
         interval: '1m',
         bucketAt,
-        session: sessionForTimestamp(price.updatedAt),
+        session: sessionForTimestamp(timestamp),
         open: price.price,
         high: price.price,
         low: price.price,
@@ -108,8 +125,8 @@ export function createCandleAggregator(options: CandleAggregatorOptions): Candle
         sampleCount: 1,
         source,
         isPartial: volume.partial,
-        createdAt: timestamp,
-        updatedAt: timestamp,
+        createdAt: updatedTimestamp,
+        updatedAt: updatedTimestamp,
       });
     } else {
       candles.set(key, {
@@ -121,7 +138,7 @@ export function createCandleAggregator(options: CandleAggregatorOptions): Candle
         sampleCount: existing.sampleCount + 1,
         source: mergeSource(existing.source, source),
         isPartial: existing.isPartial || volume.partial,
-        updatedAt: timestamp,
+        updatedAt: updatedTimestamp,
       });
     }
     dirtyKeys.add(key);

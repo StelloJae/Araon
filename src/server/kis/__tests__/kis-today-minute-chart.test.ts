@@ -52,6 +52,15 @@ describe('KIS today minute chart mapper', () => {
           stck_lwpr: '266000',
           cntg_vol: '0',
         },
+        {
+          stck_bsop_date: '20260506',
+          stck_cntg_hour: '193000',
+          stck_prpr: '266000',
+          stck_oprc: '266000',
+          stck_hgpr: '266000',
+          stck_lwpr: '266000',
+          acml_vol: '3262125',
+        },
       ],
       '2026-05-06T11:10:00.000Z',
     );
@@ -59,7 +68,7 @@ describe('KIS today minute chart mapper', () => {
     expect(candles).toEqual([]);
   });
 
-  it('keeps zero-volume rows when OHLC still carries a real price range', () => {
+  it('does not use cumulative acml_vol as minute volume', () => {
     const candles = mapKisTodayMinuteItemChartRows(
       '005930',
       [
@@ -70,13 +79,14 @@ describe('KIS today minute chart mapper', () => {
           stck_oprc: '265500',
           stck_hgpr: '266500',
           stck_lwpr: '265000',
-          cntg_vol: '0',
+          acml_vol: '3262125',
         },
       ],
       '2026-05-06T11:10:00.000Z',
     );
 
     expect(candles).toHaveLength(1);
+    expect(candles[0]?.volume).toBe(0);
   });
 
   it('uses the KIS today minute endpoint and safe query contract', async () => {

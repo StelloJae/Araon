@@ -257,7 +257,7 @@ describe('GET /runtime/data-health', () => {
           lastSkippedReason: null,
           budgetDateKey: '2026-05-06',
           dailyCallCount: 4,
-          dailyCallBudget: 30,
+          dailyCallBudget: 300,
           cooldownUntil: null,
           cooldownActive: false,
         },

@@ -36,6 +36,7 @@ import type {
 import type { TierDiff } from './tier-manager.js';
 
 const log = createChildLogger('realtime-bridge');
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 // === Parsed frame union =======================================================
 
@@ -513,10 +514,40 @@ function mapRealtimeTickToPrice(tick: RealtimeTick): Price {
     changeRate: tick.changeRate,
     changeAbs: tick.changeAbs,
     volume: tick.volume,
+    tradeAt: resolveTradeAt(tick.tradeTime, tick.updatedAt),
     updatedAt: tick.updatedAt,
     isSnapshot: false,
     source: mapTickSource(tick.source),
   };
+}
+
+function resolveTradeAt(tradeTime: string, receivedAt: string): string | null {
+  if (!/^\d{6}$/.test(tradeTime)) return null;
+  const received = new Date(receivedAt);
+  if (Number.isNaN(received.getTime())) return null;
+
+  const shifted = new Date(received.getTime() + KST_OFFSET_MS);
+  const hour = Number(tradeTime.slice(0, 2));
+  const minute = Number(tradeTime.slice(2, 4));
+  const second = Number(tradeTime.slice(4, 6));
+  let utcMs =
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+      hour,
+      minute,
+      second,
+      0,
+    ) - KST_OFFSET_MS;
+
+  // If the app receives a delayed pre-midnight tick shortly after local
+  // midnight, the same-date conversion can land in the future. Keep the bucket
+  // on the nearest plausible exchange day without altering Price.updatedAt.
+  if (utcMs - received.getTime() > 6 * 60 * 60 * 1000) {
+    utcMs -= 24 * 60 * 60 * 1000;
+  }
+  return new Date(utcMs).toISOString();
 }
 
 function mapTickSource(source: RealtimeTick['source']): PriceSource {
