@@ -474,7 +474,9 @@ export function CandleChartView({
         <span>
           {interval} · {range}
         </span>
-        <span>{items.length} candles · 차트 위에 마우스를 올리면 OHLCV 표시</span>
+        <span>
+          {items.length} candles · 마우스를 올리면 OHLCV 표시 · 클릭하면 봉 고정
+        </span>
       </div>
       <LightweightCandleCanvas items={items} />
     </div>
@@ -508,6 +510,7 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
     y: number;
     rows: Array<[string, string]>;
   } | null>(null);
+  const [pinnedRows, setPinnedRows] = useState<Array<[string, string]> | null>(null);
   const candleData = useMemo<CandlestickData[]>(
     () =>
       items.map((item) => ({
@@ -545,6 +548,8 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
 
     let disposed = false;
     let removeChart: (() => void) | null = null;
+    setTooltip(null);
+    setPinnedRows(null);
 
     void import('lightweight-charts').then(
       ({ CandlestickSeries, HistogramSeries, createChart }) => {
@@ -585,7 +590,7 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
           scaleMargins: { top: 0.78, bottom: 0 },
         });
         volumeSeries.setData(volumeData);
-        chart.subscribeCrosshairMove((param: MouseEventParams) => {
+        const handleCrosshairMove = (param: MouseEventParams) => {
           const point = param.point;
           if (
             point === undefined ||
@@ -608,9 +613,23 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
             y: Math.min(point.y + 12, Math.max(12, host.clientHeight - 164)),
             rows: formatCandleTooltipRows(item),
           });
-        });
+        };
+        const handleClick = (param: MouseEventParams) => {
+          if (param.time === undefined) {
+            setPinnedRows(null);
+            return;
+          }
+          const item = itemByTime.get(Number(param.time));
+          setPinnedRows(item === undefined ? null : formatCandleTooltipRows(item));
+        };
+        chart.subscribeCrosshairMove(handleCrosshairMove);
+        chart.subscribeClick(handleClick);
         chart.timeScale().fitContent();
-        removeChart = () => chart.remove();
+        removeChart = () => {
+          chart.unsubscribeCrosshairMove(handleCrosshairMove);
+          chart.unsubscribeClick(handleClick);
+          chart.remove();
+        };
       },
     );
 
@@ -618,10 +637,16 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
       disposed = true;
       removeChart?.();
     };
-  }, [candleData, volumeData]);
+  }, [candleData, itemByTime, volumeData]);
 
   return (
     <div style={{ position: 'relative' }}>
+      {pinnedRows !== null && (
+        <PinnedCandlePanel
+          rows={pinnedRows}
+          onClear={() => setPinnedRows(null)}
+        />
+      )}
       <div
         ref={hostRef}
         data-testid="stock-candle-chart-host"
@@ -664,6 +689,66 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+export function PinnedCandlePanel({
+  rows,
+  onClear,
+}: {
+  rows: Array<[string, string]>;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      style={{
+        borderBottom: '1px solid var(--border-soft)',
+        background: 'rgba(240, 185, 11, 0.08)',
+        padding: '9px 10px',
+        display: 'grid',
+        gridTemplateColumns: 'auto 1fr auto',
+        alignItems: 'center',
+        gap: 10,
+        fontSize: 11,
+        color: 'var(--text-primary)',
+      }}
+    >
+      <strong style={{ fontSize: 12 }}>고정된 봉</strong>
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          flexWrap: 'wrap',
+          minWidth: 0,
+        }}
+      >
+        {rows.map(([label, value]) => (
+          <span key={label} style={{ whiteSpace: 'nowrap' }}>
+            <span style={{ color: 'var(--text-muted)', marginRight: 3 }}>
+              {label}
+            </span>
+            <span style={{ fontWeight: 800 }}>{value}</span>
+          </span>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onClear}
+        style={{
+          height: 26,
+          border: '1px solid var(--border)',
+          borderRadius: 7,
+          background: 'var(--bg-card)',
+          color: 'var(--text-muted)',
+          fontSize: 11,
+          fontWeight: 800,
+          padding: '0 8px',
+          cursor: 'pointer',
+        }}
+      >
+        해제
+      </button>
     </div>
   );
 }

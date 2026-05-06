@@ -6,6 +6,7 @@ import {
   CandleChartView,
   ChartBackfillControl,
   MinuteBackfillControl,
+  PinnedCandlePanel,
   formatCandleTooltipRows,
   normalizeCandleRangeForInterval,
 } from '../StockCandleChart';
@@ -50,7 +51,26 @@ describe('StockCandleChart', () => {
 
     expect(html).toContain('data-testid="stock-candle-chart-host"');
     expect(html).toContain('1m');
-    expect(html).toContain('차트 위에 마우스를 올리면');
+    expect(html).toContain('마우스를 올리면 OHLCV 표시');
+    expect(html).toContain('클릭하면 봉 고정');
+  });
+
+  it('renders a pinned candle inspection panel from actual candle rows', () => {
+    const html = renderToStaticMarkup(
+      createElement(PinnedCandlePanel, {
+        rows: [
+          ['시각', '2026. 05. 05. 09:00'],
+          ['시가', '70,000'],
+          ['종가', '70,200'],
+        ],
+        onClear: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('고정된 봉');
+    expect(html).toContain('2026. 05. 05. 09:00');
+    expect(html).toContain('70,200');
+    expect(html).toContain('해제');
   });
 
   it('formats crosshair tooltip rows from actual candle values', () => {
