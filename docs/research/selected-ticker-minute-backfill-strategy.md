@@ -40,22 +40,37 @@ Policy:
 
 ## Not Implemented
 
-- No KIS minute REST client call
-- No endpoint that executes minute backfill
+- KIS minute REST client and selected-ticker endpoint now exist.
+- Live write is still pending because the first controlled probe was safely
+  rejected by the market-hours guard.
 - No background minute backfill
 - No full watchlist minute backfill
 - No synthetic intraday candles
 
+## Live Probe Status
+
+2026-05-06 19:45 KST:
+
+- Probe target: `005930`
+- Endpoint: `POST /stocks/005930/candles/backfill-minute`
+- Result: `safe_rejected_by_policy`
+- Response: `423 Locked`, `MARKET_HOURS`
+- KIS today-minute REST calls: `0`
+- `kis-time-today` candle writes: `0`
+
+Report:
+
+- `docs/research/kis-today-minute-backfill-live-probe.md`
+
 ## Future GO Criteria
 
-Before implementing actual selected-ticker minute calls:
+Before claiming selected-ticker minute live write verified:
 
-1. Confirm current KIS `주식당일분봉조회` response shape with one redacted
-   fixture.
+1. Re-run the same single-ticker probe in an allowed window.
 2. Keep calls manual and selected-ticker only.
 3. Store returned candles as missing-bucket repairs only.
 4. Preserve local-live candle priority and source metadata.
-5. Add a live-probe report before widening.
+5. Keep full watchlist/background minute backfill prohibited.
 
 ## Validation
 
