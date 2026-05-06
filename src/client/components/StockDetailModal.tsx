@@ -6,7 +6,7 @@
  *     전일대비, 거래량, 업데이트 시각, 스냅샷 여부, REST quote detail
  *     fields when present.
  *   - Unsupported values are shown as "미제공" or "기준선 수집 중", not
- *     fabricated. 뉴스/공시는 still explicitly 연동 예정.
+ *     fabricated. 뉴스/공시는 external 확인 링크만 제공한다.
  *   - Chart: rendered from `usePriceHistoryStore` only — no synthetic
  *     intraday. With <2 points, shows a "데이터 수집 중" placeholder.
  *
@@ -48,6 +48,7 @@ import type { MarketStatus } from '@shared/types';
 import { useSurgeStore } from '../stores/surge-store';
 import { SignalReasonList } from './SignalReasonList';
 import { StockCandleChart } from './StockCandleChart';
+import { StockNewsDisclosurePanel } from './StockNewsDisclosurePanel';
 import { StockNotesPanel } from './StockNotesPanel';
 
 const PENDING_LABEL = '연동 예정';
@@ -277,34 +278,7 @@ export function StockDetailModal({
           )}
 
           <StockNotesPanel ticker={stock.code} />
-
-          <div style={{ marginTop: 18 }}>
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: 'var(--text-primary)',
-                marginBottom: 8,
-              }}
-            >
-              관련 뉴스 · 공시
-            </div>
-            <div
-              style={{
-                padding: '18px 14px',
-                border: '1px dashed var(--border)',
-                borderRadius: 10,
-                fontSize: 12,
-                color: 'var(--text-muted)',
-                textAlign: 'center',
-                lineHeight: 1.6,
-              }}
-            >
-              뉴스 / 공시 피드는 백엔드 연동 후 표시됩니다.
-              <br />
-              <span style={{ fontSize: 11 }}>(연동 예정)</span>
-            </div>
-          </div>
+          <StockNewsDisclosurePanel ticker={stock.code} name={stock.name} />
         </div>
       </div>
     </div>

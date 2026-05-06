@@ -782,6 +782,15 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/observation-memo-log-mvp.md`
 - HOLD: 메모 수정, 태그/분류, candle timestamp 연결, AI 요약, export
 
+### News/disclosure link MVP 결과 (2026-05-06)
+- `StockDetailModal`의 `관련 뉴스 · 공시` placeholder를 실제 외부 확인 링크 패널로 교체
+- 링크: 네이버 금융 뉴스, 네이버 금융 종목, DART 공시 검색, KIND 공시 검색
+- in-app feed/API ingestion/요약은 하지 않는다. Araon이 모르는 뉴스·공시 내용을 생성하지 않는 정책 유지
+- live KIS / WebSocket / background job 호출: 0회
+- focused test: `src/client/components/__tests__/stock-news-disclosure-panel.test.ts`
+- report: `docs/research/news-disclosure-link-mvp.md`
+- HOLD: DART/KIND API 연동, 뉴스 feed 저장, 공시 알림, AI 요약/감성 분석
+
 ## 7. 더 깊은 핸드오프 dump
 
 이 프로젝트의 전체 작업 히스토리, 보안 패턴 상세, NXT3 시작 가이드는 다음 wiki 페이지에 dump:
