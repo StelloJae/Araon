@@ -22,6 +22,8 @@ import type {
   PriceCandleSource,
   StoredCandleInterval,
   StockNote,
+  StockObservationPlan,
+  StockObservationPlanStatus,
   StockNewsFetchStatus,
   StockNewsItem,
   StockSignalEvent,
@@ -154,6 +156,16 @@ interface StockNoteRow {
   id: string;
   ticker: string;
   body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface StockObservationPlanRow {
+  ticker: string;
+  thesis: string;
+  trigger: string;
+  invalidation: string;
+  status: string;
   created_at: string;
   updated_at: string;
 }
@@ -326,6 +338,18 @@ function rowToStockNote(row: StockNoteRow): StockNote {
     id: row.id,
     ticker: row.ticker,
     body: row.body,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToStockObservationPlan(row: StockObservationPlanRow): StockObservationPlan {
+  return {
+    ticker: row.ticker,
+    thesis: row.thesis,
+    trigger: row.trigger,
+    invalidation: row.invalidation,
+    status: row.status as StockObservationPlan['status'],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1360,6 +1384,67 @@ export class StockNoteRepository {
     const result = this.db
       .prepare('DELETE FROM stock_notes WHERE ticker = ? AND id = ?')
       .run(ticker, id);
+    return result.changes > 0;
+  }
+}
+
+export class StockObservationPlanRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  findByTicker(ticker: string): StockObservationPlan | null {
+    const row = this.db
+      .prepare<[string], StockObservationPlanRow>(
+        `SELECT ticker, thesis, trigger, invalidation, status, created_at, updated_at
+         FROM stock_observation_plans
+         WHERE ticker = ?
+         LIMIT 1`,
+      )
+      .get(ticker);
+    return row === undefined ? null : rowToStockObservationPlan(row);
+  }
+
+  upsert(input: {
+    ticker: string;
+    thesis: string;
+    trigger: string;
+    invalidation: string;
+    status: StockObservationPlanStatus;
+    now?: Date;
+  }): StockObservationPlan {
+    const nowIso = (input.now ?? new Date()).toISOString();
+    const existing = this.findByTicker(input.ticker);
+    const createdAt = existing?.createdAt ?? nowIso;
+    this.db
+      .prepare(
+        `INSERT INTO stock_observation_plans (
+           ticker, thesis, trigger, invalidation, status, created_at, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(ticker) DO UPDATE SET
+           thesis = excluded.thesis,
+           trigger = excluded.trigger,
+           invalidation = excluded.invalidation,
+           status = excluded.status,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.ticker,
+        input.thesis,
+        input.trigger,
+        input.invalidation,
+        input.status,
+        createdAt,
+        nowIso,
+      );
+    const row = this.findByTicker(input.ticker);
+    if (row === null) throw new Error('stock observation plan upsert failed');
+    return row;
+  }
+
+  delete(ticker: string): boolean {
+    const result = this.db
+      .prepare('DELETE FROM stock_observation_plans WHERE ticker = ?')
+      .run(ticker);
     return result.changes > 0;
   }
 }

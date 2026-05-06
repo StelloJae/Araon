@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 
 import { migrateUp } from '../../db/migrator.js';
 import {
+  StockObservationPlanRepository,
   SectorRepository,
   StockNoteRepository,
   StockRepository,
@@ -24,12 +25,13 @@ function buildApp(db: Database.Database) {
   const sectorRepo = new SectorRepository(db);
   const masterRepo = new MasterStockRepository(db);
   const noteRepo = new StockNoteRepository(db);
+  const observationPlanRepo = new StockObservationPlanRepository(db);
   const service = createStockService({ stockRepo, sectorRepo, masterRepo });
   stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
 
   const app = Fastify({ logger: false });
-  app.register(stockRoutes, { service, noteRepo });
-  return { app, noteRepo, stockRepo };
+  app.register(stockRoutes, { service, noteRepo, observationPlanRepo });
+  return { app, noteRepo, observationPlanRepo, stockRepo };
 }
 
 describe('StockNoteRepository', () => {
@@ -179,5 +181,51 @@ describe('stock note routes', () => {
     expect(deleted.statusCode).toBe(204);
     const list = await app.inject({ method: 'GET', url: '/stocks/005930/notes' });
     expect(list.json()).toEqual({ success: true, data: [] });
+  });
+});
+
+describe('stock observation plan routes', () => {
+  let db: Database.Database;
+  let app: ReturnType<typeof buildApp>['app'];
+
+  beforeEach(() => {
+    db = openMemoryDb();
+    ({ app } = buildApp(db));
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it('returns null when a ticker has no observation plan yet', async () => {
+    const res = await app.inject({ method: 'GET', url: '/stocks/005930/observation-plan' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ success: true, data: null });
+  });
+
+  it('upserts a local watch thesis and invalidation plan', async () => {
+    const saved = await app.inject({
+      method: 'PUT',
+      url: '/stocks/005930/observation-plan',
+      payload: {
+        thesis: 'HBM 수요와 외국인 수급을 같이 본다.',
+        trigger: '거래대금 동반 신고가 돌파',
+        invalidation: '전일 저점 이탈',
+        status: 'watching',
+      },
+    });
+    const fetched = await app.inject({ method: 'GET', url: '/stocks/005930/observation-plan' });
+
+    expect(saved.statusCode).toBe(200);
+    expect(fetched.statusCode).toBe(200);
+    expect(fetched.json().data).toMatchObject({
+      ticker: '005930',
+      thesis: 'HBM 수요와 외국인 수급을 같이 본다.',
+      trigger: '거래대금 동반 신고가 돌파',
+      invalidation: '전일 저점 이탈',
+      status: 'watching',
+    });
   });
 });

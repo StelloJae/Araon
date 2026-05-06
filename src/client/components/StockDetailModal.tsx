@@ -50,6 +50,7 @@ import { SignalReasonList } from './SignalReasonList';
 import { StockCandleChart } from './StockCandleChart';
 import { StockNewsDisclosurePanel } from './StockNewsDisclosurePanel';
 import { StockNotesPanel } from './StockNotesPanel';
+import { StockObservationPlanPanel } from './StockObservationPlanPanel';
 import { StockObservationTimeline } from './StockObservationTimeline';
 
 const PENDING_LABEL = '연동 예정';
@@ -278,6 +279,7 @@ export function StockDetailModal({
             </>
           )}
 
+          <StockObservationPlanPanel ticker={stock.code} />
           <StockNotesPanel ticker={stock.code} />
           <StockObservationTimeline ticker={stock.code} />
           <StockNewsDisclosurePanel ticker={stock.code} name={stock.name} />

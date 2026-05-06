@@ -14,6 +14,8 @@ import type {
   Stock,
   StockNewsItem,
   StockNote,
+  StockObservationPlan,
+  StockObservationPlanStatus,
   StockSignalEvent,
   StockSignalOutcomeDashboard,
   StockTimelineItem,
@@ -92,6 +94,30 @@ export async function removeStock(ticker: string): Promise<void> {
 export async function getStockNotes(ticker: string): Promise<StockNote[]> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/notes`);
   return unwrap<StockNote[]>(res);
+}
+
+export async function getStockObservationPlan(
+  ticker: string,
+): Promise<StockObservationPlan | null> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/observation-plan`);
+  return unwrap<StockObservationPlan | null>(res);
+}
+
+export async function saveStockObservationPlan(
+  ticker: string,
+  plan: {
+    thesis: string;
+    trigger: string;
+    invalidation: string;
+    status: StockObservationPlanStatus;
+  },
+): Promise<StockObservationPlan> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/observation-plan`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(plan),
+  });
+  return unwrap<StockObservationPlan>(res);
 }
 
 export async function createStockNote(ticker: string, body: string): Promise<StockNote> {

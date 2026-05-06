@@ -19,6 +19,7 @@ import type {
   CandleCoverageRepository,
   PriceCandleRepository,
   StockNoteRepository,
+  StockObservationPlanRepository,
   StockSignalEventRepository,
 } from '../db/repositories.js';
 import { parseStockCsv } from '../parsers/csv-parser.js';
@@ -36,6 +37,7 @@ import type {
   PriceCandle,
   PriceCandleSource,
   StockNote,
+  StockObservationPlan,
   StockSignalEvent,
   StockSignalOutcome,
   StockTimelineItem,
@@ -58,6 +60,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   candleRepo?: PriceCandleRepository;
   candleCoverageRepo?: CandleCoverageRepository;
   noteRepo?: StockNoteRepository;
+  observationPlanRepo?: StockObservationPlanRepository;
   signalEventRepo?: StockSignalEventRepository;
   dailyBackfillService?: DailyBackfillService;
   todayMinuteBackfillService?: TodayMinuteBackfillService;
@@ -127,6 +130,13 @@ const stockNoteBodySchema = z.object({
   body: z.string().trim().min(1).max(2_000),
 });
 
+const observationPlanBodySchema = z.object({
+  thesis: z.string().trim().min(1).max(2_000),
+  trigger: z.string().trim().min(1).max(1_000),
+  invalidation: z.string().trim().min(1).max(1_000),
+  status: z.enum(['watching', 'paused', 'archived']).default('watching'),
+});
+
 const stockNoteQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
@@ -158,6 +168,7 @@ type CandleBackfillBody = z.infer<typeof candleBackfillBodySchema>;
 type MinuteBackfillBody = z.infer<typeof minuteBackfillBodySchema>;
 type EnsureCoverageBody = z.infer<typeof ensureCoverageBodySchema>;
 type StockNoteBody = z.infer<typeof stockNoteBodySchema>;
+type ObservationPlanBody = z.infer<typeof observationPlanBodySchema>;
 type StockNoteQuery = z.input<typeof stockNoteQuerySchema>;
 type SignalEventBody = z.infer<typeof signalEventBodySchema>;
 
@@ -168,6 +179,65 @@ export async function stockRoutes(
   opts: StockRoutesOptions,
 ): Promise<void> {
   const { service } = opts;
+
+  app.get<{ Params: { ticker: string } }>(
+    '/stocks/:ticker/observation-plan',
+    async (request, reply) => {
+      const ticker = request.params.ticker;
+      if (!/^\d{6}$/.test(ticker)) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'INVALID_TICKER' },
+        });
+      }
+      if (opts.observationPlanRepo === undefined) {
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'STOCK_OBSERVATION_PLAN_REPOSITORY_NOT_WIRED' },
+        });
+      }
+      return reply.send({
+        success: true,
+        data: opts.observationPlanRepo.findByTicker(ticker),
+      });
+    },
+  );
+
+  app.put<{
+    Params: { ticker: string };
+    Body: ObservationPlanBody;
+  }>('/stocks/:ticker/observation-plan', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.observationPlanRepo === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'STOCK_OBSERVATION_PLAN_REPOSITORY_NOT_WIRED' },
+      });
+    }
+    const parsed = observationPlanBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues,
+      });
+    }
+
+    const plan: StockObservationPlan = opts.observationPlanRepo.upsert({
+      ticker,
+      thesis: parsed.data.thesis,
+      trigger: parsed.data.trigger,
+      invalidation: parsed.data.invalidation,
+      status: parsed.data.status,
+      now: (opts.now ?? (() => new Date()))(),
+    });
+    return reply.send({ success: true, data: plan });
+  });
 
   app.get<{ Params: { ticker: string }; Querystring: StockNoteQuery }>(
     '/stocks/:ticker/notes',

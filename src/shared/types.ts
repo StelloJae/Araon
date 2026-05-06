@@ -312,6 +312,18 @@ export interface StockNote {
   updatedAt: string;
 }
 
+export type StockObservationPlanStatus = 'watching' | 'paused' | 'archived';
+
+export interface StockObservationPlan {
+  ticker: string;
+  thesis: string;
+  trigger: string;
+  invalidation: string;
+  status: StockObservationPlanStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type StockSignalType = 'scalp' | 'strong_scalp' | 'overheat' | 'trend';
 export type StockSignalWindow = '10s' | '20s' | '30s' | '1m' | '3m' | '5m';
 
