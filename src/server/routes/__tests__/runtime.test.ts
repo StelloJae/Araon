@@ -120,7 +120,10 @@ async function build(
     stockRepo?: { findAll(): Array<{ ticker: string; name: string; market: 'KOSPI' | 'KOSDAQ' }> };
     favoriteRepo?: { findAll(): Array<{ ticker: string; tier: 'realtime' | 'polling'; addedAt: string }> };
     candleRepo?: { summarizeCoverage(): Array<{ interval: '1m' | '1d'; tickerCount: number; candleCount: number; newestBucketAt: string | null }> };
-    signalEventRepo?: { summarizeGrowth(): { eventCount: number; oldestSignalEventAt: string | null; newestSignalEventAt: string | null } };
+    signalEventRepo?: {
+      summarizeGrowth(): { eventCount: number; oldestSignalEventAt: string | null; newestSignalEventAt: string | null };
+      listRecent?(limit?: number): any[];
+    };
     noteRepo?: { summarizeGrowth(): { noteCount: number; oldestNoteAt: string | null; newestNoteAt: string | null } };
     newsRepo?: { summarizeGrowth(now: Date, staleAfterMs: number): { itemCount: number; staleItemCount: number; oldestFetchedAt: string | null; newestFetchedAt: string | null; failedFetchCount: number; lastFetchStatus: 'success' | 'failed' | null; lastFetchErrorCode: string | null; lastFetchedAt: string | null } };
     dataRetention?: { snapshot(): { lastRunAt: string | null; candlePruneLastRunAt: string | null; candlePruneLastError: string | null } };
@@ -292,12 +295,156 @@ describe('GET /runtime/data-health', () => {
             lastFetchedAt: '2026-05-06T06:00:00.000Z',
           },
         },
+        signalOutcomes: {
+          totalSignals: 0,
+          evaluatedSignals: 0,
+          pendingSignals: 0,
+          horizons: [
+            {
+              horizon: '5m',
+              total: 0,
+              ready: 0,
+              pending: 0,
+              averageChangePct: null,
+              bestChangePct: null,
+              worstChangePct: null,
+            },
+            {
+              horizon: '15m',
+              total: 0,
+              ready: 0,
+              pending: 0,
+              averageChangePct: null,
+              bestChangePct: null,
+              worstChangePct: null,
+            },
+            {
+              horizon: '30m',
+              total: 0,
+              ready: 0,
+              pending: 0,
+              averageChangePct: null,
+              bestChangePct: null,
+              worstChangePct: null,
+            },
+          ],
+        },
         maintenance: {
           lastRunAt: '2026-05-06T06:00:00.000Z',
           candlePruneLastRunAt: '2026-05-06T06:00:00.000Z',
           candlePruneLastError: null,
         },
       },
+    });
+  });
+});
+
+describe('GET /runtime/signals/outcomes', () => {
+  it('summarizes ready and pending signal outcomes without inventing missing returns', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      signalEventRepo: {
+        summarizeGrowth: vi.fn(() => ({
+          eventCount: 2,
+          oldestSignalEventAt: '2026-05-06T01:00:00.000Z',
+          newestSignalEventAt: '2026-05-06T02:00:00.000Z',
+        })),
+        listRecent: vi.fn(() => [
+          {
+            id: 'signal-ready',
+            ticker: '005930',
+            name: '삼성전자',
+            signalType: 'scalp',
+            source: 'realtime-momentum',
+            signalPrice: 70_000,
+            signalAt: '2026-05-06T01:00:00.000Z',
+            baselinePrice: null,
+            baselineAt: null,
+            momentumPct: 1,
+            momentumWindow: '30s',
+            dailyChangePct: null,
+            volume: null,
+            volumeSurgeRatio: null,
+            volumeBaselineStatus: 'collecting',
+            createdAt: '2026-05-06T01:00:00.000Z',
+            updatedAt: '2026-05-06T01:00:00.000Z',
+          },
+          {
+            id: 'signal-pending',
+            ticker: '000660',
+            name: 'SK하이닉스',
+            signalType: 'strong_scalp',
+            source: 'realtime-momentum',
+            signalPrice: 140_000,
+            signalAt: '2026-05-06T02:00:00.000Z',
+            baselinePrice: null,
+            baselineAt: null,
+            momentumPct: 2,
+            momentumWindow: '30s',
+            dailyChangePct: null,
+            volume: null,
+            volumeSurgeRatio: null,
+            volumeBaselineStatus: 'collecting',
+            createdAt: '2026-05-06T02:00:00.000Z',
+            updatedAt: '2026-05-06T02:00:00.000Z',
+          },
+        ]),
+      },
+      candleRepo: {
+        summarizeCoverage: vi.fn(() => []),
+        findFirstCandleAtOrAfter: vi.fn((query: { ticker: string }) =>
+          query.ticker === '005930'
+            ? {
+                ticker: '005930',
+                interval: '1m',
+                bucketAt: '2026-05-06T01:05:00.000Z',
+                session: 'regular',
+                open: 70_700,
+                high: 70_700,
+                low: 70_700,
+                close: 70_700,
+                volume: 1,
+                sampleCount: 1,
+                source: 'kis-time-daily',
+                isPartial: false,
+                createdAt: '2026-05-06T01:05:00.000Z',
+                updatedAt: '2026-05-06T01:05:00.000Z',
+              }
+            : null,
+        ),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/signals/outcomes' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      totalSignals: 2,
+      evaluatedSignals: 1,
+      pendingSignals: 1,
+      horizons: [
+        {
+          horizon: '5m',
+          total: 2,
+          ready: 1,
+          pending: 1,
+          averageChangePct: 1,
+          bestChangePct: 1,
+          worstChangePct: 1,
+        },
+        {
+          horizon: '15m',
+          total: 2,
+          ready: 1,
+          pending: 1,
+        },
+        {
+          horizon: '30m',
+          total: 2,
+          ready: 1,
+          pending: 1,
+        },
+      ],
     });
   });
 });

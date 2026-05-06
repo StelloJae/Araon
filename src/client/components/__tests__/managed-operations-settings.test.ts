@@ -166,6 +166,40 @@ describe('managed operations settings copy', () => {
             candlePruneLastRunAt: '2026-05-06T06:00:00.000Z',
             candlePruneLastError: null,
           },
+          signalOutcomes: {
+            totalSignals: 9,
+            evaluatedSignals: 6,
+            pendingSignals: 3,
+            horizons: [
+              {
+                horizon: '5m',
+                total: 9,
+                ready: 6,
+                pending: 3,
+                averageChangePct: 0.8,
+                bestChangePct: 2.1,
+                worstChangePct: -0.4,
+              },
+              {
+                horizon: '15m',
+                total: 9,
+                ready: 4,
+                pending: 5,
+                averageChangePct: 0.6,
+                bestChangePct: 1.8,
+                worstChangePct: -0.6,
+              },
+              {
+                horizon: '30m',
+                total: 9,
+                ready: 2,
+                pending: 7,
+                averageChangePct: 0.3,
+                bestChangePct: 1.2,
+                worstChangePct: -0.8,
+              },
+            ],
+          },
         },
       }),
     );
@@ -176,6 +210,8 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('거래량 기준선');
     expect(html).toContain('7/12 준비');
     expect(html).toContain('신호 기록');
+    expect(html).toContain('신호 성과');
+    expect(html).toContain('6/9 평가');
     expect(html).toContain('관찰 메모');
     expect(html).toContain('뉴스 캐시');
     expect(html).toContain('candle 정리');

@@ -1253,6 +1253,11 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor="var(--text-muted)"
             />
             <Row
+              k="신호 성과"
+              v={`${health.signalOutcomes.evaluatedSignals}/${health.signalOutcomes.totalSignals} 평가`}
+              chipColor={health.signalOutcomes.evaluatedSignals > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
+            />
+            <Row
               k="관찰 메모"
               v={`${health.growth.notes.noteCount}개`}
               chipColor="var(--text-muted)"

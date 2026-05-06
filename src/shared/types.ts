@@ -343,6 +343,23 @@ export interface StockSignalOutcome {
   observedAt: string | null;
 }
 
+export interface StockSignalOutcomeHorizonSummary {
+  horizon: StockSignalOutcome['horizon'];
+  total: number;
+  ready: number;
+  pending: number;
+  averageChangePct: number | null;
+  bestChangePct: number | null;
+  worstChangePct: number | null;
+}
+
+export interface StockSignalOutcomeDashboard {
+  totalSignals: number;
+  evaluatedSignals: number;
+  pendingSignals: number;
+  horizons: StockSignalOutcomeHorizonSummary[];
+}
+
 export interface StockTimelineNoteItem {
   kind: 'note';
   id: string;

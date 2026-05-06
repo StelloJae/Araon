@@ -61,6 +61,40 @@ function health(
       candlePruneLastRunAt: null,
       candlePruneLastError: null,
     },
+    signalOutcomes: {
+      totalSignals: 0,
+      evaluatedSignals: 0,
+      pendingSignals: 0,
+      horizons: [
+        {
+          horizon: '5m',
+          total: 0,
+          ready: 0,
+          pending: 0,
+          averageChangePct: null,
+          bestChangePct: null,
+          worstChangePct: null,
+        },
+        {
+          horizon: '15m',
+          total: 0,
+          ready: 0,
+          pending: 0,
+          averageChangePct: null,
+          bestChangePct: null,
+          worstChangePct: null,
+        },
+        {
+          horizon: '30m',
+          total: 0,
+          ready: 0,
+          pending: 0,
+          averageChangePct: null,
+          bestChangePct: null,
+          worstChangePct: null,
+        },
+      ],
+    },
   };
 }
 

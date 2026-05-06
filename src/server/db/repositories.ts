@@ -1402,6 +1402,22 @@ export class StockSignalEventRepository {
     return rows.map(rowToStockSignalEvent);
   }
 
+  listRecent(limit = STOCK_SIGNAL_DEFAULT_LIMIT): StockSignalEvent[] {
+    const safeLimit = Math.max(1, Math.min(limit, STOCK_SIGNAL_MAX_LIMIT));
+    const rows = this.db
+      .prepare<[number], StockSignalEventRow>(
+        `SELECT id, ticker, name, signal_type, source, signal_price, signal_at,
+                baseline_price, baseline_at, momentum_pct, momentum_window,
+                daily_change_pct, volume, volume_surge_ratio,
+                volume_baseline_status, created_at, updated_at
+         FROM stock_signal_events
+         ORDER BY signal_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(safeLimit);
+    return rows.map(rowToStockSignalEvent);
+  }
+
   pruneOldSignalEvents(now = new Date(), retentionDays = 90): number {
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000)
       .toISOString();

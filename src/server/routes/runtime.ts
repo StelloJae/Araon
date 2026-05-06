@@ -1,7 +1,16 @@
 import type { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { z } from 'zod';
 
-import type { Favorite, Price, Stock, VolumeBaselineStatus } from '@shared/types.js';
+import type {
+  Favorite,
+  Price,
+  PriceCandle,
+  Stock,
+  StockSignalEvent,
+  StockSignalOutcome,
+  StockSignalOutcomeDashboard,
+  VolumeBaselineStatus,
+} from '@shared/types.js';
 import type { KisRuntimeRef, KisRuntimeState } from '../bootstrap-kis.js';
 import type { KisRuntime } from '../bootstrap-kis.js';
 import type { CredentialStore } from '../credential-store.js';
@@ -49,11 +58,21 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   credentialStore: CredentialStore;
   stockRepo?: { findAll(): Stock[] };
   favoriteRepo?: { findAll(): Favorite[] };
-  candleRepo?: { summarizeCoverage(): PriceCandleCoverageSummary[] };
+  candleRepo?: {
+    summarizeCoverage(): PriceCandleCoverageSummary[];
+    findFirstCandleAtOrAfter?(query: {
+      ticker: string;
+      interval?: '1m' | '1d';
+      at: string;
+    }): PriceCandle | null;
+  };
   priceStore?: { getAllPrices(): Price[] };
   backfillStateStore?: BackgroundBackfillStateStore;
   backgroundBackfill?: { snapshot(): BackgroundBackfillSchedulerSnapshot };
-  signalEventRepo?: { summarizeGrowth(): StockSignalGrowthSummary };
+  signalEventRepo?: {
+    summarizeGrowth(): StockSignalGrowthSummary;
+    listRecent?(limit?: number): StockSignalEvent[];
+  };
   noteRepo?: { summarizeGrowth(): StockNoteGrowthSummary };
   newsRepo?: { summarizeGrowth(now?: Date, staleAfterMs?: number): StockNewsGrowthSummary };
   dataRetention?: { snapshot(): DataRetentionSnapshot };
@@ -144,6 +163,14 @@ export async function runtimeRoutes(
   app: FastifyInstance,
   opts: RuntimeRoutesOptions,
 ): Promise<void> {
+  app.get('/runtime/signals/outcomes', async (_request, reply) => {
+    const signals = opts.signalEventRepo?.listRecent?.(100) ?? [];
+    return reply.send({
+      success: true,
+      data: summarizeSignalOutcomeDashboard(signals, opts.candleRepo),
+    });
+  });
+
   app.get('/runtime/data-health', async (_request, reply) => {
     const now = new Date();
     const settings = opts.settingsStore.snapshot();
@@ -202,6 +229,10 @@ export async function runtimeRoutes(
             pruneAfterDays: NEWS_PRUNE_AFTER_DAYS,
           },
         },
+        signalOutcomes: summarizeSignalOutcomeDashboard(
+          opts.signalEventRepo?.listRecent?.(100) ?? [],
+          opts.candleRepo,
+        ),
         maintenance,
       },
     });
@@ -396,6 +427,81 @@ export async function runtimeRoutes(
     );
     return reply.send({ success: true, data: result });
   });
+}
+
+function summarizeSignalOutcomeDashboard(
+  signals: readonly StockSignalEvent[],
+  candleRepo: RuntimeRoutesOptions['candleRepo'],
+): StockSignalOutcomeDashboard {
+  const outcomes = signals.map((signal) => buildRuntimeSignalOutcomes(signal, candleRepo));
+  const horizons: StockSignalOutcomeDashboard['horizons'] = (['5m', '15m', '30m'] as const).map((horizon) => {
+    const bucket = outcomes.map((items) => items.find((item) => item.horizon === horizon)!);
+    const ready = bucket.filter((item) => item.state === 'ready' && item.changePct !== null);
+    const changes = ready.map((item) => item.changePct as number);
+    return {
+      horizon,
+      total: bucket.length,
+      ready: ready.length,
+      pending: bucket.length - ready.length,
+      averageChangePct:
+        changes.length === 0
+          ? null
+          : roundPct(changes.reduce((sum, value) => sum + value, 0) / changes.length),
+      bestChangePct: changes.length === 0 ? null : roundPct(Math.max(...changes)),
+      worstChangePct: changes.length === 0 ? null : roundPct(Math.min(...changes)),
+    };
+  });
+  const evaluatedSignals = outcomes.filter((items) =>
+    items.some((item) => item.state === 'ready'),
+  ).length;
+  return {
+    totalSignals: signals.length,
+    evaluatedSignals,
+    pendingSignals: signals.length - evaluatedSignals,
+    horizons,
+  };
+}
+
+function roundPct(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+function buildRuntimeSignalOutcomes(
+  signal: StockSignalEvent,
+  candleRepo: RuntimeRoutesOptions['candleRepo'],
+): StockSignalOutcome[] {
+  return [
+    buildRuntimeSignalOutcome(signal, candleRepo, '5m', 5),
+    buildRuntimeSignalOutcome(signal, candleRepo, '15m', 15),
+    buildRuntimeSignalOutcome(signal, candleRepo, '30m', 30),
+  ];
+}
+
+function buildRuntimeSignalOutcome(
+  signal: StockSignalEvent,
+  candleRepo: RuntimeRoutesOptions['candleRepo'],
+  horizon: StockSignalOutcome['horizon'],
+  minutes: number,
+): StockSignalOutcome {
+  if (candleRepo?.findFirstCandleAtOrAfter === undefined || signal.signalPrice <= 0) {
+    return { horizon, state: 'pending', price: null, changePct: null, observedAt: null };
+  }
+  const target = new Date(new Date(signal.signalAt).getTime() + minutes * 60_000);
+  const candle = candleRepo.findFirstCandleAtOrAfter({
+    ticker: signal.ticker,
+    interval: '1m',
+    at: target.toISOString(),
+  });
+  if (candle === null) {
+    return { horizon, state: 'pending', price: null, changePct: null, observedAt: null };
+  }
+  return {
+    horizon,
+    state: 'ready',
+    price: candle.close,
+    changePct: (candle.close / signal.signalPrice - 1) * 100,
+    observedAt: candle.bucketAt,
+  };
 }
 
 function emptyBackgroundBackfill(): BackgroundBackfillSchedulerSnapshot {

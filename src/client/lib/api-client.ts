@@ -15,6 +15,7 @@ import type {
   StockNewsItem,
   StockNote,
   StockSignalEvent,
+  StockSignalOutcomeDashboard,
   StockTimelineItem,
 } from '@shared/types';
 import type { SessionRealtimeCap } from './realtime-session-control';
@@ -565,6 +566,7 @@ export interface RuntimeDataHealthPayload {
     candlePruneLastRunAt: string | null;
     candlePruneLastError: string | null;
   };
+  signalOutcomes: StockSignalOutcomeDashboard;
 }
 
 export async function getRuntimeDataHealth(): Promise<RuntimeDataHealthPayload> {
