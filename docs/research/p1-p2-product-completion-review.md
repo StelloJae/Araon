@@ -216,7 +216,30 @@ Focused checks completed during implementation:
 - pinned candle inspection tests: passed
 - repeated `npm run typecheck`: passed
 
-Final full verification and Browser Use UI acceptance are recorded in the final report after this document commit.
+Final full verification after all P1/P2 commits:
+
+- `npm test`: 93 files / 671 tests passed
+- `npm run typecheck`: passed
+- `npm run build`: passed
+- `git diff --check`: passed
+- raw secret/token/key leak grep: no raw secret value found; one source type identifier false positive was inspected
+
+UI acceptance:
+
+- In-app Browser Use plugin's preferred backend was unavailable because the browser target/context was closed.
+- The fallback visible-browser acceptance was performed in Google Chrome against `http://127.0.0.1:5173/`.
+- Dashboard rendered with existing local data.
+- StockDetailModal opened for `005930`.
+- Realtime tab rendered.
+- Chart tab rendered `1m · 1d` candles.
+- Clicking a candle showed the pinned `고정된 봉` panel with actual OHLCV/source rows.
+- Observation timeline, notes, and news/disclosure sections rendered.
+- Settings connection tab rendered managed realtime/backfill status and data health summary.
+
+Live/runtime note:
+
+- This browser acceptance used the existing local dataDir and managed realtime state.
+- No extra KIS probe, cap test, manual backfill, or full-watchlist/background run was intentionally triggered by this acceptance.
 
 ## Known Limitations
 
