@@ -53,6 +53,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Managed defaults acceptance**: `bd7dbe8` 기준 no-live acceptance 완료 / fresh no-credentials는 defaults true여도 runtime unconfigured·KIS 호출 0회·credentials.enc 미생성 / persisted false emergency-disabled 설정 보존 / emergency disable route·Settings UI·backfill guard 검증 / existing local live UI smoke는 장중 live runtime 회피를 위해 not executed, 판정 CONDITIONAL GO
 - **Restart-safe daily backfill budget/cooldown**: `background-backfill-state.json`에 `budgetDateKey`, `dailyCallCount`, `cooldownUntilMs`를 저장 / 앱 재시작 후에도 daily budget exhausted와 429/5xx cooldown이 유지됨 / missing/malformed state는 empty state fallback / live KIS 호출 0회 focused tests로 검증
 - **Existing local data UI smoke**: Computer Use로 CLI `http://127.0.0.1:4173` 기존 local data profile 확인 / credentials configured, runtime started, REST polling active, WebSocket waiting, daily backfill auto card 표시 / 005930 detail 실시간·차트 탭 렌더링 확인 / 기존 profile은 explicit realtime false + paper mode라 managed-ON 강제 검증이 아니라 emergency-disabled compatibility smoke로 판정
+- **Desktop beta.9 install validation**: GitHub Release `Araon-1.1.0-beta.9-arm64-mac.zip`을 `/tmp`에 받아 압축 해제 후 `ARAON_DATA_DIR=/tmp/araon-desktop-smoke-data`로 실행 / Computer Use로 first-run KIS 앱키 등록 화면과 managed defaults copy 확인 / credentials configured=false, runtime unconfigured, defaults true/live, `credentials.enc` 미생성 / DMG drag install·Windows EXE·desktop credentials entry는 not executed
 
 ### NXT 시리즈 진행도
 
