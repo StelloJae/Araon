@@ -17,6 +17,7 @@ async function makeTempDir(): Promise<string> {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   if (server !== null) {
     await server.close();
     server = null;
@@ -29,11 +30,15 @@ afterEach(async () => {
 
 describe('launcher routes', () => {
   it('keeps clean first-run external calls blocked until credentials exist', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('unexpected external fetch'));
     server = await createAraonServer({ dataDir: await makeTempDir() });
+    await server.start({ port: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const settings = await server.app.inject({ method: 'GET', url: '/settings' });
     const credentials = await server.app.inject({ method: 'GET', url: '/credentials/status' });
     const realtime = await server.app.inject({ method: 'GET', url: '/runtime/realtime/status' });
+    const masterRefresh = await server.app.inject({ method: 'POST', url: '/master/refresh' });
 
     expect(settings.json().data).toMatchObject({
       websocketEnabled: true,
@@ -51,6 +56,9 @@ describe('launcher routes', () => {
       canApplyTicksToPriceStore: false,
       subscribedTickerCount: 0,
     });
+    expect(masterRefresh.statusCode).toBe(409);
+    expect(masterRefresh.json().error.code).toBe('MASTER_REFRESH_REQUIRES_CREDENTIALS');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('keeps launcher heartbeat disabled by default and exposes no credential material', async () => {

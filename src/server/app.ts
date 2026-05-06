@@ -181,7 +181,15 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const setupMutex = createCredentialSetupMutex();
   const app = Fastify({ loggerInstance: logger });
 
-  await app.register(credentialsRoutes, { credentialStore, settingsStore, runtimeRef, setupMutex });
+  await app.register(credentialsRoutes, {
+    credentialStore,
+    settingsStore,
+    runtimeRef,
+    setupMutex,
+    onCredentialsConfigured: () => {
+      void masterService.maybeRefreshOnBoot();
+    },
+  });
   await app.register(stockRoutes, {
     service: createStockService({ stockRepo, sectorRepo, masterRepo }),
     candleRepo,
@@ -195,7 +203,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(settingsRoutes, { settingsStore });
   await app.register(favoritesRoutes, { favoriteRepo, runtimeRef });
   await app.register(async (inner) => { importRoutes(inner, { stockRepo, runtimeRef }); });
-  await app.register(masterRoutes, { service: masterService, masterRepo, stockRepo });
+  await app.register(masterRoutes, { service: masterService, masterRepo, stockRepo, credentialStore });
   await app.register(eventsRoutes, { runtimeRef });
   await app.register(runtimeRoutes, {
     runtimeRef,
@@ -272,8 +280,13 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       const url = `http://${host}:${port}`;
       log.info(`listening on ${host}:${port}`);
 
-      // Background master refresh — never blocks listen / dashboard render.
-      void masterService.maybeRefreshOnBoot();
+      // Background master refresh never blocks listen/render, but clean first-run
+      // must not contact KIS endpoints before credentials are configured.
+      if ((await credentialStore.load()) !== null) {
+        void masterService.maybeRefreshOnBoot();
+      } else {
+        log.info('master cache refresh deferred until credentials are configured');
+      }
       dataRetention.start();
       backgroundBackfill.start();
 

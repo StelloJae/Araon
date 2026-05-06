@@ -27,6 +27,7 @@ export interface CredentialsRoutesOptions extends FastifyPluginOptions {
   settingsStore: SettingsStore;
   runtimeRef: KisRuntimeRef;
   setupMutex: CredentialSetupMutex;
+  onCredentialsConfigured?: () => void | Promise<void>;
 }
 
 const postBodySchema = z.object({
@@ -36,7 +37,7 @@ const postBodySchema = z.object({
 });
 
 export async function credentialsRoutes(app: FastifyInstance, opts: CredentialsRoutesOptions): Promise<void> {
-  const { credentialStore, settingsStore, runtimeRef, setupMutex } = opts;
+  const { credentialStore, settingsStore, runtimeRef, setupMutex, onCredentialsConfigured } = opts;
 
   app.get('/credentials/status', async (_req, reply) => {
     const stored = await credentialStore.load();
@@ -80,6 +81,22 @@ export async function credentialsRoutes(app: FastifyInstance, opts: CredentialsR
           rateLimiterMode: creds.isPaper ? 'paper' : 'live',
         });
         await runtimeRef.start(creds);
+        try {
+          const callback = onCredentialsConfigured?.();
+          if (callback !== undefined) {
+            void Promise.resolve(callback).catch((callbackErr: unknown) => {
+              log.warn(
+                { err: callbackErr instanceof Error ? callbackErr.message : String(callbackErr) },
+                'post-credentials background hook failed',
+              );
+            });
+          }
+        } catch (callbackErr: unknown) {
+          log.warn(
+            { err: callbackErr instanceof Error ? callbackErr.message : String(callbackErr) },
+            'post-credentials background hook failed',
+          );
+        }
         return reply.send({ success: true, data: { configured: true, isPaper: creds.isPaper, runtime: 'started' } });
       } catch (err: unknown) {
         await runtimeRef.stop().catch(() => undefined);

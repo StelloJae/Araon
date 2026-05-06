@@ -17,6 +17,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { createChildLogger } from '@shared/logger.js';
+import type { CredentialStore } from '../credential-store.js';
 import type { MasterStockService } from '../services/master-stock-service.js';
 import type {
   MasterStockRepository,
@@ -29,6 +30,7 @@ interface MasterRoutesOptions {
   service: MasterStockService;
   masterRepo: MasterStockRepository;
   stockRepo: StockRepository;
+  credentialStore: CredentialStore;
 }
 
 const fromMasterBodySchema = z.object({
@@ -39,7 +41,7 @@ export async function masterRoutes(
   app: FastifyInstance,
   opts: MasterRoutesOptions,
 ): Promise<void> {
-  const { service, masterRepo, stockRepo } = opts;
+  const { service, masterRepo, stockRepo, credentialStore } = opts;
 
   app.get('/master/list', async (_request, reply) => {
     const payload = service.list();
@@ -47,6 +49,16 @@ export async function masterRoutes(
   });
 
   app.post('/master/refresh', async (_request, reply) => {
+    const stored = await credentialStore.load();
+    if (stored === null) {
+      return reply.code(409).send({
+        success: false,
+        error: {
+          code: 'MASTER_REFRESH_REQUIRES_CREDENTIALS',
+          message: 'KIS credentials are required before refreshing public master files',
+        },
+      });
+    }
     const status = await service.refresh();
     if (status.lastError !== null && status.refreshedAt === null) {
       return reply.code(502).send({
