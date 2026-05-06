@@ -17,6 +17,8 @@ import type {
   Favorite,
   PriceSnapshot,
   PriceCandle,
+  CandleCoverageLedgerEntry,
+  CandleCoverageLedgerStatus,
   PriceCandleSource,
   StoredCandleInterval,
   StockNote,
@@ -129,6 +131,21 @@ interface PriceCandleRow {
   sample_count: number;
   source: string | null;
   is_partial: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CandleCoverageSegmentRow {
+  ticker: string;
+  interval: string;
+  source: string;
+  range_from: string;
+  range_to: string;
+  status: string;
+  requested: number;
+  inserted: number;
+  updated: number;
+  last_error_code: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -282,6 +299,23 @@ function rowToPriceCandle(row: PriceCandleRow): PriceCandle {
     sampleCount: row.sample_count,
     source: row.source as PriceCandle['source'],
     isPartial: row.is_partial === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCandleCoverageSegment(row: CandleCoverageSegmentRow): CandleCoverageLedgerEntry {
+  return {
+    ticker: row.ticker,
+    interval: row.interval as CandleCoverageLedgerEntry['interval'],
+    source: row.source as CandleCoverageLedgerEntry['source'],
+    rangeFrom: row.range_from,
+    rangeTo: row.range_to,
+    status: row.status as CandleCoverageLedgerEntry['status'],
+    requested: row.requested,
+    inserted: row.inserted,
+    updated: row.updated,
+    lastErrorCode: row.last_error_code,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1102,6 +1136,150 @@ export class PriceCandleRepository {
       )
       .all(params);
     return new Set(rows.map((r) => r.ticker));
+  }
+}
+
+export interface UpsertCandleCoverageSegmentInput {
+  ticker: string;
+  interval: StoredCandleInterval;
+  source: PriceCandleSource;
+  rangeFrom: string;
+  rangeTo: string;
+  status: CandleCoverageLedgerStatus;
+  requested?: number;
+  inserted?: number;
+  updated?: number;
+  lastErrorCode?: string | null;
+  now?: Date;
+}
+
+export interface CandleCoverageSegmentQuery {
+  ticker: string;
+  interval: StoredCandleInterval;
+  source?: PriceCandleSource;
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
+export class CandleCoverageRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  upsertSegment(input: UpsertCandleCoverageSegmentInput): void {
+    const nowIso = (input.now ?? new Date()).toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO candle_coverage_segments (
+           ticker, interval, source, range_from, range_to, status,
+           requested, inserted, updated, last_error_code, created_at, updated_at
+         )
+         VALUES (
+           @ticker, @interval, @source, @range_from, @range_to, @status,
+           @requested, @inserted, @updated, @last_error_code, @created_at, @updated_at
+         )
+         ON CONFLICT(ticker, interval, source, range_from, range_to) DO UPDATE SET
+           status = excluded.status,
+           requested = excluded.requested,
+           inserted = excluded.inserted,
+           updated = excluded.updated,
+           last_error_code = excluded.last_error_code,
+           updated_at = excluded.updated_at`,
+      )
+      .run({
+        ticker: input.ticker,
+        interval: input.interval,
+        source: input.source,
+        range_from: input.rangeFrom,
+        range_to: input.rangeTo,
+        status: input.status,
+        requested: Math.max(0, Math.trunc(input.requested ?? 0)),
+        inserted: Math.max(0, Math.trunc(input.inserted ?? 0)),
+        updated: Math.max(0, Math.trunc(input.updated ?? 0)),
+        last_error_code: input.lastErrorCode ?? null,
+        created_at: nowIso,
+        updated_at: nowIso,
+      });
+  }
+
+  hasCompleteCoverage(query: {
+    ticker: string;
+    interval: StoredCandleInterval;
+    source: PriceCandleSource;
+    from: string;
+    to: string;
+  }): boolean {
+    const row = this.db
+      .prepare<
+        [string, string, string, string, string],
+        { existing: 1 }
+      >(
+        `SELECT 1 AS existing
+         FROM candle_coverage_segments
+         WHERE ticker = ?
+           AND interval = ?
+           AND source = ?
+           AND status = 'complete'
+           AND range_from <= ?
+           AND range_to >= ?
+         LIMIT 1`,
+      )
+      .get(query.ticker, query.interval, query.source, query.from, query.to);
+    return row !== undefined;
+  }
+
+  listSegments(query: CandleCoverageSegmentQuery): CandleCoverageLedgerEntry[] {
+    const where = ['ticker = @ticker', 'interval = @interval'];
+    const params: Record<string, unknown> = {
+      ticker: query.ticker,
+      interval: query.interval,
+      limit: Math.max(1, Math.min(query.limit ?? 100, 500)),
+    };
+    if (query.source !== undefined) {
+      where.push('source = @source');
+      params.source = query.source;
+    }
+    if (query.from !== undefined) {
+      where.push('range_to >= @from');
+      params.from = query.from;
+    }
+    if (query.to !== undefined) {
+      where.push('range_from <= @to');
+      params.to = query.to;
+    }
+
+    const rows = this.db
+      .prepare<Record<string, unknown>, CandleCoverageSegmentRow>(
+        `SELECT ticker, interval, source, range_from, range_to, status,
+                requested, inserted, updated, last_error_code, created_at, updated_at
+         FROM candle_coverage_segments
+         WHERE ${where.join(' AND ')}
+         ORDER BY range_to DESC
+         LIMIT @limit`,
+      )
+      .all(params);
+    return rows.map(rowToCandleCoverageSegment);
+  }
+
+  summarizeSegments(query: Omit<CandleCoverageSegmentQuery, 'limit'>): {
+    completeSegments: number;
+    partialSegments: number;
+    failedSegments: number;
+    skippedSegments: number;
+    latestCompletedAt: string | null;
+  } {
+    const segments = this.listSegments({ ...query, limit: 500 });
+    return {
+      completeSegments: segments.filter((segment) => segment.status === 'complete').length,
+      partialSegments: segments.filter((segment) => segment.status === 'partial').length,
+      failedSegments: segments.filter((segment) => segment.status === 'failed').length,
+      skippedSegments: segments.filter((segment) => segment.status === 'skipped').length,
+      latestCompletedAt:
+        segments
+          .filter((segment) => segment.status === 'complete')
+          .map((segment) => segment.updatedAt)
+          .sort()
+          .at(-1) ?? null,
+    };
   }
 }
 

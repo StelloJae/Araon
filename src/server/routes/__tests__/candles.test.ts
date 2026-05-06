@@ -2,7 +2,11 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import Fastify from 'fastify';
 import Database from 'better-sqlite3';
 import { migrateUp } from '../../db/migrator.js';
-import { PriceCandleRepository, StockRepository } from '../../db/repositories.js';
+import {
+  CandleCoverageRepository,
+  PriceCandleRepository,
+  StockRepository,
+} from '../../db/repositories.js';
 import { stockRoutes } from '../stocks.js';
 import type { StockService } from '../../services/stock-service.js';
 import type { PriceCandle } from '@shared/types.js';
@@ -487,6 +491,56 @@ describe('GET /stocks/:ticker/candles', () => {
       state: 'backfilled',
       source: 'kis-time-daily',
       requested: 240,
+    });
+  });
+
+  it('records selected intraday coverage and skips repeated coverage fetches', async () => {
+    const backfillHistoricalMinuteCandles = vi.fn().mockResolvedValue({
+      ticker: '005930',
+      requested: 240,
+      inserted: 200,
+      updated: 40,
+      from: '2026-05-04T00:00:00.000Z',
+      to: '2026-05-04T11:00:00.000Z',
+      source: 'kis-time-daily',
+      pages: 3,
+      tradingDays: 1,
+      coverage: { backfilled: true, localOnly: false },
+    });
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      candleCoverageRepo: new CandleCoverageRepository(db),
+      historicalMinuteBackfillService: { backfillHistoricalMinuteCandles },
+      now: () => new Date('2026-05-05T11:10:00.000Z'),
+    });
+
+    const payload = {
+      interval: '5m',
+      range: '1d',
+      from: '2026-05-04T00:00:00.000Z',
+      to: '2026-05-04T11:00:00.000Z',
+    };
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload,
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload,
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(backfillHistoricalMinuteCandles).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(second.body).data).toMatchObject({
+      state: 'current',
+      source: 'kis-time-daily',
+      requested: 0,
     });
   });
 

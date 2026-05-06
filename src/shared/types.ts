@@ -263,6 +263,32 @@ export interface CandleApiCoverage {
   gapCount: number;
   oldestBucketAt: string | null;
   newestBucketAt: string | null;
+  ledger?: CandleCoverageLedgerSummary;
+}
+
+export type CandleCoverageLedgerStatus = 'complete' | 'partial' | 'failed' | 'skipped';
+
+export interface CandleCoverageLedgerEntry {
+  ticker: string;
+  interval: StoredCandleInterval;
+  source: PriceCandleSource;
+  rangeFrom: string;
+  rangeTo: string;
+  status: CandleCoverageLedgerStatus;
+  requested: number;
+  inserted: number;
+  updated: number;
+  lastErrorCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CandleCoverageLedgerSummary {
+  completeSegments: number;
+  partialSegments: number;
+  failedSegments: number;
+  skippedSegments: number;
+  latestCompletedAt: string | null;
 }
 
 export interface CandleApiStatus {

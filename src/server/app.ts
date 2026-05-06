@@ -15,6 +15,7 @@ import {
   StockSignalEventRepository,
   MasterStockRepository,
   MasterStockMetaRepository,
+  CandleCoverageRepository,
 } from './db/repositories.js';
 import { createSettingsStore } from './settings-store.js';
 import { createFileCredentialStore } from './credential-store.js';
@@ -102,6 +103,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const stockRepo = new StockRepository(db);
   const snapshotStore = new SnapshotStore(snapshotRepo);
   const candleRepo = new PriceCandleRepository(db);
+  const candleCoverageRepo = new CandleCoverageRepository(db);
   const volumeBaselineEnricher = createVolumeBaselineEnricher({
     stockRepo,
     snapshotRepo,
@@ -214,6 +216,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(stockRoutes, {
     service: createStockService({ stockRepo, sectorRepo, masterRepo }),
     candleRepo,
+    candleCoverageRepo,
     noteRepo,
     signalEventRepo,
     newsFeedService,

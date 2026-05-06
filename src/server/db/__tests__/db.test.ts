@@ -80,6 +80,7 @@ describe('migrateUp', () => {
     migrateUp(db);
     const tables = tableNames(db);
     const expected = [
+      'candle_coverage_segments',
       'favorites',
       'master_stock_meta',
       'master_stocks',
@@ -101,7 +102,7 @@ describe('migrateUp', () => {
   it('records the migration version in schema_version', () => {
     migrateUp(db);
     const row = db.prepare<[], { version: number }>('SELECT MAX(version) AS version FROM schema_version').get();
-    expect(row?.version).toBe(8);
+    expect(row?.version).toBe(9);
   });
 
   it('master_stocks has B1a classification columns after migrate', () => {

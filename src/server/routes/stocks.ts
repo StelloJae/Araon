@@ -16,6 +16,7 @@ import type { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { z } from 'zod';
 import type { StockService } from '../services/stock-service.js';
 import type {
+  CandleCoverageRepository,
   PriceCandleRepository,
   StockNoteRepository,
   StockSignalEventRepository,
@@ -30,6 +31,7 @@ import type {
   CandleApiCoverage,
   CandleApiItem,
   CandleApiStatus,
+  CandleCoverageLedgerSummary,
   CandleInterval,
   PriceCandle,
   PriceCandleSource,
@@ -54,6 +56,7 @@ const MAX_DISPLAY_MINUTE_TRADE_VALUE_KRW = 5_000_000_000_000;
 export interface StockRoutesOptions extends FastifyPluginOptions {
   service: StockService;
   candleRepo?: PriceCandleRepository;
+  candleCoverageRepo?: CandleCoverageRepository;
   noteRepo?: StockNoteRepository;
   signalEventRepo?: StockSignalEventRepository;
   dailyBackfillService?: DailyBackfillService;
@@ -518,6 +521,13 @@ export async function stockRoutes(
       }
       const range = dailyBackfillRangeForCandleRange(parsed.data.range);
       if (
+        opts.candleCoverageRepo?.hasCompleteCoverage({
+          ticker,
+          interval: '1d',
+          source: 'kis-daily',
+          from: window.from,
+          to: window.to,
+        }) === true ||
         !shouldBackfillDailyTicker({
           ticker,
           range,
@@ -543,6 +553,20 @@ export async function stockRoutes(
           range,
           now,
         });
+        if (opts.candleCoverageRepo !== undefined && result.requested > 0) {
+          opts.candleCoverageRepo.upsertSegment({
+            ticker,
+            interval: '1d',
+            source: result.source,
+            rangeFrom: window.from,
+            rangeTo: window.to,
+            status: 'complete',
+            requested: result.requested,
+            inserted: result.inserted,
+            updated: result.updated,
+            now,
+          });
+        }
         return reply.send({
           success: true,
           data: {
@@ -575,7 +599,7 @@ export async function stockRoutes(
       });
     }
 
-    if (hasBackfilledIntradayInWindow(opts.candleRepo, ticker, window)) {
+    if (hasBackfilledIntradayInWindow(opts.candleRepo, opts.candleCoverageRepo, ticker, window)) {
       return reply.send({
         success: true,
         data: {
@@ -596,6 +620,20 @@ export async function stockRoutes(
         to: window.to,
         now,
       });
+      if (opts.candleCoverageRepo !== undefined && result.requested > 0) {
+        opts.candleCoverageRepo.upsertSegment({
+          ticker,
+          interval: '1m',
+          source: result.source,
+          rangeFrom: window.from,
+          rangeTo: window.to,
+          status: 'complete',
+          requested: result.requested,
+          inserted: result.inserted,
+          updated: result.updated,
+          now,
+        });
+      }
       return reply.send({
         success: true,
         data: {
@@ -727,6 +765,12 @@ export async function stockRoutes(
     const items = candles.map(toCandleApiItem);
     const first = items[0];
     const last = items[items.length - 1];
+    const ledger = opts.candleCoverageRepo?.summarizeSegments({
+      ticker,
+      interval: baseInterval,
+      from: window.from,
+      to: window.to,
+    });
 
     return reply.send({
       success: true,
@@ -734,7 +778,7 @@ export async function stockRoutes(
         ticker,
         interval: parsed.data.interval,
         items,
-        coverage: buildCoverage(candles, first, last),
+        coverage: buildCoverage(candles, first, last, ledger),
         status: buildStatus(items, candles),
       },
     });
@@ -856,9 +900,21 @@ function dailyBackfillRangeForCandleRange(
 
 function hasBackfilledIntradayInWindow(
   repo: PriceCandleRepository,
+  coverageRepo: CandleCoverageRepository | undefined,
   ticker: string,
   window: { from: string; to: string },
 ): boolean {
+  if (
+    coverageRepo?.hasCompleteCoverage({
+      ticker,
+      interval: '1m',
+      source: 'kis-time-daily',
+      from: window.from,
+      to: window.to,
+    }) === true
+  ) {
+    return true;
+  }
   return repo
     .listCandles({
       ticker,
@@ -902,6 +958,7 @@ function buildCoverage(
   candles: readonly PriceCandle[],
   first: CandleApiItem | undefined,
   last: CandleApiItem | undefined,
+  ledger: CandleCoverageLedgerSummary | undefined,
 ): CandleApiCoverage {
   const sourceMix = Array.from(
     new Set(
@@ -914,7 +971,7 @@ function buildCoverage(
     sourceMix.includes('kis-daily') ||
     sourceMix.includes('kis-time-today') ||
     sourceMix.includes('kis-time-daily');
-  return {
+  const coverage: CandleApiCoverage = {
     from: first?.bucketAt ?? null,
     to: last?.bucketAt ?? null,
     localOnly: !backfilled,
@@ -925,6 +982,10 @@ function buildCoverage(
     oldestBucketAt: first?.bucketAt ?? null,
     newestBucketAt: last?.bucketAt ?? null,
   };
+  if (ledger !== undefined) {
+    coverage.ledger = ledger;
+  }
+  return coverage;
 }
 
 function buildStatus(
