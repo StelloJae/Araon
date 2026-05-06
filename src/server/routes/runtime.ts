@@ -1,11 +1,17 @@
 import type { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { z } from 'zod';
 
-import type { Favorite } from '@shared/types.js';
+import type { Favorite, Price, Stock, VolumeBaselineStatus } from '@shared/types.js';
 import type { KisRuntimeRef, KisRuntimeState } from '../bootstrap-kis.js';
 import type { KisRuntime } from '../bootstrap-kis.js';
 import type { CredentialStore } from '../credential-store.js';
 import type { SettingsStore } from '../settings-store.js';
+import type {
+  BackgroundBackfillStateStore,
+} from '../chart/background-backfill-scheduler.js';
+import type {
+  PriceCandleCoverageSummary,
+} from '../db/repositories.js';
 import {
   buildInactiveRealtimeOperatorStatus,
   buildRealtimeOperatorStatus,
@@ -31,6 +37,11 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
   settingsStore: SettingsStore;
   credentialStore: CredentialStore;
+  stockRepo?: { findAll(): Stock[] };
+  favoriteRepo?: { findAll(): Favorite[] };
+  candleRepo?: { summarizeCoverage(): PriceCandleCoverageSummary[] };
+  priceStore?: { getAllPrices(): Price[] };
+  backfillStateStore?: BackgroundBackfillStateStore;
 }
 
 export interface RuntimeRealtimeStatusPayload {
@@ -118,6 +129,41 @@ export async function runtimeRoutes(
   app: FastifyInstance,
   opts: RuntimeRoutesOptions,
 ): Promise<void> {
+  app.get('/runtime/data-health', async (_request, reply) => {
+    const settings = opts.settingsStore.snapshot();
+    const backfillState =
+      opts.backfillStateStore !== undefined
+        ? await opts.backfillStateStore.load()
+        : { budgetDateKey: null, dailyCallCount: 0, cooldownUntilMs: 0 };
+    const prices = opts.priceStore?.getAllPrices() ?? [];
+    const baselineCounts = countVolumeBaselineStatuses(prices);
+
+    return reply.send({
+      success: true,
+      data: {
+        tracking: {
+          trackedCount: opts.stockRepo?.findAll().length ?? 0,
+          favoriteCount: opts.favoriteRepo?.findAll().length ?? 0,
+        },
+        candles: opts.candleRepo?.summarizeCoverage() ?? [
+          { interval: '1m', tickerCount: 0, candleCount: 0, newestBucketAt: null },
+          { interval: '1d', tickerCount: 0, candleCount: 0, newestBucketAt: null },
+        ],
+        backfill: {
+          enabled: settings.backgroundDailyBackfillEnabled,
+          range: settings.backgroundDailyBackfillRange,
+          budgetDateKey: backfillState.budgetDateKey,
+          dailyCallCount: backfillState.dailyCallCount,
+          cooldownUntil: backfillState.cooldownUntilMs > 0
+            ? new Date(backfillState.cooldownUntilMs).toISOString()
+            : null,
+          cooldownActive: backfillState.cooldownUntilMs > Date.now(),
+        },
+        volumeBaseline: baselineCounts,
+      },
+    });
+  });
+
   app.get('/runtime/realtime/status', async (_request, reply) => {
     const configured = await isCredentialConfigured(opts.credentialStore);
     const runtimeState = opts.runtimeRef.get();
@@ -373,6 +419,29 @@ function toPayload(
       }),
     },
     ...(runtimeError !== undefined ? { runtimeError } : {}),
+  };
+}
+
+function countVolumeBaselineStatuses(prices: readonly Price[]): {
+  total: number;
+  ready: number;
+  collecting: number;
+  unavailable: number;
+} {
+  const counts: Record<VolumeBaselineStatus, number> = {
+    ready: 0,
+    collecting: 0,
+    unavailable: 0,
+  };
+  for (const price of prices) {
+    const status = price.volumeBaselineStatus ?? 'unavailable';
+    counts[status] += 1;
+  }
+  return {
+    total: prices.length,
+    ready: counts.ready,
+    collecting: counts.collecting,
+    unavailable: counts.unavailable,
   };
 }
 

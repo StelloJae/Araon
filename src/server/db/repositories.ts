@@ -803,6 +803,13 @@ export interface PriceCandleListQuery {
   limit?: number | undefined;
 }
 
+export interface PriceCandleCoverageSummary {
+  interval: StoredCandleInterval;
+  tickerCount: number;
+  candleCount: number;
+  newestBucketAt: string | null;
+}
+
 export class PriceCandleRepository {
   private readonly db: Database.Database;
 
@@ -935,6 +942,36 @@ export class PriceCandleRepository {
       )
       .get(query.ticker, interval, query.at);
     return row === undefined ? null : rowToPriceCandle(row);
+  }
+
+  summarizeCoverage(): PriceCandleCoverageSummary[] {
+    const rows = this.db
+      .prepare<[], {
+        interval: StoredCandleInterval;
+        ticker_count: number;
+        candle_count: number;
+        newest_bucket_at: string | null;
+      }>(
+        `SELECT interval,
+                COUNT(DISTINCT ticker) AS ticker_count,
+                COUNT(*) AS candle_count,
+                MAX(bucket_at) AS newest_bucket_at
+         FROM price_candles
+         WHERE interval IN ('1m', '1d')
+         GROUP BY interval
+         ORDER BY interval ASC`,
+      )
+      .all();
+    const byInterval = new Map(rows.map((row) => [row.interval, row]));
+    return (['1m', '1d'] as const).map((interval) => {
+      const row = byInterval.get(interval);
+      return {
+        interval,
+        tickerCount: row?.ticker_count ?? 0,
+        candleCount: row?.candle_count ?? 0,
+        newestBucketAt: row?.newest_bucket_at ?? null,
+      };
+    });
   }
 
   pruneOldCandles(now = new Date()): number {

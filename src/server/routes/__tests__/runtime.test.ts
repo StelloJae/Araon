@@ -117,6 +117,11 @@ async function build(
     runtimeRef: KisRuntimeRef;
     settingsStore?: SettingsStore;
     credentialStore?: CredentialStore;
+    stockRepo?: { findAll(): Array<{ ticker: string; name: string; market: 'KOSPI' | 'KOSDAQ' }> };
+    favoriteRepo?: { findAll(): Array<{ ticker: string; tier: 'realtime' | 'polling'; addedAt: string }> };
+    candleRepo?: { summarizeCoverage(): Array<{ interval: '1m' | '1d'; tickerCount: number; candleCount: number; newestBucketAt: string | null }> };
+    priceStore?: { getAllPrices(): Array<{ ticker: string; price: number; changeRate: number; volume: number; updatedAt: string; isSnapshot: boolean; volumeBaselineStatus?: 'ready' | 'collecting' | 'unavailable' }> };
+    backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
   },
 ) {
   const app = Fastify({ logger: false });
@@ -124,9 +129,86 @@ async function build(
     runtimeRef: opts.runtimeRef,
     settingsStore: opts.settingsStore ?? settingsStore(),
     credentialStore: opts.credentialStore ?? credentialStore(true),
+    stockRepo: opts.stockRepo,
+    favoriteRepo: opts.favoriteRepo,
+    candleRepo: opts.candleRepo,
+    priceStore: opts.priceStore,
+    backfillStateStore: opts.backfillStateStore,
   });
   return app;
 }
+
+describe('GET /runtime/data-health', () => {
+  it('summarizes tracking, candle coverage, backfill budget, and volume baselines safely', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      settingsStore: settingsStore({
+        backgroundDailyBackfillEnabled: true,
+        backgroundDailyBackfillRange: '3m',
+      }),
+      stockRepo: {
+        findAll: vi.fn(() => [
+          { ticker: '005930', name: '삼성전자', market: 'KOSPI' },
+          { ticker: '000660', name: 'SK하이닉스', market: 'KOSPI' },
+        ]),
+      },
+      favoriteRepo: {
+        findAll: vi.fn(() => [
+          { ticker: '005930', tier: 'realtime', addedAt: '2026-05-06T00:00:00.000Z' },
+        ]),
+      },
+      candleRepo: {
+        summarizeCoverage: vi.fn(() => [
+          { interval: '1m', tickerCount: 1, candleCount: 120, newestBucketAt: '2026-05-06T06:30:00.000Z' },
+          { interval: '1d', tickerCount: 2, candleCount: 40, newestBucketAt: '2026-05-05T15:00:00.000Z' },
+        ]),
+      },
+      priceStore: {
+        getAllPrices: vi.fn(() => [
+          { ticker: '005930', price: 70_000, changeRate: 1, volume: 1, updatedAt: '2026-05-06T06:30:00.000Z', isSnapshot: false, volumeBaselineStatus: 'ready' },
+          { ticker: '000660', price: 140_000, changeRate: 2, volume: 1, updatedAt: '2026-05-06T06:30:00.000Z', isSnapshot: false, volumeBaselineStatus: 'collecting' },
+        ]),
+      },
+      backfillStateStore: {
+        load: vi.fn(async () => ({
+          budgetDateKey: '2026-05-06',
+          dailyCallCount: 4,
+          cooldownUntilMs: 0,
+        })),
+        save: vi.fn(async () => undefined),
+        snapshot: vi.fn(() => ({ budgetDateKey: '2026-05-06', dailyCallCount: 4, cooldownUntilMs: 0 })),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      success: true,
+      data: {
+        tracking: { trackedCount: 2, favoriteCount: 1 },
+        candles: [
+          { interval: '1m', tickerCount: 1, candleCount: 120, newestBucketAt: '2026-05-06T06:30:00.000Z' },
+          { interval: '1d', tickerCount: 2, candleCount: 40, newestBucketAt: '2026-05-05T15:00:00.000Z' },
+        ],
+        backfill: {
+          enabled: true,
+          range: '3m',
+          budgetDateKey: '2026-05-06',
+          dailyCallCount: 4,
+          cooldownUntil: null,
+          cooldownActive: false,
+        },
+        volumeBaseline: {
+          total: 2,
+          ready: 1,
+          collecting: 1,
+          unavailable: 0,
+        },
+      },
+    });
+  });
+});
 
 describe('GET /runtime/realtime/status', () => {
   it('returns a safe disabled status when KIS runtime is not started', async () => {

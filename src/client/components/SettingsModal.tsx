@@ -45,6 +45,7 @@ import {
   enableRealtimeSession,
   getFavorites,
   getRealtimeStatus,
+  getRuntimeDataHealth,
   getServerSettings,
   getStocks,
   getThemesWithStocks,
@@ -52,6 +53,7 @@ import {
   updateServerSettings,
   type KisWatchlistImportResult,
   type RealtimeStatusPayload,
+  type RuntimeDataHealthPayload,
   type ServerRuntimeSettings,
 } from '../lib/api-client';
 import {
@@ -251,6 +253,7 @@ function ConnectionTab() {
     useState<RealtimeOperatorPhase>({ kind: 'idle' });
   const [serverSettings, setServerSettings] =
     useState<ServerRuntimeSettings | null>(null);
+  const [dataHealth, setDataHealth] = useState<RuntimeDataHealthPayload | null>(null);
   const [serverSettingsPhase, setServerSettingsPhase] =
     useState<ServerSettingsPhase>({ kind: 'idle' });
   const [selectedCap, setSelectedCap] = useState<SessionRealtimeCap>(1);
@@ -437,11 +440,15 @@ function ConnectionTab() {
           runtime: data.runtime ?? 'unconfigured',
           errorMessage: data.error?.message ?? null,
         });
-        const realtime = await getRealtimeStatus();
-        const settings = await getServerSettings();
+        const [realtime, settings, health] = await Promise.all([
+          getRealtimeStatus(),
+          getServerSettings(),
+          getRuntimeDataHealth(),
+        ]);
         if (!cancelled) {
           setRealtimeStatus(realtime);
           setServerSettings(settings);
+          setDataHealth(health);
         }
       } catch (err) {
         if ((err as { name?: string } | null)?.name === 'AbortError') return;
@@ -553,6 +560,7 @@ function ConnectionTab() {
           );
         }}
       />
+      <DataHealthPanel health={dataHealth} />
 
       {status.errorMessage !== null && (
         <div
@@ -1109,6 +1117,90 @@ export function BackgroundBackfillControl({
   );
 }
 
+export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload | null }) {
+  const oneMinute = health?.candles.find((row) => row.interval === '1m') ?? null;
+  const daily = health?.candles.find((row) => row.interval === '1d') ?? null;
+  return (
+    <div
+      data-testid="data-health-panel"
+      style={{
+        marginTop: 18,
+        padding: '12px 14px',
+        background: 'var(--bg-tint)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 800,
+          color: 'var(--text-primary)',
+          marginBottom: 8,
+        }}
+      >
+        데이터 건강 상태
+      </div>
+      {health === null ? (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          저장소 상태를 불러오는 중입니다.
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gap: 8,
+            }}
+          >
+            <Row
+              k="추적 / 즐겨찾기"
+              v={`${health.tracking.trackedCount} / ${health.tracking.favoriteCount}`}
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="일봉 보강"
+              v={health.backfill.enabled ? `자동 · ${health.backfill.range}` : '비상정지'}
+              chipColor={health.backfill.enabled ? 'var(--kr-up)' : 'var(--kr-down)'}
+            />
+            <Row
+              k="1분봉 coverage"
+              v={`${oneMinute?.tickerCount ?? 0}종목 · ${oneMinute?.candleCount ?? 0}개`}
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="일봉 coverage"
+              v={`${daily?.tickerCount ?? 0}종목 · ${daily?.candleCount ?? 0}개`}
+              chipColor="var(--text-muted)"
+            />
+            <Row
+              k="백필 예산"
+              v={`${health.backfill.dailyCallCount}회 사용`}
+              chipColor={health.backfill.cooldownActive ? 'var(--kr-down)' : 'var(--text-muted)'}
+            />
+            <Row
+              k="거래량 기준선"
+              v={`${health.volumeBaseline.ready}/${health.volumeBaseline.total} 준비`}
+              chipColor={health.volumeBaseline.ready > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
+            />
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            최신 1분봉: {formatMaybeLocal(oneMinute?.newestBucketAt ?? null)} · 최신 일봉:{' '}
+            {formatMaybeLocal(daily?.newestBucketAt ?? null)}
+            {health.backfill.cooldownActive && health.backfill.cooldownUntil !== null && (
+              <>
+                <br />
+                백필 쿨다운: {formatLocal(health.backfill.cooldownUntil)}까지
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function operatorErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     return sanitizeRealtimeOperatorMessage(`${err.status} ${err.message}`);
@@ -1363,6 +1455,10 @@ function formatLocal(iso: string): string {
   const hh = String(d.getHours()).padStart(2, '0');
   const mi = String(d.getMinutes()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
+
+function formatMaybeLocal(iso: string | null): string {
+  return iso === null ? '없음' : formatLocal(iso);
 }
 
 // ---------- Notif tab ----------

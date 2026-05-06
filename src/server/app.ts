@@ -153,12 +153,13 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       });
     },
   });
+  const backfillStateStore = createFileBackfillStateStore();
   const backgroundBackfill = createBackgroundDailyBackfillScheduler({
     settingsStore,
     stockRepo,
     favoriteRepo,
     dailyBackfillService,
-    stateStore: createFileBackfillStateStore(),
+    stateStore: backfillStateStore,
     marketPhase: () => {
       const state = runtimeRef.get();
       return state.status === 'started'
@@ -185,7 +186,16 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(async (inner) => { importRoutes(inner, { stockRepo, runtimeRef }); });
   await app.register(masterRoutes, { service: masterService, masterRepo, stockRepo });
   await app.register(eventsRoutes, { runtimeRef });
-  await app.register(runtimeRoutes, { runtimeRef, settingsStore, credentialStore });
+  await app.register(runtimeRoutes, {
+    runtimeRef,
+    settingsStore,
+    credentialStore,
+    stockRepo,
+    favoriteRepo,
+    candleRepo,
+    priceStore,
+    backfillStateStore,
+  });
   await app.register(launcherRoutes, options.launcher ?? {});
 
   if (options.serveStaticClient === true) {

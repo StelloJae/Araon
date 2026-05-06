@@ -451,6 +451,38 @@ export async function emergencyDisableRealtime(): Promise<RealtimeEmergencyDisab
   return unwrap<RealtimeEmergencyDisablePayload>(res);
 }
 
+export interface RuntimeDataHealthPayload {
+  tracking: {
+    trackedCount: number;
+    favoriteCount: number;
+  };
+  candles: Array<{
+    interval: '1m' | '1d';
+    tickerCount: number;
+    candleCount: number;
+    newestBucketAt: string | null;
+  }>;
+  backfill: {
+    enabled: boolean;
+    range: DailyBackfillRange;
+    budgetDateKey: string | null;
+    dailyCallCount: number;
+    cooldownUntil: string | null;
+    cooldownActive: boolean;
+  };
+  volumeBaseline: {
+    total: number;
+    ready: number;
+    collecting: number;
+    unavailable: number;
+  };
+}
+
+export async function getRuntimeDataHealth(): Promise<RuntimeDataHealthPayload> {
+  const res = await fetch('/runtime/data-health');
+  return unwrap<RuntimeDataHealthPayload>(res);
+}
+
 // === Imports ==============================================================
 
 export interface KisWatchlistImportResult {

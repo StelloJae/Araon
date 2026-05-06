@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   BackgroundBackfillControl,
+  DataHealthPanel,
   RealtimeSessionControl,
 } from '../SettingsModal';
 
@@ -57,5 +58,49 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('장중 07:55~20:05');
     expect(html).toContain('비상정지');
     expect(html).not.toContain('자동 백필 꺼짐');
+  });
+
+  it('shows data health coverage and volume baseline readiness', () => {
+    const html = renderToStaticMarkup(
+      createElement(DataHealthPanel, {
+        health: {
+          tracking: { trackedCount: 12, favoriteCount: 3 },
+          candles: [
+            {
+              interval: '1m',
+              tickerCount: 5,
+              candleCount: 240,
+              newestBucketAt: '2026-05-06T06:30:00.000Z',
+            },
+            {
+              interval: '1d',
+              tickerCount: 8,
+              candleCount: 120,
+              newestBucketAt: '2026-05-05T15:00:00.000Z',
+            },
+          ],
+          backfill: {
+            enabled: true,
+            range: '3m',
+            budgetDateKey: '2026-05-06',
+            dailyCallCount: 4,
+            cooldownUntil: null,
+            cooldownActive: false,
+          },
+          volumeBaseline: {
+            total: 12,
+            ready: 7,
+            collecting: 5,
+            unavailable: 0,
+          },
+        },
+      }),
+    );
+
+    expect(html).toContain('데이터 건강 상태');
+    expect(html).toContain('1분봉 coverage');
+    expect(html).toContain('일봉 coverage');
+    expect(html).toContain('거래량 기준선');
+    expect(html).toContain('7/12 준비');
   });
 });
