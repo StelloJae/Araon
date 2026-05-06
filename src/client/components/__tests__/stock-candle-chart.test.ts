@@ -4,8 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CandleChartView,
-  ChartBackfillControl,
-  MinuteBackfillControl,
+  ChartAutoBackfillStatus,
   PinnedCandlePanel,
   formatCandleTooltipRows,
   normalizeCandleRangeForInterval,
@@ -98,52 +97,27 @@ describe('StockCandleChart', () => {
     ]);
   });
 
-  it('renders a daily backfill control for weekly/monthly intervals only', () => {
-    const weekly = renderToStaticMarkup(
-      createElement(ChartBackfillControl, {
-        interval: '1W',
-        disabled: false,
-        pending: false,
-        message: 'KIS 과거 일봉을 가져옵니다.',
-        onBackfill: () => undefined,
-      }),
-    );
+  it('renders automatic chart coverage status instead of manual fetch buttons', () => {
     const intraday = renderToStaticMarkup(
-      createElement(ChartBackfillControl, {
+      createElement(ChartAutoBackfillStatus, {
         interval: '5m',
-        disabled: false,
         pending: false,
-        message: null,
-        onBackfill: () => undefined,
-      }),
-    );
-
-    expect(weekly).toContain('과거 일봉 가져오기');
-    expect(intraday).not.toContain('과거 일봉 가져오기');
-  });
-
-  it('renders a today-minute backfill control for intraday intervals only', () => {
-    const intraday = renderToStaticMarkup(
-      createElement(MinuteBackfillControl, {
-        interval: '5m',
-        disabled: false,
-        pending: false,
-        message: '선택 종목의 오늘 1분봉 일부만 보강합니다.',
-        onBackfill: () => undefined,
+        message: '과거 분봉 자동 보강 완료',
       }),
     );
     const daily = renderToStaticMarkup(
-      createElement(MinuteBackfillControl, {
+      createElement(ChartAutoBackfillStatus, {
         interval: '1D',
-        disabled: false,
-        pending: false,
-        message: null,
-        onBackfill: () => undefined,
+        pending: true,
+        message: '과거 일봉 자동 보강 중',
       }),
     );
 
-    expect(intraday).toContain('오늘 분봉 가져오기');
-    expect(daily).not.toContain('오늘 분봉 가져오기');
+    expect(intraday).toContain('분봉 자동');
+    expect(intraday).toContain('분봉 자동 · 과거 분봉 자동 보강 완료');
+    expect(daily).toContain('보강 중');
+    expect(intraday).not.toContain('오늘 분봉 가져오기');
+    expect(daily).not.toContain('과거 일봉 가져오기');
   });
 
   it('can render weekly chart metadata without synthetic data', () => {

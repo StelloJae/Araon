@@ -25,10 +25,12 @@ import { createBackgroundDailyBackfillScheduler } from './chart/background-backf
 import { shouldBackfillDailyTicker } from './chart/daily-backfill-coverage.js';
 import { createFileBackfillStateStore } from './chart/backfill-state-store.js';
 import { createDailyBackfillService } from './chart/daily-backfill-service.js';
+import { createHistoricalMinuteBackfillService } from './chart/historical-minute-backfill-service.js';
 import { createTodayMinuteBackfillService } from './chart/today-minute-backfill-service.js';
 import { createVolumeBaselineEnricher } from './volume/volume-baseline-service.js';
 import { createKisRuntimeRef, defaultActuallyStart } from './bootstrap-kis.js';
 import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
+import { fetchKisHistoricalMinuteCandles } from './kis/kis-historical-minute-chart.js';
 import { fetchKisTodayMinuteCandles } from './kis/kis-today-minute-chart.js';
 import { createStockService } from './services/stock-service.js';
 import { createStockNewsFeedService } from './news/news-feed-service.js';
@@ -159,6 +161,22 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       });
     },
   });
+  const historicalMinuteBackfillService = createHistoricalMinuteBackfillService({
+    repo: candleRepo,
+    fetchMinuteCandles: async ({ ticker, dateYmd, toHms, now }) => {
+      const state = runtimeRef.get();
+      if (state.status !== 'started') {
+        throw new Error('KIS runtime is not started');
+      }
+      return fetchKisHistoricalMinuteCandles({
+        ticker,
+        dateYmd,
+        toHms,
+        restClient: state.runtime.restClient,
+        now: () => now,
+      });
+    },
+  });
   const backfillStateStore = createFileBackfillStateStore();
   const backgroundBackfill = createBackgroundDailyBackfillScheduler({
     settingsStore,
@@ -201,6 +219,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     newsFeedService,
     dailyBackfillService,
     todayMinuteBackfillService,
+    historicalMinuteBackfillService,
   });
   await app.register(themeRoutes, { stockRepo });
   await app.register(settingsRoutes, { settingsStore });

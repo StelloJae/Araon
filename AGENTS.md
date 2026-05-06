@@ -47,9 +47,9 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **NXT final push cap20/cap40 controlled smoke**: SettingsModal UI 버튼 경로만 사용(route-level fallback 0회) / cap20은 20개 후보에서 parsed 252 / applied 100 / stale 151 / session-limit ignored 1 / `endReason=applied_tick_limit_reached` / cap40은 40개 후보에서 parsed 528 / applied 200 / stale 328 / session-limit ignored 0 / `endReason=applied_tick_limit_reached` / cap40 초과 구독 0회 / active subscriptions 0 / gates false / original favorites ticker set 복구 / persisted settings 변경 0회. cap1/3/5/10/20/40 controlled UI session hard-limit 검증 완료
 - **NXT always-on promotion**: 이 사용자 로컬 `data/settings.json`을 `websocketEnabled=true`, `applyTicksToPriceStore=true`로 전환 / warmup 시 current realtime favorite assignment를 즉시 connect+subscribe / tier-manager runtime cap은 `WS_MAX_SUBSCRIPTIONS=40` / integrated market scheduler는 07:55 warmup, 08:00~20:00 open, 20:05 shutdown / REST polling fallback 유지 / StockRow와 SurgeBlock에 실제 누적 거래량 표시 복구. 거래량 배수는 기준선 없이는 표시하지 않음
 - **Araon runtime acceptance**: 2026-04-29 11:10~11:41 KST / always-on `H0UNCNT0` cap40 30.3분 관찰 / parsed +141,132 / applied +78,540 / stale +62,592 / reconnect 0 / parseError 0 / applyError 0 / SSE 10초 sample에서 `price-update` 510건 / 임시 favorite overlay 원복. Browser acceptance 중 cap40 tick burst로 client render loop 발견 후 `lastUpdate` throttle + client price update batching으로 수정. 거래량 배수 P1은 same-session/time-bucket baseline foundation 구현, 기준선 부족 시 `기준선 수집 중`. favicon 404는 Araon favicon으로 해결
-- **Persisted candle + historical daily backfill MVP**: `price_candles` SQLite table 추가 / canonical stored interval은 local `1m` + KIS daily `1d` / 3m~12h는 1m candle에서 재집계 / 1D·1W·1M은 1d candle에서 KST 기준 재집계 / daily backfill range는 `1m/3m/6m/1y`, 긴 범위는 100일 이하 창으로 pagination / StockDetailModal `차트` 탭은 TradingView Lightweight Charts로 표시 / raw tick 저장·historical minute backfill·full master backfill·가짜 과거 차트 없음
+- **Persisted candle + historical backfill**: `price_candles` SQLite table 추가 / canonical stored interval은 local+KIS `1m` + KIS daily `1d` / `kis-time-daily`는 KIS `주식일별분봉조회`에서 가져온 selected ticker 과거 1분봉 / 3m~12h는 1m candle에서 재집계 / 1D·1W·1M은 1d candle에서 KST 기준 재집계 / daily backfill range는 `1m/3m/6m/1y`, 긴 범위는 100일 이하 창으로 pagination / StockDetailModal `차트` 탭은 TradingView Lightweight Charts로 표시 / raw tick 저장·full master backfill·가짜 과거 차트 없음
 - **Candle chart UI acceptance**: 005930에 저장된 `kis-daily` 20개 candle이 StockDetailModal `차트` 탭에서 `1D · 1m` 20 candles로 표시됨 / `1W · 3m` 5 candles, `1M · 1y` 2 candles 확인 / 빈 종목은 "차트 데이터 수집 중" 유지 / daily 계열 봉 선택 시 너무 짧은 range는 자동 보정(`1D→1m`, `1W→3m`, `1M→1y`) / UI acceptance 중 추가 KIS historical call·WebSocket/cap/background queue 0회
-- **Chart/backfill MVP closeout**: 단일 종목 KIS daily live probe + StockDetailModal UI acceptance 기준으로 제품 체크포인트 닫힘 / 이후 daily background backfill은 tracked/favorites 대상 managed default로 승격 / full master backfill·historical minute backfill은 계속 HOLD / 누락 차트 데이터 합성 금지
+- **Chart coverage auto-backfill**: StockDetailModal 차트 interval/range 변경 시 `POST /stocks/:ticker/candles/ensure-coverage`가 selected ticker coverage를 자동 확인한다. 1D/1W/1M은 KIS daily `1d`, 1m~12h는 KIS `주식일별분봉조회` `kis-time-daily` 1m candle을 보강하고 서버에서 재집계한다. 장중/프리오픈에는 safe skip, credentials 없으면 보강 실패 대신 기존 local/empty chart를 정직하게 표시한다. full master minute backfill과 background minute queue는 계속 HOLD.
 - **Managed defaults acceptance**: `bd7dbe8` 기준 no-live acceptance 완료 / fresh no-credentials는 defaults true여도 runtime unconfigured·KIS 호출 0회·credentials.enc 미생성 / persisted false emergency-disabled 설정 보존 / emergency disable route·Settings UI·backfill guard 검증 / existing local live UI smoke는 장중 live runtime 회피를 위해 not executed, 판정 CONDITIONAL GO
 - **v1.1.0-beta.11 post-release acceptance**: published npm beta first-run path 확인 / `@stellojae/araon@beta` → `1.1.0-beta.11` / clean temp dataDir + no credentials + fetch guard에서 외부 KIS fetch 0회 / `POST /master/refresh`는 `MASTER_REFRESH_REQUIRES_CREDENTIALS` / first-run UI copy 확인 / npm beta path는 GO, desktop GUI install validation은 pending
 - **Restart-safe daily backfill call counter/cooldown**: `background-backfill-state.json`에 `budgetDateKey`, `dailyCallCount`, `cooldownUntilMs`를 저장 / 앱 재시작 후에도 오늘 호출 수 표시와 429/5xx cooldown이 유지됨 / 임의 daily budget으로 멈추지 않고 장외 허용 시간에는 tracked/favorites를 낮은 속도로 계속 보강 / missing/malformed state는 empty state fallback
@@ -111,7 +111,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - 모르는 값은 **"연동 예정"** italic으로 표시하거나 disabled.
 - sparkline은 실제 SSE history (`usePriceHistoryStore`)만, ≥2 point 있어야 그림.
 - persisted chart는 `price_candles`의 local `1m` candle과 manual KIS `1d` candle만 표시한다. 데이터가 없으면 "차트 데이터 수집 중"으로 표시하고 synthetic candle/backfill을 만들지 않는다.
-- daily background backfill은 credentials 등록 후 managed default지만 tracked/favorites 범위, 장중 차단, sequential low-rate, 429/5xx cooldown guard를 유지한다. 임의 daily budget으로 멈추지 않는다. full master backfill과 historical minute backfill은 별도 승인 전까지 HOLD다.
+- daily background backfill은 credentials 등록 후 managed default지만 tracked/favorites 범위, 장중 차단, sequential low-rate, 429/5xx cooldown guard를 유지한다. 임의 daily budget으로 멈추지 않는다. Chart coverage auto-backfill의 historical minute은 selected ticker foreground 범위만 허용한다. full master backfill, full watchlist minute backfill, background minute queue는 별도 승인 전까지 HOLD다.
 - surge/alert는 **crossing 순간만** 발동 (continuous "조건 만족 중" 폭주 금지).
 - `closed`/`snapshot`/`pre-open` 시 alert / sparkline 차단.
 
@@ -813,7 +813,7 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/volume-baseline-bootstrap.md`
 - HOLD: KIS historical minute bootstrap, persisted materialized baseline table, confidence labels
 
-### Selected-ticker historical minute strategy 결과 (2026-05-06)
+### Selected-ticker historical minute strategy 결과 (2026-05-06~2026-05-07)
 - KIS today-minute client/service/endpoint는 구현되어 있고, selected ticker manual foreground 전용 전략 가드로만 실행된다
 - `planSelectedTickerMinuteBackfill()` 정책: 단일 6자리 ticker, 평일 20:05 이후/07:55 이전만 ready, 장중 blocked, 주말은 KIS today-minute 제약으로 hold
 - full watchlist/background minute backfill은 금지. 초기 cap은 30 rows/request, max 4 pages, max 120 rows
@@ -822,7 +822,8 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - Browser/Playwright UI 확인: 삼성전자 상세 모달 `차트` 탭에서 `1m · 1d`, `1439 candles`, `KIS 당일분봉 포함` 표시 확인
 - focused test: `src/server/chart/__tests__/minute-backfill-strategy.test.ts`
 - reports: `docs/research/selected-ticker-minute-backfill-strategy.md`, `docs/research/kis-today-minute-backfill-live-probe.md`
-- HOLD: full watchlist/background minute backfill, automatic historical minute backfill
+- 2026-05-07 chart coverage auto-backfill: KIS 공식 `주식일별분봉조회`(`/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice`, TR_ID `FHKST03010230`)를 `kis-time-daily` source로 추가. 차트 interval/range 변경 시 `ensure-coverage`가 selected ticker 과거 1m candle을 자동 보강하고 3m~12h는 서버 재집계한다. 장중에는 safe skip.
+- HOLD: full watchlist/background minute backfill, full master minute backfill
 
 ## 7. 더 깊은 핸드오프 dump
 

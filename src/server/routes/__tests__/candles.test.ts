@@ -411,6 +411,85 @@ describe('GET /stocks/:ticker/candles', () => {
     });
   });
 
+  it('auto-ensures daily candle coverage for daily chart ranges', async () => {
+    const backfillDailyCandles = vi.fn().mockResolvedValue({
+      ticker: '005930',
+      requested: 20,
+      inserted: 20,
+      updated: 0,
+      from: '2026-04-05T15:00:00.000Z',
+      to: '2026-05-04T15:00:00.000Z',
+      source: 'kis-daily',
+      coverage: { backfilled: true, localOnly: false },
+    });
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      dailyBackfillService: { backfillDailyCandles },
+      now: () => new Date('2026-05-05T11:10:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload: { interval: '1D', range: '1m' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(backfillDailyCandles).toHaveBeenCalledWith({
+      ticker: '005930',
+      range: '1m',
+      now: new Date('2026-05-05T11:10:00.000Z'),
+    });
+    expect(JSON.parse(res.body).data).toMatchObject({
+      state: 'backfilled',
+      source: 'kis-daily',
+      requested: 20,
+    });
+  });
+
+  it('auto-ensures intraday candle coverage from KIS historical minute data', async () => {
+    const backfillHistoricalMinuteCandles = vi.fn().mockResolvedValue({
+      ticker: '005930',
+      requested: 240,
+      inserted: 200,
+      updated: 40,
+      from: '2026-05-04T00:00:00.000Z',
+      to: '2026-05-04T11:00:00.000Z',
+      source: 'kis-time-daily',
+      pages: 3,
+      tradingDays: 1,
+      coverage: { backfilled: true, localOnly: false },
+    });
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      historicalMinuteBackfillService: { backfillHistoricalMinuteCandles },
+      now: () => new Date('2026-05-05T11:10:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload: { interval: '5m', range: '1d' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(backfillHistoricalMinuteCandles).toHaveBeenCalledWith({
+      ticker: '005930',
+      from: expect.any(String),
+      to: expect.any(String),
+      now: new Date('2026-05-05T11:10:00.000Z'),
+    });
+    expect(JSON.parse(res.body).data).toMatchObject({
+      state: 'backfilled',
+      source: 'kis-time-daily',
+      requested: 240,
+    });
+  });
+
   it('repository lists stored local candles and skips untracked tickers', async () => {
     const repo = new PriceCandleRepository(db);
     await repo.bulkUpsertCandles([

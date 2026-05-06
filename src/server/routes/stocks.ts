@@ -24,6 +24,7 @@ import { parseStockCsv } from '../parsers/csv-parser.js';
 import { createChildLogger } from '@shared/logger.js';
 import { aggregateCandles } from '../price/candle-aggregation.js';
 import { isBackfillAllowed } from '../chart/backfill-policy.js';
+import { shouldBackfillDailyTicker } from '../chart/daily-backfill-coverage.js';
 import { planSelectedTickerMinuteBackfill } from '../chart/minute-backfill-strategy.js';
 import type {
   CandleApiCoverage,
@@ -42,6 +43,7 @@ import type {
   DailyBackfillService,
 } from '../chart/daily-backfill-service.js';
 import type { TodayMinuteBackfillService } from '../chart/today-minute-backfill-service.js';
+import type { HistoricalMinuteBackfillService } from '../chart/historical-minute-backfill-service.js';
 import type { StockNewsFeedService } from '../news/news-feed-service.js';
 
 const log = createChildLogger('routes/stocks');
@@ -56,6 +58,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   signalEventRepo?: StockSignalEventRepository;
   dailyBackfillService?: DailyBackfillService;
   todayMinuteBackfillService?: TodayMinuteBackfillService;
+  historicalMinuteBackfillService?: HistoricalMinuteBackfillService;
   newsFeedService?: StockNewsFeedService;
   now?: () => Date;
 }
@@ -110,6 +113,13 @@ const minuteBackfillBodySchema = z.object({
   maxPages: z.coerce.number().int().positive().max(4).default(4),
 });
 
+const ensureCoverageBodySchema = z.object({
+  interval: candleIntervalSchema,
+  range: candleRangeSchema,
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+
 const stockNoteBodySchema = z.object({
   body: z.string().trim().min(1).max(2_000),
 });
@@ -143,6 +153,7 @@ type AddOneBody = z.infer<typeof addOneBodySchema>;
 type BulkBody = z.infer<typeof bulkBodySchema>;
 type CandleBackfillBody = z.infer<typeof candleBackfillBodySchema>;
 type MinuteBackfillBody = z.infer<typeof minuteBackfillBodySchema>;
+type EnsureCoverageBody = z.infer<typeof ensureCoverageBodySchema>;
 type StockNoteBody = z.infer<typeof stockNoteBodySchema>;
 type StockNoteQuery = z.input<typeof stockNoteQuerySchema>;
 type SignalEventBody = z.infer<typeof signalEventBodySchema>;
@@ -450,6 +461,170 @@ export async function stockRoutes(
 
   app.post<{
     Params: { ticker: string };
+    Body: EnsureCoverageBody;
+  }>('/stocks/:ticker/candles/ensure-coverage', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.candleRepo === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'CANDLE_REPOSITORY_NOT_WIRED' },
+      });
+    }
+
+    const parsed = ensureCoverageBodySchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues,
+      });
+    }
+
+    const now = (opts.now ?? (() => new Date()))();
+    const window = resolveCandleWindow(parsed.data.range, parsed.data.from, parsed.data.to);
+    if (window === null) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_CANDLE_WINDOW' },
+      });
+    }
+
+    if (!isBackfillAllowed(now, 'closed')) {
+      return reply.send({
+        success: true,
+        data: {
+          state: 'skipped',
+          reason: 'MARKET_HOURS',
+          source: null,
+          requested: 0,
+          inserted: 0,
+          updated: 0,
+          message: '장중에는 차트 과거 데이터 자동 보강을 대기합니다.',
+        },
+      });
+    }
+
+    if (dailyBaseInterval(parsed.data.interval)) {
+      if (opts.dailyBackfillService === undefined) {
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'DAILY_BACKFILL_NOT_WIRED' },
+        });
+      }
+      const range = dailyBackfillRangeForCandleRange(parsed.data.range);
+      if (
+        !shouldBackfillDailyTicker({
+          ticker,
+          range,
+          now,
+          repo: opts.candleRepo,
+        })
+      ) {
+        return reply.send({
+          success: true,
+          data: {
+            state: 'current',
+            source: 'kis-daily',
+            requested: 0,
+            inserted: 0,
+            updated: 0,
+            message: '일봉 차트 coverage가 이미 준비되어 있습니다.',
+          },
+        });
+      }
+      try {
+        const result = await opts.dailyBackfillService.backfillDailyCandles({
+          ticker,
+          range,
+          now,
+        });
+        return reply.send({
+          success: true,
+          data: {
+            state: result.requested > 0 ? 'backfilled' : 'empty',
+            source: result.source,
+            requested: result.requested,
+            inserted: result.inserted,
+            updated: result.updated,
+            from: result.from,
+            to: result.to,
+            message: '일봉 차트 coverage를 자동 보강했습니다.',
+          },
+        });
+      } catch (err: unknown) {
+        log.warn(
+          { ticker, err: err instanceof Error ? err.message : String(err) },
+          'daily chart coverage ensure failed',
+        );
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'DAILY_COVERAGE_ENSURE_FAILED' },
+        });
+      }
+    }
+
+    if (opts.historicalMinuteBackfillService === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'HISTORICAL_MINUTE_BACKFILL_NOT_WIRED' },
+      });
+    }
+
+    if (hasBackfilledIntradayInWindow(opts.candleRepo, ticker, window)) {
+      return reply.send({
+        success: true,
+        data: {
+          state: 'current',
+          source: 'kis-time-daily',
+          requested: 0,
+          inserted: 0,
+          updated: 0,
+          message: '분봉 차트 coverage가 이미 준비되어 있습니다.',
+        },
+      });
+    }
+
+    try {
+      const result = await opts.historicalMinuteBackfillService.backfillHistoricalMinuteCandles({
+        ticker,
+        from: window.from,
+        to: window.to,
+        now,
+      });
+      return reply.send({
+        success: true,
+        data: {
+          state: result.requested > 0 ? 'backfilled' : 'empty',
+          source: result.source,
+          requested: result.requested,
+          inserted: result.inserted,
+          updated: result.updated,
+          from: result.from,
+          to: result.to,
+          pages: result.pages,
+          tradingDays: result.tradingDays,
+          message: '분봉 차트 coverage를 자동 보강했습니다.',
+        },
+      });
+    } catch (err: unknown) {
+      log.warn(
+        { ticker, err: err instanceof Error ? err.message : String(err) },
+        'historical minute chart coverage ensure failed',
+      );
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'HISTORICAL_MINUTE_COVERAGE_ENSURE_FAILED' },
+      });
+    }
+  });
+
+  app.post<{
+    Params: { ticker: string };
     Body: MinuteBackfillBody;
   }>('/stocks/:ticker/candles/backfill-minute', async (request, reply) => {
     const ticker = request.params.ticker;
@@ -664,11 +839,42 @@ function dailyBaseInterval(interval: CandleInterval): boolean {
   return interval === '1D' || interval === '1W' || interval === '1M';
 }
 
+function dailyBackfillRangeForCandleRange(
+  range: '1d' | '1w' | '1m' | '3m' | '6m' | '1y',
+): DailyBackfillRange {
+  switch (range) {
+    case '3m':
+    case '6m':
+    case '1y':
+      return range;
+    case '1d':
+    case '1w':
+    case '1m':
+      return '1m';
+  }
+}
+
+function hasBackfilledIntradayInWindow(
+  repo: PriceCandleRepository,
+  ticker: string,
+  window: { from: string; to: string },
+): boolean {
+  return repo
+    .listCandles({
+      ticker,
+      interval: '1m',
+      from: window.from,
+      to: window.to,
+      limit: 200,
+    })
+    .some((candle) => candle.source === 'kis-time-daily');
+}
+
 function isDisplayableIntradayCandle(candle: PriceCandle): boolean {
   if (candle.source === null || candle.source === 'rest') return false;
   if (isSuspiciousRealtimeMinuteCandle(candle)) return false;
   if (
-    candle.source === 'kis-time-today' &&
+    (candle.source === 'kis-time-today' || candle.source === 'kis-time-daily') &&
     candle.sampleCount <= 1 &&
     candle.open === candle.high &&
     candle.high === candle.low &&
@@ -705,7 +911,9 @@ function buildCoverage(
     ),
   ).sort();
   const backfilled =
-    sourceMix.includes('kis-daily') || sourceMix.includes('kis-time-today');
+    sourceMix.includes('kis-daily') ||
+    sourceMix.includes('kis-time-today') ||
+    sourceMix.includes('kis-time-daily');
   return {
     from: first?.bucketAt ?? null,
     to: last?.bucketAt ?? null,

@@ -149,16 +149,16 @@ Araon owns the data source and only renders local candle rows.
 This combined candle/backfill MVP does not include:
 
 - raw tick persistence
-- KIS historical minute backfill
-- automatic background backfill default ON
-- background backfill live operation
-- automatic 1w/1m/3m completeness
+- full watchlist minute backfill
+- full master-market backfill
+- background minute queue
+- synthetic chart data
 - historical volume baseline bootstrap
 
 ## Future Work
 
-- KIS historical 1m backfill with strict operator controls
-- recently opened chart priority for the background daily queue
+- selected ticker chart coverage observation for longer intraday ranges
+- background minute queue, only if rate/cooldown UX is separately approved
 - volume baseline bootstrap from historical daily/minute data
 - chart tooltip/crosshair metadata
 - regular-only vs integrated-day candle mode

@@ -83,9 +83,8 @@ this response or UI.
 
 ## Still Out Of Scope
 
-- selected ticker today-minute live probe
 - full watchlist minute backfill
-- automatic historical minute backfill
+- background minute backfill queue
 - full master-market backfill
 - news summarization or sentiment analysis
 - LLM-generated market commentary

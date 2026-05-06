@@ -225,6 +225,37 @@ export async function backfillTodayMinuteCandles(
   }>(res);
 }
 
+export async function ensureStockCandleCoverage(
+  ticker: string,
+  options: {
+    interval: CandleInterval;
+    range: CandleRange;
+  },
+): Promise<{
+  state: 'backfilled' | 'current' | 'empty' | 'skipped';
+  reason?: string;
+  source: 'kis-daily' | 'kis-time-daily' | null;
+  requested: number;
+  inserted: number;
+  updated: number;
+  message: string;
+}> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles/ensure-coverage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options),
+  });
+  return unwrap<{
+    state: 'backfilled' | 'current' | 'empty' | 'skipped';
+    reason?: string;
+    source: 'kis-daily' | 'kis-time-daily' | null;
+    requested: number;
+    inserted: number;
+    updated: number;
+    message: string;
+  }>(res);
+}
+
 export async function getServerSettings(): Promise<ServerRuntimeSettings> {
   const res = await fetch('/settings');
   return unwrap<ServerRuntimeSettings>(res);
