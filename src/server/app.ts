@@ -11,6 +11,7 @@ import {
   PriceSnapshotRepository,
   PriceCandleRepository,
   StockNoteRepository,
+  StockNewsRepository,
   StockSignalEventRepository,
   MasterStockRepository,
   MasterStockMetaRepository,
@@ -29,6 +30,7 @@ import { createKisRuntimeRef, defaultActuallyStart } from './bootstrap-kis.js';
 import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
 import { fetchKisTodayMinuteCandles } from './kis/kis-today-minute-chart.js';
 import { createStockService } from './services/stock-service.js';
+import { createStockNewsFeedService } from './news/news-feed-service.js';
 import { createMasterStockService } from './services/master-stock-service.js';
 import { createCredentialSetupMutex, credentialsRoutes } from './routes/credentials.js';
 import { stockRoutes } from './routes/stocks.js';
@@ -104,7 +106,9 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     enrichPrice: (price) => volumeBaselineEnricher.enrich(price),
   });
   const noteRepo = new StockNoteRepository(db);
+  const newsRepo = new StockNewsRepository(db);
   const signalEventRepo = new StockSignalEventRepository(db);
+  const newsFeedService = createStockNewsFeedService({ repo: newsRepo });
   const candleRecorder = createCandleRecorder({
     priceStore,
     aggregator: createCandleAggregator({ writer: candleRepo }),
@@ -177,6 +181,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     candleRepo,
     noteRepo,
     signalEventRepo,
+    newsFeedService,
     dailyBackfillService,
     todayMinuteBackfillService,
   });

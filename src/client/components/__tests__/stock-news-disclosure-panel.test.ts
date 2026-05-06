@@ -14,6 +14,7 @@ describe('StockNewsDisclosurePanel', () => {
     );
 
     expect(html).toContain('관련 뉴스 · 공시');
+    expect(html).toContain('뉴스 피드 갱신');
     expect(html).toContain('네이버 금융 뉴스');
     expect(html).toContain('DART 공시 검색');
     expect(html).toContain('KIND 공시');

@@ -323,6 +323,16 @@ export interface StockTimelineSignalItem {
 
 export type StockTimelineItem = StockTimelineNoteItem | StockTimelineSignalItem;
 
+export interface StockNewsItem {
+  id: string;
+  ticker: string;
+  source: 'naver-finance';
+  title: string;
+  url: string;
+  publishedAt: string | null;
+  fetchedAt: string;
+}
+
 // === SSE event schema =====================================================
 // Shared contract for `src/server/sse/*` event emission.
 // All events carry a monotonic `id` so consumers can detect gaps and request

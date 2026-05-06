@@ -42,6 +42,7 @@ import type {
   DailyBackfillService,
 } from '../chart/daily-backfill-service.js';
 import type { TodayMinuteBackfillService } from '../chart/today-minute-backfill-service.js';
+import type { StockNewsFeedService } from '../news/news-feed-service.js';
 
 const log = createChildLogger('routes/stocks');
 
@@ -54,6 +55,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   signalEventRepo?: StockSignalEventRepository;
   dailyBackfillService?: DailyBackfillService;
   todayMinuteBackfillService?: TodayMinuteBackfillService;
+  newsFeedService?: StockNewsFeedService;
   now?: () => Date;
 }
 
@@ -320,6 +322,58 @@ export async function stockRoutes(
       .slice(0, parsed.data.limit);
     return reply.send({ success: true, data: items });
   });
+
+  app.get<{ Params: { ticker: string } }>('/stocks/:ticker/news', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.newsFeedService === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'STOCK_NEWS_FEED_NOT_WIRED' },
+      });
+    }
+    return reply.send({ success: true, data: opts.newsFeedService.list(ticker) });
+  });
+
+  app.post<{ Params: { ticker: string } }>(
+    '/stocks/:ticker/news/refresh',
+    async (request, reply) => {
+      const ticker = request.params.ticker;
+      if (!/^\d{6}$/.test(ticker)) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'INVALID_TICKER' },
+        });
+      }
+      if (opts.newsFeedService === undefined) {
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'STOCK_NEWS_FEED_NOT_WIRED' },
+        });
+      }
+      try {
+        const data = await opts.newsFeedService.refresh({
+          ticker,
+          now: (opts.now ?? (() => new Date()))(),
+        });
+        return reply.send({ success: true, data });
+      } catch (err: unknown) {
+        log.warn(
+          { ticker, err: err instanceof Error ? err.message : String(err) },
+          'stock news feed refresh failed',
+        );
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'STOCK_NEWS_REFRESH_FAILED' },
+        });
+      }
+    },
+  );
 
   app.post<{
     Params: { ticker: string };

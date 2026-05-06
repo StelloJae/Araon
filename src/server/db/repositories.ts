@@ -19,6 +19,7 @@ import type {
   PriceCandle,
   StoredCandleInterval,
   StockNote,
+  StockNewsItem,
   StockSignalEvent,
   Tier,
 } from '@shared/types.js';
@@ -158,6 +159,16 @@ interface StockSignalEventRow {
   updated_at: string;
 }
 
+interface StockNewsItemRow {
+  id: string;
+  ticker: string;
+  source: string;
+  title: string;
+  url: string;
+  published_at: string | null;
+  fetched_at: string;
+}
+
 interface MasterStockRow {
   ticker: string;
   name: string;
@@ -294,6 +305,18 @@ function rowToStockSignalEvent(row: StockSignalEventRow): StockSignalEvent {
     volumeBaselineStatus: row.volume_baseline_status as StockSignalEvent['volumeBaselineStatus'],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function rowToStockNewsItem(row: StockNewsItemRow): StockNewsItem {
+  return {
+    id: row.id,
+    ticker: row.ticker,
+    source: row.source as StockNewsItem['source'],
+    title: row.title,
+    url: row.url,
+    publishedAt: row.published_at,
+    fetchedAt: row.fetched_at,
   };
 }
 
@@ -1157,5 +1180,57 @@ export class StockSignalEventRepository {
       )
       .get(input.ticker, input.signalAt, input.signalType, input.momentumWindow);
     return row === undefined ? null : rowToStockSignalEvent(row);
+  }
+}
+
+// === StockNewsRepository ======================================================
+
+export type StockNewsItemInput = Omit<StockNewsItem, 'id'>;
+
+export class StockNewsRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  listByTicker(ticker: string, limit = 20): StockNewsItem[] {
+    const safeLimit = Math.max(1, Math.min(limit, 100));
+    const rows = this.db
+      .prepare<[string, number], StockNewsItemRow>(
+        `SELECT id, ticker, source, title, url, published_at, fetched_at
+         FROM stock_news_items
+         WHERE ticker = ?
+         ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(ticker, safeLimit);
+    return rows.map(rowToStockNewsItem);
+  }
+
+  upsertMany(items: readonly StockNewsItemInput[]): StockNewsItem[] {
+    if (items.length === 0) return [];
+    const stmt = this.db.prepare(
+      `INSERT INTO stock_news_items (
+         id, ticker, source, title, url, published_at, fetched_at
+       )
+       VALUES (
+         @id, @ticker, @source, @title, @url, @published_at, @fetched_at
+       )
+       ON CONFLICT(ticker, url) DO UPDATE SET
+         title = excluded.title,
+         source = excluded.source,
+         published_at = excluded.published_at,
+         fetched_at = excluded.fetched_at`,
+    );
+    const rows = items.map((item) => ({
+      id: randomUUID(),
+      ticker: item.ticker,
+      source: item.source,
+      title: item.title,
+      url: item.url,
+      published_at: item.publishedAt,
+      fetched_at: item.fetchedAt,
+    }));
+    this.db.transaction(() => {
+      for (const row of rows) stmt.run(row);
+    })();
+    return this.listByTicker(items[0]!.ticker, items.length);
   }
 }

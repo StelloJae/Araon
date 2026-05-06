@@ -12,6 +12,7 @@ import type {
   CandleInterval,
   Favorite,
   Stock,
+  StockNewsItem,
   StockNote,
   StockSignalEvent,
   StockTimelineItem,
@@ -127,6 +128,18 @@ export async function recordStockSignal(
 export async function getStockTimeline(ticker: string): Promise<StockTimelineItem[]> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/timeline`);
   return unwrap<StockTimelineItem[]>(res);
+}
+
+export async function getStockNews(ticker: string): Promise<StockNewsItem[]> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/news`);
+  return unwrap<StockNewsItem[]>(res);
+}
+
+export async function refreshStockNews(ticker: string): Promise<StockNewsItem[]> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/news/refresh`, {
+    method: 'POST',
+  });
+  return unwrap<StockNewsItem[]>(res);
 }
 
 export type CandleRange = '1d' | '1w' | '1m' | '3m' | '6m' | '1y';
