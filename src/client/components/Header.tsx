@@ -1,7 +1,7 @@
 /**
  * Header — sticky top chrome.
  *
- *   [logo · 아라온]  [MarketBadge]  [GlobalSearch (centered)]
+ *   [logo · 아라온]  [MarketBadge]  [GlobalSearch · backfill pill]
  *     [ViewToggle] | [ThemeToggle] [SettingsBtn] | [SSEIndicator]
  *
  * 64px tall, sticky z-40. Uses theme tokens so light/dark flips smoothly.
@@ -12,6 +12,7 @@
 import type { MarketStatus } from '@shared/types';
 import { LogoMark, SettingsIcon } from '../lib/icons';
 import type { StockViewModel } from '../lib/view-models';
+import { BackfillStatusPill } from './BackfillStatusStrip';
 import { GlobalSearch } from './GlobalSearch';
 import { MarketBadge } from './MarketBadge';
 import { SSEIndicator, type SseStatus } from './SSEIndicator';
@@ -102,6 +103,8 @@ export function Header({
           flex: 1,
           display: 'flex',
           justifyContent: 'center',
+          alignItems: 'center',
+          gap: 8,
           minWidth: 0,
         }}
       >
@@ -110,6 +113,7 @@ export function Header({
           onPickStock={onPickStock}
           {...(onPickMasterTicker !== undefined ? { onPickMasterTicker } : {})}
         />
+        <BackfillStatusPill />
       </div>
       <ViewToggle value={view} onChange={onViewChange} />
       <div style={{ width: 1, height: 22, background: 'var(--border)' }} />

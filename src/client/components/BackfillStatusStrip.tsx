@@ -11,10 +11,12 @@ type BackfillTone = 'ok' | 'watch' | 'danger' | 'muted';
 interface BackfillStatusCopy {
   label: string;
   detail: string;
+  compactLabel: string;
+  compactDetail: string | null;
   tone: BackfillTone;
 }
 
-export function BackfillStatusStrip() {
+function useDailyBackfillStatus(): BackfillStatusCopy | null {
   const [health, setHealth] = useState<RuntimeDataHealthPayload | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -40,54 +42,84 @@ export function BackfillStatusStrip() {
     };
   }, []);
 
-  if (failed) {
-    return (
-      <BackfillStatusStripView
-        status={{
-          label: '과거 일봉 보강 상태 확인 실패',
-          detail: '설정의 데이터 건강 상태에서 다시 확인할 수 있습니다.',
-          tone: 'danger',
-        }}
-      />
-    );
-  }
+  if (failed) return {
+    label: '과거 일봉 보강 상태 확인 실패',
+    detail: '설정의 데이터 건강 상태에서 다시 확인할 수 있습니다.',
+    compactLabel: '일봉 오류',
+    compactDetail: null,
+    tone: 'danger',
+  };
   if (health === null) return null;
 
-  return <BackfillStatusStripView status={describeDailyBackfillStatus(health)} />;
+  return describeDailyBackfillStatus(health);
 }
 
-export function BackfillStatusStripView({ status }: { status: BackfillStatusCopy }) {
+export function BackfillStatusPill() {
+  const status = useDailyBackfillStatus();
+  if (status === null) return null;
+  return <BackfillStatusPillView status={status} />;
+}
+
+export function BackfillStatusPillView({ status }: { status: BackfillStatusCopy }) {
+  const compactText =
+    status.compactDetail === null
+      ? status.compactLabel
+      : `${status.compactLabel} ${status.compactDetail}`;
   return (
     <div
-      data-testid="backfill-status-strip"
+      data-testid="backfill-status-pill"
+      className="backfill-status-pill"
+      title={compactText}
+      aria-label={compactText}
       style={{
-        maxWidth: 1680,
-        margin: '0 auto 14px',
-        padding: '0 24px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        maxWidth: 140,
+        height: 28,
+        padding: '0 8px',
+        border: `1px solid ${toneColor(status.tone, 0.28)}`,
+        background: toneColor(status.tone, 0.07),
+        borderRadius: 999,
+        color: 'var(--text-muted)',
+        fontSize: 11,
+        fontWeight: 700,
+        lineHeight: 1,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        flex: '0 1 auto',
       }}
     >
-      <div
+      <span
+        aria-hidden="true"
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          padding: '10px 12px',
-          border: `1px solid ${toneColor(status.tone, 0.35)}`,
-          background: toneColor(status.tone, 0.08),
-          borderRadius: 8,
-          color: 'var(--text-secondary)',
-          fontSize: 12,
-          lineHeight: 1.45,
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: toneTextColor(status.tone),
+          flexShrink: 0,
+        }}
+      />
+      <span
+        style={{
+          color: toneTextColor(status.tone),
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}
       >
-        <span style={{ fontWeight: 900, color: toneTextColor(status.tone) }}>
-          {status.label}
+        {status.compactLabel}
+      </span>
+      {status.compactDetail !== null && (
+        <span
+          style={{
+            color: 'var(--text-muted)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {status.compactDetail}
         </span>
-        <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>
-          {status.detail}
-        </span>
-      </div>
+      )}
     </div>
   );
 }
@@ -105,6 +137,8 @@ export function describeDailyBackfillStatus(
     return {
       label: '과거 일봉 자동 보강 비상정지',
       detail: `${latestDaily} · REST/실시간 화면은 계속 동작합니다.`,
+      compactLabel: '일봉 중지',
+      compactDetail: null,
       tone: 'danger',
     };
   }
@@ -112,6 +146,8 @@ export function describeDailyBackfillStatus(
     return {
       label: '과거 일봉 자동 보강 실행 중',
       detail: `이번 실행 ${health.backfill.lastSucceeded}/${health.backfill.lastAttempted} 성공 · 오늘 호출 ${calls}`,
+      compactLabel: '일봉 보강 중',
+      compactDetail: `${health.backfill.lastSucceeded}/${health.backfill.lastAttempted}`,
       tone: 'ok',
     };
   }
@@ -119,6 +155,8 @@ export function describeDailyBackfillStatus(
     return {
       label: '과거 일봉 자동 보강 쿨다운',
       detail: `${formatShortDateTime(health.backfill.cooldownUntil)}까지 대기 · 오늘 호출 ${calls}`,
+      compactLabel: '일봉 쿨다운',
+      compactDetail: calls,
       tone: 'watch',
     };
   }
@@ -126,6 +164,8 @@ export function describeDailyBackfillStatus(
     return {
       label: '과거 일봉 자동 보강 장중 대기',
       detail: `${latestDaily} · 20:05 이후 또는 주말에 자동 실행`,
+      compactLabel: '일봉 장중 대기',
+      compactDetail: null,
       tone: 'muted',
     };
   }
@@ -133,14 +173,23 @@ export function describeDailyBackfillStatus(
     return {
       label: '과거 일봉 자동 보강 최신 상태',
       detail: `${latestDaily} · 보강 필요한 추적 종목이 없습니다`,
+      compactLabel: '일봉 최신',
+      compactDetail: formatCompactLatestDaily(daily?.newestBucketAt),
       tone: 'ok',
     };
   }
   return {
     label: '과거 일봉 자동 보강 대기',
     detail: `${latestDaily} · favorites와 추적 종목을 낮은 속도로 계속 보강 · 오늘 호출 ${calls}`,
+    compactLabel: '일봉 대기',
+    compactDetail: calls,
     tone: 'muted',
   };
+}
+
+function formatCompactLatestDaily(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  return formatShortDate(value);
 }
 
 function formatShortDate(value: string): string {

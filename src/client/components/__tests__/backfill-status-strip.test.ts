@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import {
-  BackfillStatusStripView,
+  BackfillStatusPillView,
   describeDailyBackfillStatus,
 } from '../BackfillStatusStrip';
 import type { RuntimeDataHealthPayload } from '../../lib/api-client';
@@ -64,15 +64,16 @@ function health(
   };
 }
 
-describe('BackfillStatusStrip', () => {
-  it('shows running daily backfill on the main dashboard', () => {
+describe('BackfillStatusPill', () => {
+  it('shows running daily backfill as a compact header pill', () => {
     const status = describeDailyBackfillStatus(
       health({ running: true, lastAttempted: 2, lastSucceeded: 1 }),
     );
-    const html = renderToStaticMarkup(createElement(BackfillStatusStripView, { status }));
+    const html = renderToStaticMarkup(createElement(BackfillStatusPillView, { status }));
 
-    expect(html).toContain('과거 일봉 자동 보강 실행 중');
-    expect(html).toContain('1/2 성공');
+    expect(html).toContain('일봉 보강 중');
+    expect(html).toContain('1/2');
+    expect(html).not.toContain('과거 일봉 자동 보강 실행 중');
   });
 
   it('shows today call count without an artificial budget cap', () => {
@@ -83,6 +84,18 @@ describe('BackfillStatusStrip', () => {
     expect(status.label).toContain('대기');
     expect(status.detail).toContain('오늘 호출 300회');
     expect(status.detail).not.toContain('예산');
+  });
+
+  it('renders a compact header pill without the long dashboard banner copy', () => {
+    const status = describeDailyBackfillStatus(
+      health({ dailyCallCount: 80, dailyCallBudget: null }),
+    );
+    const html = renderToStaticMarkup(createElement(BackfillStatusPillView, { status }));
+
+    expect(html).toContain('일봉');
+    expect(html).toContain('80회');
+    expect(html).not.toContain('과거 일봉 자동 보강 대기');
+    expect(html).not.toContain('favorites와 추적 종목');
   });
 
   it('reports up-to-date tracked tickers without implying a failure', () => {

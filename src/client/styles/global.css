@@ -129,6 +129,16 @@ body {
   display: block;
 }
 
+.backfill-status-pill {
+  display: inline-flex;
+}
+
+@media (max-width: 960px) {
+  .backfill-status-pill {
+    display: none !important;
+  }
+}
+
 button,
 select,
 input,
