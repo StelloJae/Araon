@@ -75,7 +75,7 @@ describe('fetchKisDailyCandles', () => {
       path: '/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice',
       trId: 'FHKST03010100',
       query: expect.objectContaining({
-        FID_COND_MRKT_DIV_CODE: 'UN',
+        FID_COND_MRKT_DIV_CODE: 'J',
         FID_INPUT_ISCD: '005930',
         FID_INPUT_DATE_1: '20260501',
         FID_INPUT_DATE_2: '20260505',

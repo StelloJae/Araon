@@ -99,7 +99,7 @@ export function describeDailyBackfillStatus(
   const latestDaily = daily?.newestBucketAt === null || daily?.newestBucketAt === undefined
     ? '일봉 없음'
     : `최신 일봉 ${formatShortDate(daily.newestBucketAt)}`;
-  const budget = `${health.backfill.dailyCallCount}/${health.backfill.dailyCallBudget}회`;
+  const calls = `${health.backfill.dailyCallCount}회`;
 
   if (!health.backfill.enabled) {
     return {
@@ -111,21 +111,14 @@ export function describeDailyBackfillStatus(
   if (health.backfill.running) {
     return {
       label: '과거 일봉 자동 보강 실행 중',
-      detail: `이번 실행 ${health.backfill.lastSucceeded}/${health.backfill.lastAttempted} 성공 · 오늘 예산 ${budget}`,
+      detail: `이번 실행 ${health.backfill.lastSucceeded}/${health.backfill.lastAttempted} 성공 · 오늘 호출 ${calls}`,
       tone: 'ok',
     };
   }
   if (health.backfill.cooldownActive && health.backfill.cooldownUntil !== null) {
     return {
       label: '과거 일봉 자동 보강 쿨다운',
-      detail: `${formatShortDateTime(health.backfill.cooldownUntil)}까지 대기 · 오늘 예산 ${budget}`,
-      tone: 'watch',
-    };
-  }
-  if (health.backfill.dailyCallCount >= health.backfill.dailyCallBudget) {
-    return {
-      label: '과거 일봉 자동 보강 오늘 예산 소진',
-      detail: `${latestDaily} · 내일 다시 이어집니다 · 오늘 예산 ${budget}`,
+      detail: `${formatShortDateTime(health.backfill.cooldownUntil)}까지 대기 · 오늘 호출 ${calls}`,
       tone: 'watch',
     };
   }
@@ -145,7 +138,7 @@ export function describeDailyBackfillStatus(
   }
   return {
     label: '과거 일봉 자동 보강 대기',
-    detail: `${latestDaily} · favorites와 추적 종목을 낮은 속도로 보강 · 오늘 예산 ${budget}`,
+    detail: `${latestDaily} · favorites와 추적 종목을 낮은 속도로 계속 보강 · 오늘 호출 ${calls}`,
     tone: 'muted',
   };
 }

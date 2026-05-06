@@ -105,7 +105,7 @@ export async function fetchKisDailyCandles(
     path: DAILY_CHART_PATH,
     trId: DAILY_CHART_TR_ID,
     query: {
-      FID_COND_MRKT_DIV_CODE: 'UN',
+      FID_COND_MRKT_DIV_CODE: 'J',
       FID_INPUT_ISCD: options.ticker,
       FID_INPUT_DATE_1: options.fromYmd,
       FID_INPUT_DATE_2: options.toYmd,

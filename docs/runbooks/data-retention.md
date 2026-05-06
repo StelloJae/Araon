@@ -74,7 +74,7 @@ as `database locked` or `maintenance_failed`.
 - note count and oldest/newest note timestamp
 - news item count, stale count, failed fetch count, and last fetch status
 - candle prune last run time and sanitized last error
-- existing candle coverage, daily backfill budget/cooldown, and volume baseline
+- existing candle coverage, daily backfill call count/cooldown, and volume baseline
   readiness
 
 The Settings connection tab renders these as diagnostics under the data-health

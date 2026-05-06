@@ -219,8 +219,9 @@ Known limitations:
 - Full watchlist backfill is not live-validated.
 - Background daily backfill has since been promoted to managed default
   infrastructure after credentials are configured. It remains limited to
-  tracked/favorite tickers, budgeted, cooldown-protected, and blocked during the
-  integrated market window.
+  tracked/favorite tickers, sequential low-rate execution, cooldown-protected
+  error handling, and blocked during the integrated market window. It no longer
+  stops on an arbitrary daily budget.
 - `gapCount` is still a light contract field, not a full data-quality audit.
 - Corporate action / adjusted-price semantics follow KIS returned values and
   are not deeply modeled yet.

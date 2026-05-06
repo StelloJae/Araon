@@ -1,31 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import type { PriceCandle } from '@shared/types.js';
 import {
+  earliestExpectedKisDailyBucketAt,
   latestExpectedKisDailyBucketAt,
   shouldBackfillDailyTicker,
 } from '../daily-backfill-coverage.js';
 
-function repo(bucketAt: string | null) {
+function repo(bounds: { newest: string | null; oldest?: string | null }) {
   return {
     findNewestCandle: (): PriceCandle | null =>
-      bucketAt === null
+      bounds.newest === null
         ? null
-        : {
-            ticker: '005930',
-            interval: '1d',
-            bucketAt,
-            session: 'regular',
-            open: 1,
-            high: 1,
-            low: 1,
-            close: 1,
-            volume: 1,
-            sampleCount: 1,
-            source: 'kis-daily',
-            isPartial: false,
-            createdAt: bucketAt,
-            updatedAt: bucketAt,
-          },
+        : candle(bounds.newest),
+    findOldestCandle: (): PriceCandle | null => {
+      const oldest = bounds.oldest ?? bounds.newest;
+      return oldest === null ? null : candle(oldest);
+    },
+  };
+}
+
+function candle(bucketAt: string): PriceCandle {
+  return {
+    ticker: '005930',
+    interval: '1d',
+    bucketAt,
+    session: 'regular',
+    open: 1,
+    high: 1,
+    low: 1,
+    close: 1,
+    volume: 1,
+    sampleCount: 1,
+    source: 'kis-daily',
+    isPartial: false,
+    createdAt: bucketAt,
+    updatedAt: bucketAt,
   };
 }
 
@@ -48,29 +57,58 @@ describe('daily backfill coverage helper', () => {
     );
   });
 
-  it('skips tickers already covered through the expected daily bucket', () => {
+  it('computes the earliest bucket needed for the requested range', () => {
+    expect(
+      earliestExpectedKisDailyBucketAt(new Date('2026-05-06T11:05:00.000Z'), '3m'),
+    ).toBe('2026-02-01T15:00:00.000Z');
+  });
+
+  it('skips tickers already covered through the expected daily bucket and requested range', () => {
     expect(
       shouldBackfillDailyTicker({
         ticker: '005930',
+        range: '3m',
         now: new Date('2026-05-06T11:05:00.000Z'),
-        repo: repo('2026-05-05T15:00:00.000Z'),
+        repo: repo({
+          newest: '2026-05-05T15:00:00.000Z',
+          oldest: '2026-02-01T15:00:00.000Z',
+        }),
       }),
     ).toBe(false);
+  });
+
+  it('requests tickers that only have the latest daily candle but lack older range coverage', () => {
+    expect(
+      shouldBackfillDailyTicker({
+        ticker: '005930',
+        range: '3m',
+        now: new Date('2026-05-06T11:05:00.000Z'),
+        repo: repo({
+          newest: '2026-05-05T15:00:00.000Z',
+          oldest: '2026-05-05T15:00:00.000Z',
+        }),
+      }),
+    ).toBe(true);
   });
 
   it('requests tickers with missing or stale daily coverage', () => {
     expect(
       shouldBackfillDailyTicker({
         ticker: '005930',
+        range: '3m',
         now: new Date('2026-05-06T11:05:00.000Z'),
-        repo: repo(null),
+        repo: repo({ newest: null }),
       }),
     ).toBe(true);
     expect(
       shouldBackfillDailyTicker({
         ticker: '005930',
+        range: '3m',
         now: new Date('2026-05-06T11:05:00.000Z'),
-        repo: repo('2026-05-04T15:00:00.000Z'),
+        repo: repo({
+          newest: '2026-05-04T15:00:00.000Z',
+          oldest: '2026-02-01T15:00:00.000Z',
+        }),
       }),
     ).toBe(true);
   });

@@ -126,7 +126,7 @@ describe('managed operations settings copy', () => {
             lastSkippedReason: null,
             budgetDateKey: '2026-05-06',
             dailyCallCount: 4,
-            dailyCallBudget: 300,
+            dailyCallBudget: null,
             cooldownUntil: null,
             cooldownActive: false,
           },
@@ -179,6 +179,7 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('관찰 메모');
     expect(html).toContain('뉴스 캐시');
     expect(html).toContain('candle 정리');
-    expect(html).toContain('4/300회 사용');
+    expect(html).toContain('오늘 백필 호출');
+    expect(html).toContain('4회');
   });
 });

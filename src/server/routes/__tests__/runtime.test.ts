@@ -126,7 +126,7 @@ async function build(
     dataRetention?: { snapshot(): { lastRunAt: string | null; candlePruneLastRunAt: string | null; candlePruneLastError: string | null } };
     priceStore?: { getAllPrices(): Array<{ ticker: string; price: number; changeRate: number; volume: number; updatedAt: string; isSnapshot: boolean; volumeBaselineStatus?: 'ready' | 'collecting' | 'unavailable' }> };
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
-    backgroundBackfill?: { snapshot(): { running: boolean; lastRunAt: string | null; lastFinishedAt: string | null; lastAttempted: number; lastSucceeded: number; lastFailed: number; lastSkippedReason: 'disabled' | 'market_not_allowed' | 'no_tickers' | 'no_stale_tickers' | 'already_running' | 'budget_exhausted' | 'cooldown' | null } };
+    backgroundBackfill?: { snapshot(): { running: boolean; lastRunAt: string | null; lastFinishedAt: string | null; lastAttempted: number; lastSucceeded: number; lastFailed: number; lastSkippedReason: 'disabled' | 'market_not_allowed' | 'no_tickers' | 'no_stale_tickers' | 'already_running' | 'cooldown' | null } };
   },
 ) {
   const app = Fastify({ logger: false });
@@ -149,7 +149,7 @@ async function build(
 }
 
 describe('GET /runtime/data-health', () => {
-  it('summarizes tracking, candle coverage, backfill budget, and volume baselines safely', async () => {
+  it('summarizes tracking, candle coverage, backfill calls, and volume baselines safely', async () => {
     const app = await build({
       runtimeRef: runtimeRef({ status: 'unconfigured' }),
       settingsStore: settingsStore({
@@ -257,7 +257,7 @@ describe('GET /runtime/data-health', () => {
           lastSkippedReason: null,
           budgetDateKey: '2026-05-06',
           dailyCallCount: 4,
-          dailyCallBudget: 300,
+          dailyCallBudget: null,
           cooldownUntil: null,
           cooldownActive: false,
         },

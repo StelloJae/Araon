@@ -1238,14 +1238,9 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor="var(--text-muted)"
             />
             <Row
-              k="백필 예산"
-              v={`${health.backfill.dailyCallCount}/${health.backfill.dailyCallBudget}회 사용`}
-              chipColor={
-                health.backfill.cooldownActive ||
-                health.backfill.dailyCallCount >= health.backfill.dailyCallBudget
-                  ? 'var(--gold-text)'
-                  : 'var(--text-muted)'
-              }
+              k="오늘 백필 호출"
+              v={`${health.backfill.dailyCallCount}회`}
+              chipColor={health.backfill.cooldownActive ? 'var(--gold-text)' : 'var(--text-muted)'}
             />
             <Row
               k="거래량 기준선"
@@ -1569,8 +1564,6 @@ function backfillSkippedReasonLabel(
       return '최신 상태';
     case 'already_running':
       return '이미 실행 중';
-    case 'budget_exhausted':
-      return '오늘 예산 소진';
     case 'cooldown':
       return '쿨다운';
     case null:

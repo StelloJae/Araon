@@ -1,13 +1,15 @@
-# Restart-Safe Daily Backfill Budget/Cooldown
+# Restart-Safe Daily Backfill Call Counter/Cooldown
 
 Date: 2026-05-06
-Commit target: `feat(backfill): persist daily backfill budget state`
+Original commit target: `feat(backfill): persist daily backfill budget state`
 
 ## Goal
 
 Managed daily backfill is enabled by default after KIS credentials are
-configured. Its safety budget and cooldown must survive app restarts so a restart
-does not immediately forget recent 429/5xx throttling or the daily call budget.
+configured. Its call counter and cooldown survive app restarts so a restart does
+not immediately forget recent 429/5xx throttling. As of the follow-up product
+policy, Araon no longer stops daily backfill on an arbitrary daily budget; it
+continues at the managed low rate during allowed market-closed windows.
 
 ## Implementation
 

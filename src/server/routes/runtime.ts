@@ -10,7 +10,6 @@ import type {
   BackgroundBackfillSchedulerSnapshot,
   BackgroundBackfillStateStore,
 } from '../chart/background-backfill-scheduler.js';
-import { DEFAULT_DAILY_CALL_BUDGET } from '../chart/background-backfill-scheduler.js';
 import type {
   PriceCandleCoverageSummary,
   StockNewsGrowthSummary,
@@ -184,7 +183,7 @@ export async function runtimeRoutes(
           lastSkippedReason: backgroundBackfill.lastSkippedReason,
           budgetDateKey: backfillState.budgetDateKey,
           dailyCallCount: backfillState.dailyCallCount,
-          dailyCallBudget: DEFAULT_DAILY_CALL_BUDGET,
+          dailyCallBudget: null,
           cooldownUntil: backfillState.cooldownUntilMs > 0
             ? new Date(backfillState.cooldownUntilMs).toISOString()
             : null,

@@ -52,7 +52,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Chart/backfill MVP closeout**: 단일 종목 KIS daily live probe + StockDetailModal UI acceptance 기준으로 제품 체크포인트 닫힘 / 이후 daily background backfill은 tracked/favorites 대상 managed default로 승격 / full master backfill·historical minute backfill은 계속 HOLD / 누락 차트 데이터 합성 금지
 - **Managed defaults acceptance**: `bd7dbe8` 기준 no-live acceptance 완료 / fresh no-credentials는 defaults true여도 runtime unconfigured·KIS 호출 0회·credentials.enc 미생성 / persisted false emergency-disabled 설정 보존 / emergency disable route·Settings UI·backfill guard 검증 / existing local live UI smoke는 장중 live runtime 회피를 위해 not executed, 판정 CONDITIONAL GO
 - **v1.1.0-beta.11 post-release acceptance**: published npm beta first-run path 확인 / `@stellojae/araon@beta` → `1.1.0-beta.11` / clean temp dataDir + no credentials + fetch guard에서 외부 KIS fetch 0회 / `POST /master/refresh`는 `MASTER_REFRESH_REQUIRES_CREDENTIALS` / first-run UI copy 확인 / npm beta path는 GO, desktop GUI install validation은 pending
-- **Restart-safe daily backfill budget/cooldown**: `background-backfill-state.json`에 `budgetDateKey`, `dailyCallCount`, `cooldownUntilMs`를 저장 / 앱 재시작 후에도 daily budget exhausted와 429/5xx cooldown이 유지됨 / missing/malformed state는 empty state fallback / live KIS 호출 0회 focused tests로 검증
+- **Restart-safe daily backfill call counter/cooldown**: `background-backfill-state.json`에 `budgetDateKey`, `dailyCallCount`, `cooldownUntilMs`를 저장 / 앱 재시작 후에도 오늘 호출 수 표시와 429/5xx cooldown이 유지됨 / 임의 daily budget으로 멈추지 않고 장외 허용 시간에는 tracked/favorites를 낮은 속도로 계속 보강 / missing/malformed state는 empty state fallback
 - **Existing local data UI smoke**: Computer Use로 CLI `http://127.0.0.1:4173` 기존 local data profile 확인 / credentials configured, runtime started, REST polling active, WebSocket waiting, daily backfill auto card 표시 / 005930 detail 실시간·차트 탭 렌더링 확인 / 기존 profile은 explicit realtime false + paper mode라 managed-ON 강제 검증이 아니라 emergency-disabled compatibility smoke로 판정
 - **Desktop beta.9 install validation**: GitHub Release `Araon-1.1.0-beta.9-arm64-mac.zip`을 `/tmp`에 받아 압축 해제 후 `ARAON_DATA_DIR=/tmp/araon-desktop-smoke-data`로 실행 / Computer Use로 first-run KIS 앱키 등록 화면과 managed defaults copy 확인 / credentials configured=false, runtime unconfigured, defaults true/live, `credentials.enc` 미생성 / DMG drag install·Windows EXE·desktop credentials entry는 not executed
 - **Desktop beta.11 install acceptance**: GitHub Release `v1.1.0-beta.11` macOS DMG/ZIP 다운로드·checksum 확인 / DMG mount와 ZIP extract 성공 / Computer Use로 first-run KIS 앱키 등록 화면 확인 / no credentials 상태에서 runtime unconfigured, master refresh blocked, `credentials.enc` 미생성 / direct executable과 `open -n` 경로는 실행 가능 / macOS `codesign`·`spctl`은 `code has no resources but signature indicates they must be present`로 실패 / Windows EXE는 asset 존재·checksum만 확인, 실행 not executed
@@ -111,7 +111,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - 모르는 값은 **"연동 예정"** italic으로 표시하거나 disabled.
 - sparkline은 실제 SSE history (`usePriceHistoryStore`)만, ≥2 point 있어야 그림.
 - persisted chart는 `price_candles`의 local `1m` candle과 manual KIS `1d` candle만 표시한다. 데이터가 없으면 "차트 데이터 수집 중"으로 표시하고 synthetic candle/backfill을 만들지 않는다.
-- daily background backfill은 credentials 등록 후 managed default지만 tracked/favorites 범위, 장중 차단, budget/cooldown guard를 유지한다. full master backfill과 historical minute backfill은 별도 승인 전까지 HOLD다.
+- daily background backfill은 credentials 등록 후 managed default지만 tracked/favorites 범위, 장중 차단, sequential low-rate, 429/5xx cooldown guard를 유지한다. 임의 daily budget으로 멈추지 않는다. full master backfill과 historical minute backfill은 별도 승인 전까지 HOLD다.
 - surge/alert는 **crossing 순간만** 발동 (continuous "조건 만족 중" 폭주 금지).
 - `closed`/`snapshot`/`pre-open` 시 alert / sparkline 차단.
 
@@ -180,7 +180,7 @@ npm run dev:client &
 | `src/server/price/candle-aggregation.ts` | KST bucket boundary + 1m → 3m/5m/10m/15m/30m/1h/2h/4h/6h/12h, 1d → 1D/1W/1M aggregation helper |
 | `src/server/chart/backfill-policy.ts` | historical backfill 허용 시간 정책. 평일 07:55~20:05 KST 차단, 20:05 이후/주말 허용 |
 | `src/server/chart/daily-backfill-service.ts` | KIS daily candle backfill service. `1d` rows만 저장, `1m/3m/6m/1y` range를 100일 이하 창으로 분할 |
-| `src/server/chart/background-backfill-scheduler.ts` | Managed-default background daily backfill scheduler. 장후/주말만 실행, favorites/tracked 우선, sequential low-rate, daily budget + cooldown |
+| `src/server/chart/background-backfill-scheduler.ts` | Managed-default background daily backfill scheduler. 장후/주말만 실행, favorites/tracked 우선, sequential low-rate, daily call counter + 429/5xx cooldown |
 | `src/server/maintenance/data-retention.ts` | P1 data-growth maintenance. startup + daily prune: 1m candle 30일, 1d candle 2년, signal 90일, news 7일. 실패는 sanitized diagnostic으로 격리 |
 | `src/server/kis/kis-daily-chart.ts` | KIS 국내주식기간별시세 daily mapper/client. 테스트는 mock transport만 사용 |
 | `src/server/db/migrations/004-price-candles.sql` | `price_candles` schema: local `1m` + manual KIS `1d`. raw tick table 아님 |

@@ -490,12 +490,11 @@ export interface RuntimeDataHealthPayload {
       | 'no_tickers'
       | 'no_stale_tickers'
       | 'already_running'
-      | 'budget_exhausted'
       | 'cooldown'
       | null;
     budgetDateKey: string | null;
     dailyCallCount: number;
-    dailyCallBudget: number;
+    dailyCallBudget: number | null;
     cooldownUntil: string | null;
     cooldownActive: boolean;
   };

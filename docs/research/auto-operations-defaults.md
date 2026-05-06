@@ -57,7 +57,10 @@ disable / rollback decision and does not silently flip it back to true.
 - Never backfills the full KIS master catalog.
 - Never stores raw ticks.
 - Does not perform historical minute backfill.
-- Runs sequentially with a low request gap, daily budget, and failure cooldown.
+- Runs sequentially with a low request gap and failure cooldown.
+- It does not stop on an arbitrary daily budget; when the market-hours guard
+  allows backfill, Araon keeps filling tracked/favorite daily candles at the
+  managed low rate until coverage is current.
 - 429-like errors use a longer cooldown than generic failures.
 
 ## UI Policy
@@ -83,4 +86,3 @@ flow.
 - full KIS master backfill
 - synthetic chart history
 - buy/sell/order execution
-

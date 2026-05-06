@@ -29,7 +29,7 @@ function health(
       lastSkippedReason: null,
       budgetDateKey: '2026-05-07',
       dailyCallCount: 0,
-      dailyCallBudget: 300,
+      dailyCallBudget: null,
       cooldownUntil: null,
       cooldownActive: false,
       ...backfill,
@@ -75,13 +75,14 @@ describe('BackfillStatusStrip', () => {
     expect(html).toContain('1/2 성공');
   });
 
-  it('makes daily budget exhaustion visible', () => {
+  it('shows today call count without an artificial budget cap', () => {
     const status = describeDailyBackfillStatus(
-      health({ dailyCallCount: 300, dailyCallBudget: 300 }),
+      health({ dailyCallCount: 300, dailyCallBudget: null }),
     );
 
-    expect(status.label).toContain('오늘 예산 소진');
-    expect(status.detail).toContain('300/300회');
+    expect(status.label).toContain('대기');
+    expect(status.detail).toContain('오늘 호출 300회');
+    expect(status.detail).not.toContain('예산');
   });
 
   it('reports up-to-date tracked tickers without implying a failure', () => {

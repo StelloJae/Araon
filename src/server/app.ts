@@ -172,8 +172,8 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
         ? state.runtime.marketHoursScheduler.getCurrentPhase()
         : 'unknown';
     },
-    shouldBackfillTicker: ({ ticker, now }) =>
-      shouldBackfillDailyTicker({ ticker, now, repo: candleRepo }),
+    shouldBackfillTicker: ({ ticker, range, now }) =>
+      shouldBackfillDailyTicker({ ticker, range, now, repo: candleRepo }),
   });
   const dataRetention = createDataRetentionScheduler({
     candleRepo,

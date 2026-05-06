@@ -224,7 +224,7 @@ Follow-up:
 Result: **PASS**
 
 - Settings connection tab shows managed realtime/backfill status and data health.
-- It exposes tracked/favorite counts, candle coverage, backfill budget/cooldown,
+- It exposes tracked/favorite counts, candle coverage, backfill call count/cooldown,
   and volume baseline readiness.
 - It does not expose raw App Key, App Secret, approval key, token, or account
   values.
@@ -295,10 +295,11 @@ Current protections:
 
 - Candle repository has `pruneOldCandles()` policy: `1m` older than 30 days and
   `1d` older than 2 years.
-- Background daily backfill budget/cooldown is persisted through
+- Background daily backfill call count/cooldown is persisted through
   `background-backfill-state.json`.
 - Background daily backfill is limited to favorites/tracked tickers, max 5
-  tickers per run, request gap, daily budget, and cooldown after errors.
+  tickers per run, request gap, and cooldown after errors. It does not stop on
+  an arbitrary daily budget.
 - Timeline API enforces max `limit=100`.
 - Signal event repository clamps direct signal list reads to max `200`.
 - News repository clamps reads to max `100` and dedupes by `(ticker, url)`.

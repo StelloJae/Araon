@@ -11,10 +11,9 @@ import type {
 
 const log = createChildLogger('background-backfill');
 
-const DEFAULT_INTERVAL_MS = 30 * 60 * 1000;
+const DEFAULT_INTERVAL_MS = 60 * 1000;
 const DEFAULT_MAX_TICKERS_PER_RUN = 5;
 const DEFAULT_REQUEST_GAP_MS = 2_500;
-export const DEFAULT_DAILY_CALL_BUDGET = 300;
 const DEFAULT_5XX_COOLDOWN_MS = 5 * 60 * 1000;
 const DEFAULT_429_COOLDOWN_MS = 10 * 60 * 1000;
 
@@ -24,7 +23,6 @@ export type BackgroundBackfillSkippedReason =
   | 'no_tickers'
   | 'no_stale_tickers'
   | 'already_running'
-  | 'budget_exhausted'
   | 'cooldown'
   | null;
 
@@ -80,7 +78,6 @@ export interface CreateBackgroundDailyBackfillSchedulerOptions {
   intervalMs?: number;
   maxTickersPerRun?: number;
   requestGapMs?: number;
-  dailyCallBudget?: number;
   stateStore?: BackgroundBackfillStateStore;
 }
 
@@ -91,7 +88,6 @@ export function createBackgroundDailyBackfillScheduler(
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const maxTickersPerRun = options.maxTickersPerRun ?? DEFAULT_MAX_TICKERS_PER_RUN;
   const requestGapMs = options.requestGapMs ?? DEFAULT_REQUEST_GAP_MS;
-  const dailyCallBudget = options.dailyCallBudget ?? DEFAULT_DAILY_CALL_BUDGET;
 
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlight: Promise<BackgroundBackfillRunResult> | null = null;
@@ -161,10 +157,6 @@ export function createBackgroundDailyBackfillScheduler(
     let attempted = 0;
     let skippedReason: BackgroundBackfillSkippedReason = null;
     for (const ticker of tickers) {
-      if (dailyCallCount >= dailyCallBudget) {
-        skippedReason = 'budget_exhausted';
-        break;
-      }
       dailyCallCount += 1;
       await persistState();
       attempted += 1;

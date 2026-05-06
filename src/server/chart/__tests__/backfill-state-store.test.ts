@@ -25,7 +25,7 @@ describe('createFileBackfillStateStore', () => {
     });
   });
 
-  it('saves and reloads the daily budget and cooldown state', async () => {
+  it('saves and reloads the daily call counter and cooldown state', async () => {
     const store = createFileBackfillStateStore({ path });
     await store.save({
       budgetDateKey: '2026-05-06',
