@@ -15,7 +15,11 @@
 import type { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { z } from 'zod';
 import type { StockService } from '../services/stock-service.js';
-import type { PriceCandleRepository, StockNoteRepository } from '../db/repositories.js';
+import type {
+  PriceCandleRepository,
+  StockNoteRepository,
+  StockSignalEventRepository,
+} from '../db/repositories.js';
 import { parseStockCsv } from '../parsers/csv-parser.js';
 import { createChildLogger } from '@shared/logger.js';
 import { aggregateCandles } from '../price/candle-aggregation.js';
@@ -28,6 +32,9 @@ import type {
   PriceCandle,
   PriceCandleSource,
   StockNote,
+  StockSignalEvent,
+  StockSignalOutcome,
+  StockTimelineItem,
 } from '@shared/types.js';
 import type {
   DailyBackfillRange,
@@ -42,6 +49,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   service: StockService;
   candleRepo?: PriceCandleRepository;
   noteRepo?: StockNoteRepository;
+  signalEventRepo?: StockSignalEventRepository;
   dailyBackfillService?: DailyBackfillService;
   now?: () => Date;
 }
@@ -95,10 +103,31 @@ const stockNoteBodySchema = z.object({
   body: z.string().trim().min(1).max(2_000),
 });
 
+const signalEventBodySchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  signalType: z.enum(['scalp', 'strong_scalp', 'overheat', 'trend']),
+  source: z.literal('realtime-momentum'),
+  signalPrice: z.number().positive(),
+  signalAt: z.string().datetime(),
+  baselinePrice: z.number().positive().nullable(),
+  baselineAt: z.string().datetime().nullable(),
+  momentumPct: z.number(),
+  momentumWindow: z.enum(['10s', '20s', '30s', '1m', '3m', '5m']),
+  dailyChangePct: z.number().nullable(),
+  volume: z.number().int().nonnegative().nullable(),
+  volumeSurgeRatio: z.number().positive().nullable(),
+  volumeBaselineStatus: z.enum(['collecting', 'ready', 'unavailable']).nullable(),
+});
+
+const timelineQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(100).default(30),
+});
+
 type AddOneBody = z.infer<typeof addOneBodySchema>;
 type BulkBody = z.infer<typeof bulkBodySchema>;
 type CandleBackfillBody = z.infer<typeof candleBackfillBodySchema>;
 type StockNoteBody = z.infer<typeof stockNoteBodySchema>;
+type SignalEventBody = z.infer<typeof signalEventBodySchema>;
 
 // === Plugin ===================================================================
 
@@ -186,6 +215,102 @@ export async function stockRoutes(
       return reply.status(204).send();
     },
   );
+
+  app.post<{
+    Params: { ticker: string };
+    Body: SignalEventBody;
+  }>('/stocks/:ticker/signals', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.signalEventRepo === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'STOCK_SIGNAL_REPOSITORY_NOT_WIRED' },
+      });
+    }
+    const parsed = signalEventBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues,
+      });
+    }
+
+    const event: StockSignalEvent = opts.signalEventRepo.create({
+      ticker,
+      name: parsed.data.name,
+      signalType: parsed.data.signalType,
+      source: parsed.data.source,
+      signalPrice: parsed.data.signalPrice,
+      signalAt: parsed.data.signalAt,
+      baselinePrice: parsed.data.baselinePrice,
+      baselineAt: parsed.data.baselineAt,
+      momentumPct: parsed.data.momentumPct,
+      momentumWindow: parsed.data.momentumWindow,
+      dailyChangePct: parsed.data.dailyChangePct,
+      volume: parsed.data.volume,
+      volumeSurgeRatio: parsed.data.volumeSurgeRatio,
+      volumeBaselineStatus: parsed.data.volumeBaselineStatus,
+      now: (opts.now ?? (() => new Date()))(),
+    });
+    return reply.status(201).send({ success: true, data: event });
+  });
+
+  app.get<{
+    Params: { ticker: string };
+    Querystring: z.input<typeof timelineQuerySchema>;
+  }>('/stocks/:ticker/timeline', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.noteRepo === undefined || opts.signalEventRepo === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'STOCK_TIMELINE_NOT_WIRED' },
+      });
+    }
+    const parsed = timelineQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues,
+      });
+    }
+
+    const notes: StockTimelineItem[] = opts.noteRepo
+      .listByTicker(ticker)
+      .map((note) => ({
+        kind: 'note',
+        id: note.id,
+        ticker,
+        occurredAt: note.createdAt,
+        note,
+      }));
+    const signals: StockTimelineItem[] = opts.signalEventRepo
+      .listByTicker(ticker, parsed.data.limit)
+      .map((signal) => ({
+        kind: 'signal',
+        id: signal.id,
+        ticker,
+        occurredAt: signal.signalAt,
+        signal,
+        outcomes: buildSignalOutcomes(signal, opts.candleRepo),
+      }));
+
+    const items = [...notes, ...signals]
+      .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+      .slice(0, parsed.data.limit);
+    return reply.send({ success: true, data: items });
+  });
 
   app.post<{
     Params: { ticker: string };
@@ -470,5 +595,55 @@ function toCandleApiItem(candle: {
     sampleCount: candle.sampleCount,
     source: candle.source ?? null,
     isPartial: candle.isPartial,
+  };
+}
+
+function buildSignalOutcomes(
+  signal: StockSignalEvent,
+  candleRepo: PriceCandleRepository | undefined,
+): StockSignalOutcome[] {
+  return [
+    buildSignalOutcome(signal, candleRepo, '5m', 5),
+    buildSignalOutcome(signal, candleRepo, '15m', 15),
+    buildSignalOutcome(signal, candleRepo, '30m', 30),
+  ];
+}
+
+function buildSignalOutcome(
+  signal: StockSignalEvent,
+  candleRepo: PriceCandleRepository | undefined,
+  horizon: StockSignalOutcome['horizon'],
+  minutes: number,
+): StockSignalOutcome {
+  if (candleRepo === undefined || signal.signalPrice <= 0) {
+    return {
+      horizon,
+      state: 'pending',
+      price: null,
+      changePct: null,
+      observedAt: null,
+    };
+  }
+  const target = new Date(new Date(signal.signalAt).getTime() + minutes * 60_000);
+  const candle = candleRepo.findFirstCandleAtOrAfter({
+    ticker: signal.ticker,
+    interval: '1m',
+    at: target.toISOString(),
+  });
+  if (candle === null) {
+    return {
+      horizon,
+      state: 'pending',
+      price: null,
+      changePct: null,
+      observedAt: null,
+    };
+  }
+  return {
+    horizon,
+    state: 'ready',
+    price: candle.close,
+    changePct: (candle.close / signal.signalPrice - 1) * 100,
+    observedAt: candle.bucketAt,
   };
 }

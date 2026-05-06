@@ -273,6 +273,56 @@ export interface StockNote {
   updatedAt: string;
 }
 
+export type StockSignalType = 'scalp' | 'strong_scalp' | 'overheat' | 'trend';
+export type StockSignalWindow = '10s' | '20s' | '30s' | '1m' | '3m' | '5m';
+
+export interface StockSignalEvent {
+  id: string;
+  ticker: string;
+  name: string;
+  signalType: StockSignalType;
+  source: 'realtime-momentum';
+  signalPrice: number;
+  signalAt: string;
+  baselinePrice: number | null;
+  baselineAt: string | null;
+  momentumPct: number;
+  momentumWindow: StockSignalWindow;
+  dailyChangePct: number | null;
+  volume: number | null;
+  volumeSurgeRatio: number | null;
+  volumeBaselineStatus: VolumeBaselineStatus | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StockSignalOutcome {
+  horizon: '5m' | '15m' | '30m';
+  state: 'pending' | 'ready';
+  price: number | null;
+  changePct: number | null;
+  observedAt: string | null;
+}
+
+export interface StockTimelineNoteItem {
+  kind: 'note';
+  id: string;
+  ticker: string;
+  occurredAt: string;
+  note: StockNote;
+}
+
+export interface StockTimelineSignalItem {
+  kind: 'signal';
+  id: string;
+  ticker: string;
+  occurredAt: string;
+  signal: StockSignalEvent;
+  outcomes: StockSignalOutcome[];
+}
+
+export type StockTimelineItem = StockTimelineNoteItem | StockTimelineSignalItem;
+
 // === SSE event schema =====================================================
 // Shared contract for `src/server/sse/*` event emission.
 // All events carry a monotonic `id` so consumers can detect gaps and request

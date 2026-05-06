@@ -11,6 +11,7 @@ import {
   PriceSnapshotRepository,
   PriceCandleRepository,
   StockNoteRepository,
+  StockSignalEventRepository,
   MasterStockRepository,
   MasterStockMetaRepository,
 } from './db/repositories.js';
@@ -101,6 +102,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     enrichPrice: (price) => volumeBaselineEnricher.enrich(price),
   });
   const noteRepo = new StockNoteRepository(db);
+  const signalEventRepo = new StockSignalEventRepository(db);
   const candleRecorder = createCandleRecorder({
     priceStore,
     aggregator: createCandleAggregator({ writer: candleRepo }),
@@ -156,6 +158,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     service: createStockService({ stockRepo, sectorRepo, masterRepo }),
     candleRepo,
     noteRepo,
+    signalEventRepo,
     dailyBackfillService,
   });
   await app.register(themeRoutes, { stockRepo });

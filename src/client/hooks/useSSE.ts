@@ -31,6 +31,7 @@ import {
   momentumSessionFromMarketStatus,
   shouldProcessRealtimeMomentumPrice,
 } from '../lib/realtime-momentum-feed';
+import { recordStockSignal } from '../lib/api-client';
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
@@ -53,6 +54,7 @@ export function useSSE(url: string = '/events'): void {
     const errors = useErrorStore.getState();
     const pendingPrices: Price[] = [];
     const momentumFeedState = createMomentumFeedState();
+    const recordedSignalKeys = new Set<string>();
     let priceFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
     function flushPriceUpdates(): void {
@@ -153,6 +155,32 @@ export function useSSE(url: string = '/events'): void {
               });
               const signal = result.decision.signal;
               if (signal !== null) {
+                const signalKey = [
+                  signal.ticker,
+                  signal.signalType,
+                  signal.momentumWindow,
+                  signal.currentAt,
+                ].join(':');
+                if (!recordedSignalKeys.has(signalKey)) {
+                  recordedSignalKeys.add(signalKey);
+                  void recordStockSignal(signal.ticker, {
+                    name: signal.name,
+                    signalType: signal.signalType,
+                    source: signal.source,
+                    signalPrice: signal.price,
+                    signalAt: new Date(signal.currentAt).toISOString(),
+                    baselinePrice: signal.baselinePrice,
+                    baselineAt: new Date(signal.baselineAt).toISOString(),
+                    momentumPct: signal.momentumPct,
+                    momentumWindow: signal.momentumWindow,
+                    dailyChangePct: signal.dailyChangePct,
+                    volume: signal.volume,
+                    volumeSurgeRatio: signal.volumeSurgeRatio,
+                    volumeBaselineStatus: e.price.volumeBaselineStatus ?? null,
+                  }).catch(() => {
+                    recordedSignalKeys.delete(signalKey);
+                  });
+                }
                 useSurgeStore.getState().spawn({
                   code: signal.ticker,
                   name: signal.name,

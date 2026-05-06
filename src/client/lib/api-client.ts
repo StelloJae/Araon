@@ -13,6 +13,8 @@ import type {
   Favorite,
   Stock,
   StockNote,
+  StockSignalEvent,
+  StockTimelineItem,
 } from '@shared/types';
 import type { SessionRealtimeCap } from './realtime-session-control';
 
@@ -108,6 +110,23 @@ export async function deleteStockNote(ticker: string, noteId: string): Promise<v
     const text = await res.text();
     throw new ApiError(res.status, `${res.status} ${res.statusText}`, text);
   }
+}
+
+export async function recordStockSignal(
+  ticker: string,
+  signal: Omit<StockSignalEvent, 'id' | 'ticker' | 'createdAt' | 'updatedAt'>,
+): Promise<StockSignalEvent> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/signals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(signal),
+  });
+  return unwrap<StockSignalEvent>(res);
+}
+
+export async function getStockTimeline(ticker: string): Promise<StockTimelineItem[]> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/timeline`);
+  return unwrap<StockTimelineItem[]>(res);
 }
 
 export type CandleRange = '1d' | '1w' | '1m' | '3m' | '6m' | '1y';

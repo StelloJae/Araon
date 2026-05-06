@@ -6,7 +6,7 @@
  *
  * Covered acceptance criteria:
  *  1. WAL pragma is active after `getDb()` initialisation.
- *  2. `migrateUp` creates exactly the 6 expected tables.
+ *  2. `migrateUp` creates the expected application tables.
  *  3. `migrateDown` removes all tables; `migrateUp` again restores them (round-trip).
  *  4. `chunkedInsert` 500-row benchmark: every individual chunk completes in ≤10 ms.
  */
@@ -87,6 +87,7 @@ describe('migrateUp', () => {
       'price_snapshots',
       'schema_version',
       'sectors',
+      'stock_signal_events',
       'stock_notes',
       'stock_tags',
       'stocks',
@@ -98,7 +99,7 @@ describe('migrateUp', () => {
   it('records the migration version in schema_version', () => {
     migrateUp(db);
     const row = db.prepare<[], { version: number }>('SELECT MAX(version) AS version FROM schema_version').get();
-    expect(row?.version).toBe(5);
+    expect(row?.version).toBe(6);
   });
 
   it('master_stocks has B1a classification columns after migrate', () => {

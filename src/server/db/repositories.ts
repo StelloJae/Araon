@@ -19,6 +19,7 @@ import type {
   PriceCandle,
   StoredCandleInterval,
   StockNote,
+  StockSignalEvent,
   Tier,
 } from '@shared/types.js';
 import { CHUNKED_INSERT_SIZE } from '@shared/constants.js';
@@ -137,6 +138,26 @@ interface StockNoteRow {
   updated_at: string;
 }
 
+interface StockSignalEventRow {
+  id: string;
+  ticker: string;
+  name: string;
+  signal_type: string;
+  source: string;
+  signal_price: number;
+  signal_at: string;
+  baseline_price: number | null;
+  baseline_at: string | null;
+  momentum_pct: number;
+  momentum_window: string;
+  daily_change_pct: number | null;
+  volume: number | null;
+  volume_surge_ratio: number | null;
+  volume_baseline_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface MasterStockRow {
   ticker: string;
   name: string;
@@ -249,6 +270,28 @@ function rowToStockNote(row: StockNoteRow): StockNote {
     id: row.id,
     ticker: row.ticker,
     body: row.body,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToStockSignalEvent(row: StockSignalEventRow): StockSignalEvent {
+  return {
+    id: row.id,
+    ticker: row.ticker,
+    name: row.name,
+    signalType: row.signal_type as StockSignalEvent['signalType'],
+    source: row.source as StockSignalEvent['source'],
+    signalPrice: row.signal_price,
+    signalAt: row.signal_at,
+    baselinePrice: row.baseline_price,
+    baselineAt: row.baseline_at,
+    momentumPct: row.momentum_pct,
+    momentumWindow: row.momentum_window as StockSignalEvent['momentumWindow'],
+    dailyChangePct: row.daily_change_pct,
+    volume: row.volume,
+    volumeSurgeRatio: row.volume_surge_ratio,
+    volumeBaselineStatus: row.volume_baseline_status as StockSignalEvent['volumeBaselineStatus'],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -874,6 +917,26 @@ export class PriceCandleRepository {
     return rows.map(rowToPriceCandle);
   }
 
+  findFirstCandleAtOrAfter(query: {
+    ticker: string;
+    interval?: StoredCandleInterval;
+    at: string;
+  }): PriceCandle | null {
+    const interval = query.interval ?? '1m';
+    const row = this.db
+      .prepare<[string, string, string], PriceCandleRow>(
+        `SELECT ticker, interval, bucket_at, session,
+                open, high, low, close, volume, sample_count,
+                source, is_partial, created_at, updated_at
+         FROM price_candles
+         WHERE ticker = ? AND interval = ? AND bucket_at >= ?
+         ORDER BY bucket_at ASC
+         LIMIT 1`,
+      )
+      .get(query.ticker, interval, query.at);
+    return row === undefined ? null : rowToPriceCandle(row);
+  }
+
   pruneOldCandles(now = new Date()): number {
     const oneMinuteCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const oneDayCutoff = new Date(now.getTime() - 2 * 365 * 24 * 60 * 60 * 1000).toISOString();
@@ -941,5 +1004,121 @@ export class StockNoteRepository {
       .prepare('DELETE FROM stock_notes WHERE ticker = ? AND id = ?')
       .run(ticker, id);
     return result.changes > 0;
+  }
+}
+
+// === StockSignalEventRepository ==============================================
+
+export type StockSignalEventCreateInput = Omit<
+  StockSignalEvent,
+  'id' | 'createdAt' | 'updatedAt'
+> & {
+  now?: Date;
+};
+
+export class StockSignalEventRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  listByTicker(ticker: string, limit = 50): StockSignalEvent[] {
+    const safeLimit = Math.max(1, Math.min(limit, 200));
+    const rows = this.db
+      .prepare<[string, number], StockSignalEventRow>(
+        `SELECT id, ticker, name, signal_type, source, signal_price, signal_at,
+                baseline_price, baseline_at, momentum_pct, momentum_window,
+                daily_change_pct, volume, volume_surge_ratio,
+                volume_baseline_status, created_at, updated_at
+         FROM stock_signal_events
+         WHERE ticker = ?
+         ORDER BY signal_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(ticker, safeLimit);
+    return rows.map(rowToStockSignalEvent);
+  }
+
+  create(input: StockSignalEventCreateInput): StockSignalEvent {
+    const nowIso = (input.now ?? new Date()).toISOString();
+    const event: StockSignalEvent = {
+      id: randomUUID(),
+      ticker: input.ticker,
+      name: input.name,
+      signalType: input.signalType,
+      source: input.source,
+      signalPrice: input.signalPrice,
+      signalAt: input.signalAt,
+      baselinePrice: input.baselinePrice,
+      baselineAt: input.baselineAt,
+      momentumPct: input.momentumPct,
+      momentumWindow: input.momentumWindow,
+      dailyChangePct: input.dailyChangePct,
+      volume: input.volume,
+      volumeSurgeRatio: input.volumeSurgeRatio,
+      volumeBaselineStatus: input.volumeBaselineStatus,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO stock_signal_events (
+           id, ticker, name, signal_type, source, signal_price, signal_at,
+           baseline_price, baseline_at, momentum_pct, momentum_window,
+           daily_change_pct, volume, volume_surge_ratio,
+           volume_baseline_status, created_at, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.id,
+        event.ticker,
+        event.name,
+        event.signalType,
+        event.source,
+        event.signalPrice,
+        event.signalAt,
+        event.baselinePrice,
+        event.baselineAt,
+        event.momentumPct,
+        event.momentumWindow,
+        event.dailyChangePct,
+        event.volume,
+        event.volumeSurgeRatio,
+        event.volumeBaselineStatus,
+        event.createdAt,
+        event.updatedAt,
+      );
+
+    if (result.changes > 0) return event;
+
+    const existing = this.findDuplicate({
+      ticker: event.ticker,
+      signalAt: event.signalAt,
+      signalType: event.signalType,
+      momentumWindow: event.momentumWindow,
+    });
+    if (existing === null) {
+      throw new Error('stock signal insert was ignored but no duplicate row was found');
+    }
+    return existing;
+  }
+
+  private findDuplicate(input: {
+    ticker: string;
+    signalAt: string;
+    signalType: string;
+    momentumWindow: string;
+  }): StockSignalEvent | null {
+    const row = this.db
+      .prepare<[string, string, string, string], StockSignalEventRow>(
+        `SELECT id, ticker, name, signal_type, source, signal_price, signal_at,
+                baseline_price, baseline_at, momentum_pct, momentum_window,
+                daily_change_pct, volume, volume_surge_ratio,
+                volume_baseline_status, created_at, updated_at
+         FROM stock_signal_events
+         WHERE ticker = ? AND signal_at = ? AND signal_type = ? AND momentum_window = ?
+         LIMIT 1`,
+      )
+      .get(input.ticker, input.signalAt, input.signalType, input.momentumWindow);
+    return row === undefined ? null : rowToStockSignalEvent(row);
   }
 }
