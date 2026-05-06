@@ -815,9 +815,11 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - `planSelectedTickerMinuteBackfill()` 정책: 단일 6자리 ticker, 평일 20:05 이후/07:55 이전만 ready, 장중 blocked, 주말은 KIS today-minute 제약으로 hold
 - full watchlist/background minute backfill은 금지. 초기 cap은 30 rows/request, max 4 pages, max 120 rows
 - 2026-05-06 19:45 KST selected minute live probe: `POST /stocks/005930/candles/backfill-minute` 1회 → `423 MARKET_HOURS` safe reject / KIS today-minute REST call 0회 / `kis-time-today` candle write 0회
+- 2026-05-06 20:05 KST allowed-window retry: same selected ticker route 1회 → `200 OK` / KIS today-minute REST pages 4 / `kis-time-today` 120 candles updated / `GET /stocks/005930/candles?interval=1m&range=1d` coverage `backfilled=true`, `localOnly=false`, sourceMix `["kis-time-today","ws-integrated"]`
+- Browser/Playwright UI 확인: 삼성전자 상세 모달 `차트` 탭에서 `1m · 1d`, `1439 candles`, `KIS 당일분봉 포함` 표시 확인
 - focused test: `src/server/chart/__tests__/minute-backfill-strategy.test.ts`
 - reports: `docs/research/selected-ticker-minute-backfill-strategy.md`, `docs/research/kis-today-minute-backfill-live-probe.md`
-- HOLD: 허용 시간대 single-ticker live write 검증, full watchlist/background minute backfill, automatic historical minute backfill
+- HOLD: full watchlist/background minute backfill, automatic historical minute backfill
 
 ## 7. 더 깊은 핸드오프 dump
 
