@@ -14,7 +14,7 @@ const log = createChildLogger('background-backfill');
 const DEFAULT_INTERVAL_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_TICKERS_PER_RUN = 5;
 const DEFAULT_REQUEST_GAP_MS = 2_500;
-const DEFAULT_DAILY_CALL_BUDGET = 30;
+export const DEFAULT_DAILY_CALL_BUDGET = 30;
 const DEFAULT_5XX_COOLDOWN_MS = 5 * 60 * 1000;
 const DEFAULT_429_COOLDOWN_MS = 10 * 60 * 1000;
 
@@ -22,6 +22,7 @@ export type BackgroundBackfillSkippedReason =
   | 'disabled'
   | 'market_not_allowed'
   | 'no_tickers'
+  | 'no_stale_tickers'
   | 'already_running'
   | 'budget_exhausted'
   | 'cooldown'
@@ -39,6 +40,17 @@ export interface BackgroundDailyBackfillScheduler {
   start(): void;
   stop(): void;
   runOnce(nowOverride?: Date): Promise<BackgroundBackfillRunResult>;
+  snapshot(): BackgroundBackfillSchedulerSnapshot;
+}
+
+export interface BackgroundBackfillSchedulerSnapshot {
+  running: boolean;
+  lastRunAt: string | null;
+  lastFinishedAt: string | null;
+  lastAttempted: number;
+  lastSucceeded: number;
+  lastFailed: number;
+  lastSkippedReason: BackgroundBackfillSkippedReason;
 }
 
 export interface BackgroundBackfillState {
@@ -59,6 +71,11 @@ export interface CreateBackgroundDailyBackfillSchedulerOptions {
   favoriteRepo: { findAll(): Favorite[] };
   dailyBackfillService: DailyBackfillService;
   marketPhase: () => BackfillMarketPhase;
+  shouldBackfillTicker?: (input: {
+    ticker: string;
+    range: DailyBackfillRange;
+    now: Date;
+  }) => boolean | Promise<boolean>;
   now?: () => Date;
   intervalMs?: number;
   maxTickersPerRun?: number;
@@ -83,6 +100,12 @@ export function createBackgroundDailyBackfillScheduler(
   let dailyCallCount = 0;
   let cooldownUntilMs = 0;
   let stateLoaded = options.stateStore === undefined;
+  let lastRunAt: string | null = null;
+  let lastFinishedAt: string | null = null;
+  let lastAttempted = 0;
+  let lastSucceeded = 0;
+  let lastFailed = 0;
+  let lastSkippedReason: BackgroundBackfillSkippedReason = null;
 
   async function runOnce(nowOverride?: Date): Promise<BackgroundBackfillRunResult> {
     if (inFlight !== null) {
@@ -105,28 +128,33 @@ export function createBackgroundDailyBackfillScheduler(
   }
 
   async function runOnceInner(runAt: Date): Promise<BackgroundBackfillRunResult> {
+    lastRunAt = runAt.toISOString();
     await loadStateIfNeeded();
     const budgetReset = resetBudgetIfNeeded(runAt);
     if (budgetReset) await persistState();
 
     const settings = options.settingsStore.snapshot();
+    const range = settings.backgroundDailyBackfillRange as DailyBackfillRange;
     if (!settings.backgroundDailyBackfillEnabled) {
-      return emptyResult('disabled');
+      return finish(emptyResult('disabled'));
     }
 
     if (runAt.getTime() < cooldownUntilMs) {
-      return emptyResult('cooldown');
+      return finish(emptyResult('cooldown'));
     }
 
     if (!isBackfillAllowed(runAt, options.marketPhase())) {
-      return emptyResult('market_not_allowed');
+      return finish(emptyResult('market_not_allowed'));
     }
 
-    const tickers = backgroundTickerOrder(
+    const candidates = backgroundTickerOrder(
       options.favoriteRepo.findAll(),
       options.stockRepo.findAll(),
-    ).slice(0, maxTickersPerRun);
-    if (tickers.length === 0) return emptyResult('no_tickers');
+    );
+    const tickers = await selectBackfillTickers(candidates, range, runAt);
+    if (tickers.length === 0) {
+      return finish(emptyResult(candidates.length === 0 ? 'no_tickers' : 'no_stale_tickers'));
+    }
 
     const results: DailyBackfillResult[] = [];
     let failed = 0;
@@ -144,7 +172,7 @@ export function createBackgroundDailyBackfillScheduler(
         results.push(
           await options.dailyBackfillService.backfillDailyCandles({
             ticker,
-            range: settings.backgroundDailyBackfillRange as DailyBackfillRange,
+            range,
             now: runAt,
           }),
         );
@@ -163,13 +191,13 @@ export function createBackgroundDailyBackfillScheduler(
       }
     }
 
-    return {
+    return finish({
       attempted,
       succeeded: results.length,
       failed,
       skippedReason,
       results,
-    };
+    });
   }
 
   function start(): void {
@@ -209,7 +237,45 @@ export function createBackgroundDailyBackfillScheduler(
     }
   }
 
-  return { start, stop, runOnce };
+  function snapshot(): BackgroundBackfillSchedulerSnapshot {
+    return {
+      running: inFlight !== null,
+      lastRunAt,
+      lastFinishedAt,
+      lastAttempted,
+      lastSucceeded,
+      lastFailed,
+      lastSkippedReason,
+    };
+  }
+
+  return { start, stop, runOnce, snapshot };
+
+  async function selectBackfillTickers(
+    candidates: readonly string[],
+    range: DailyBackfillRange,
+    runAt: Date,
+  ): Promise<string[]> {
+    const selected: string[] = [];
+    for (const ticker of candidates) {
+      if (selected.length >= maxTickersPerRun) break;
+      const shouldBackfill =
+        options.shouldBackfillTicker === undefined
+          ? true
+          : await options.shouldBackfillTicker({ ticker, range, now: runAt });
+      if (shouldBackfill) selected.push(ticker);
+    }
+    return selected;
+  }
+
+  function finish(result: BackgroundBackfillRunResult): BackgroundBackfillRunResult {
+    lastFinishedAt = new Date().toISOString();
+    lastAttempted = result.attempted;
+    lastSucceeded = result.succeeded;
+    lastFailed = result.failed;
+    lastSkippedReason = result.skippedReason;
+    return result;
+  }
 
   async function loadStateIfNeeded(): Promise<void> {
     if (stateLoaded || options.stateStore === undefined) return;

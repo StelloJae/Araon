@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BackgroundBackfillControl,
   DataHealthPanel,
+  DevModeControl,
   RealtimeSessionControl,
 } from '../SettingsModal';
 
@@ -29,8 +30,42 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('최대 40종목');
     expect(html).toContain('REST 폴링 fallback');
     expect(html).toContain('비상정지');
+    expect(html).not.toContain('운영자 재검증');
     expect(html).not.toContain('data-testid="realtime-cap-select"');
     expect(html).not.toContain('세션에서 켜기');
+  });
+
+  it('shows operator recheck only when dev diagnostics are enabled', () => {
+    const html = renderToStaticMarkup(
+      createElement(RealtimeSessionControl, {
+        status: null,
+        selectedCap: 40,
+        confirmed: false,
+        phase: { kind: 'idle' },
+        runtimeStarted: true,
+        operatorDiagnosticsEnabled: true,
+        onCapChange: vi.fn(),
+        onConfirmChange: vi.fn(),
+        onEnable: vi.fn(),
+        onDisable: vi.fn(),
+        onEmergencyDisable: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('운영자 재검증');
+  });
+
+  it('presents dev mode as the explicit switch for simulated tools', () => {
+    const html = renderToStaticMarkup(
+      createElement(DevModeControl, {
+        enabled: false,
+        onChange: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('개발 모드');
+    expect(html).toContain('Simulated Market');
+    expect(html).toContain('운영자 재검증');
   });
 
   it('presents daily backfill as automatic with emergency pause only', () => {
@@ -82,8 +117,16 @@ describe('managed operations settings copy', () => {
           backfill: {
             enabled: true,
             range: '3m',
+            running: true,
+            lastRunAt: '2026-05-06T11:05:00.000Z',
+            lastFinishedAt: null,
+            lastAttempted: 2,
+            lastSucceeded: 1,
+            lastFailed: 0,
+            lastSkippedReason: null,
             budgetDateKey: '2026-05-06',
             dailyCallCount: 4,
+            dailyCallBudget: 30,
             cooldownUntil: null,
             cooldownActive: false,
           },
@@ -136,5 +179,6 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('관찰 메모');
     expect(html).toContain('뉴스 캐시');
     expect(html).toContain('candle 정리');
+    expect(html).toContain('4/30회 사용');
   });
 });

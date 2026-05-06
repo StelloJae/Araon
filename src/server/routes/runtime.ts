@@ -7,8 +7,10 @@ import type { KisRuntime } from '../bootstrap-kis.js';
 import type { CredentialStore } from '../credential-store.js';
 import type { SettingsStore } from '../settings-store.js';
 import type {
+  BackgroundBackfillSchedulerSnapshot,
   BackgroundBackfillStateStore,
 } from '../chart/background-backfill-scheduler.js';
+import { DEFAULT_DAILY_CALL_BUDGET } from '../chart/background-backfill-scheduler.js';
 import type {
   PriceCandleCoverageSummary,
   StockNewsGrowthSummary,
@@ -51,6 +53,7 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   candleRepo?: { summarizeCoverage(): PriceCandleCoverageSummary[] };
   priceStore?: { getAllPrices(): Price[] };
   backfillStateStore?: BackgroundBackfillStateStore;
+  backgroundBackfill?: { snapshot(): BackgroundBackfillSchedulerSnapshot };
   signalEventRepo?: { summarizeGrowth(): StockSignalGrowthSummary };
   noteRepo?: { summarizeGrowth(): StockNoteGrowthSummary };
   newsRepo?: { summarizeGrowth(now?: Date, staleAfterMs?: number): StockNewsGrowthSummary };
@@ -156,6 +159,7 @@ export async function runtimeRoutes(
     const newsGrowth = opts.newsRepo?.summarizeGrowth(now, NEWS_STALE_AFTER_MS)
       ?? emptyNewsGrowth();
     const maintenance = opts.dataRetention?.snapshot() ?? emptyMaintenance();
+    const backgroundBackfill = opts.backgroundBackfill?.snapshot() ?? emptyBackgroundBackfill();
 
     return reply.send({
       success: true,
@@ -171,8 +175,16 @@ export async function runtimeRoutes(
         backfill: {
           enabled: settings.backgroundDailyBackfillEnabled,
           range: settings.backgroundDailyBackfillRange,
+          running: backgroundBackfill.running,
+          lastRunAt: backgroundBackfill.lastRunAt,
+          lastFinishedAt: backgroundBackfill.lastFinishedAt,
+          lastAttempted: backgroundBackfill.lastAttempted,
+          lastSucceeded: backgroundBackfill.lastSucceeded,
+          lastFailed: backgroundBackfill.lastFailed,
+          lastSkippedReason: backgroundBackfill.lastSkippedReason,
           budgetDateKey: backfillState.budgetDateKey,
           dailyCallCount: backfillState.dailyCallCount,
+          dailyCallBudget: DEFAULT_DAILY_CALL_BUDGET,
           cooldownUntil: backfillState.cooldownUntilMs > 0
             ? new Date(backfillState.cooldownUntilMs).toISOString()
             : null,
@@ -385,6 +397,18 @@ export async function runtimeRoutes(
     );
     return reply.send({ success: true, data: result });
   });
+}
+
+function emptyBackgroundBackfill(): BackgroundBackfillSchedulerSnapshot {
+  return {
+    running: false,
+    lastRunAt: null,
+    lastFinishedAt: null,
+    lastAttempted: 0,
+    lastSucceeded: 0,
+    lastFailed: 0,
+    lastSkippedReason: null,
+  };
 }
 
 async function isCredentialConfigured(

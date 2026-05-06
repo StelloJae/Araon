@@ -78,6 +78,7 @@ export function createCandleAggregator(options: CandleAggregatorOptions): Candle
 
   function validPrice(price: Price): boolean {
     if (price.isSnapshot) return false;
+    if (!isRealtimeCandleSource(price.source)) return false;
     if (!Number.isFinite(price.price) || price.price <= 0) return false;
     if (!Number.isFinite(price.volume) || price.volume < 0) return false;
     return !Number.isNaN(new Date(price.updatedAt).getTime());
@@ -141,6 +142,10 @@ export function createCandleAggregator(options: CandleAggregatorOptions): Candle
     flushDirty,
     dirtyCount: () => dirtyKeys.size,
   };
+}
+
+function isRealtimeCandleSource(source: Price['source']): boolean {
+  return source === 'ws-krx' || source === 'ws-integrated' || source === 'ws-nxt';
 }
 
 export interface CandleRecorderOptions {

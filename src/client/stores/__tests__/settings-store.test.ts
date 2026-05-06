@@ -44,6 +44,7 @@ describe('useSettingsStore', () => {
     const { useSettingsStore } = await import('../settings-store');
     expect(useSettingsStore.getState().settings.notifGlobalEnabled).toBe(true);
     expect(useSettingsStore.getState().settings.surgeFilter).toBe('live');
+    expect(useSettingsStore.getState().settings.devModeEnabled).toBe(false);
   });
 
   it('persists notif update and reloads it on next import', async () => {
@@ -68,6 +69,16 @@ describe('useSettingsStore', () => {
     vi.resetModules();
     const reloaded = await import('../settings-store');
     expect(reloaded.useSettingsStore.getState().settings.surgeFilter).toBe('all');
+  });
+
+  it('persists dev mode and reloads it on next import', async () => {
+    const mod = await import('../settings-store');
+    mod.useSettingsStore.getState().update({ devModeEnabled: true });
+    expect(mod.useSettingsStore.getState().settings.devModeEnabled).toBe(true);
+
+    vi.resetModules();
+    const reloaded = await import('../settings-store');
+    expect(reloaded.useSettingsStore.getState().settings.devModeEnabled).toBe(true);
   });
 
   it('rejects unknown surgeFilter values from storage', async () => {

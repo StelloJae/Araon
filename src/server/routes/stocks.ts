@@ -536,13 +536,17 @@ export async function stockRoutes(
     }
 
     const baseInterval = dailyBaseInterval(parsed.data.interval) ? '1d' : '1m';
-    const base = opts.candleRepo.listCandles({
+    const rawBase = opts.candleRepo.listCandles({
       ticker,
       interval: baseInterval,
       from: window.from,
       to: window.to,
       limit: parsed.data.limit,
     });
+    const base =
+      baseInterval === '1m'
+        ? rawBase.filter(isDisplayableIntradayCandle)
+        : rawBase;
     const candles = aggregateCandles(base, parsed.data.interval);
     const items = candles.map(toCandleApiItem);
     const first = items[0];
@@ -657,6 +661,21 @@ function rangeDurationMs(range: '1d' | '1w' | '1m' | '3m' | '6m' | '1y'): number
 
 function dailyBaseInterval(interval: CandleInterval): boolean {
   return interval === '1D' || interval === '1W' || interval === '1M';
+}
+
+function isDisplayableIntradayCandle(candle: PriceCandle): boolean {
+  if (candle.source === null || candle.source === 'rest') return false;
+  if (
+    candle.source === 'kis-time-today' &&
+    candle.volume <= 0 &&
+    candle.sampleCount <= 1 &&
+    candle.open === candle.high &&
+    candle.high === candle.low &&
+    candle.low === candle.close
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function buildCoverage(

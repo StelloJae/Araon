@@ -19,6 +19,8 @@ export interface ClientSettings {
   notifGlobalEnabled: boolean;
   /** Surge block filter, persisted across reloads. */
   surgeFilter: SurgeFilter;
+  /** Client-only developer tools switch. Hidden by default for normal use. */
+  devModeEnabled: boolean;
 
   // Alerts ---------------------------------------------------------------
   /** Threshold for "큰 변동" generic toast (favorites). |%|. */
@@ -42,6 +44,7 @@ export interface ClientSettings {
 const DEFAULTS: ClientSettings = {
   notifGlobalEnabled: true,
   surgeFilter: 'live',
+  devModeEnabled: false,
 
   notifPctThreshold: 5,
   soundOn: false,
@@ -90,6 +93,9 @@ function loadSettings(): ClientSettings {
       VALID_SURGE_FILTERS.has(obj.surgeFilter as SurgeFilter)
     ) {
       merged.surgeFilter = obj.surgeFilter as SurgeFilter;
+    }
+    if (typeof obj.devModeEnabled === 'boolean') {
+      merged.devModeEnabled = obj.devModeEnabled;
     }
     merged.notifPctThreshold = clampNumber(
       obj.notifPctThreshold,

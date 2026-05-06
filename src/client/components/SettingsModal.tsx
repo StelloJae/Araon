@@ -75,6 +75,9 @@ import {
 import { useMasterStore } from '../stores/master-store';
 import { useWatchlistStore } from '../stores/watchlist-store';
 
+const IS_DEV_BUILD =
+  (import.meta as ImportMeta & { env: { DEV?: boolean } }).env.DEV === true;
+
 const TABS = ['연결', '알림', '급상승', '룰'] as const;
 type TabId = (typeof TABS)[number];
 
@@ -259,6 +262,8 @@ function ConnectionTab() {
   const [selectedCap, setSelectedCap] = useState<SessionRealtimeCap>(1);
   const [operatorConfirmed, setOperatorConfirmed] = useState(false);
 
+  const clientSettings = useSettingsStore((s) => s.settings);
+  const updateClientSettings = useSettingsStore((s) => s.update);
   const setCatalog = useStocksStore((s) => s.setCatalog);
   const setThemes = useStocksStore((s) => s.setThemes);
   const setFavorites = useWatchlistStore((s) => s.setFavorites);
@@ -543,12 +548,19 @@ function ConnectionTab() {
         confirmed={operatorConfirmed}
         phase={operatorPhase}
         runtimeStarted={status.runtime === 'started'}
+        operatorDiagnosticsEnabled={IS_DEV_BUILD && clientSettings.devModeEnabled}
         onCapChange={setSelectedCap}
         onConfirmChange={setOperatorConfirmed}
         onEnable={() => void handleSessionEnable()}
         onDisable={() => void handleSessionDisable()}
         onEmergencyDisable={() => void handleRealtimeEmergencyDisable()}
       />
+      {IS_DEV_BUILD && (
+        <DevModeControl
+          enabled={clientSettings.devModeEnabled}
+          onChange={(enabled) => updateClientSettings({ devModeEnabled: enabled })}
+        />
+      )}
       <BackgroundBackfillControl
         settings={serverSettings}
         phase={serverSettingsPhase}
@@ -701,6 +713,7 @@ export function RealtimeSessionControl({
   confirmed,
   phase,
   runtimeStarted,
+  operatorDiagnosticsEnabled = false,
   onCapChange,
   onConfirmChange,
   onEnable,
@@ -712,6 +725,7 @@ export function RealtimeSessionControl({
   confirmed: boolean;
   phase: RealtimeOperatorPhase;
   runtimeStarted: boolean;
+  operatorDiagnosticsEnabled?: boolean;
   onCapChange: (cap: SessionRealtimeCap) => void;
   onConfirmChange: (confirmed: boolean) => void;
   onEnable: () => void;
@@ -810,29 +824,31 @@ export function RealtimeSessionControl({
           ? '비상정지 중…'
           : '실시간 비상정지'}
       </button>
-      <button
-        type="button"
-        onClick={() => setAdvancedOpen((open) => !open)}
-        aria-expanded={advancedOpen}
-        data-testid="realtime-advanced-toggle"
-        style={{
-          marginTop: 12,
-          width: '100%',
-          padding: '8px 10px',
-          borderRadius: 7,
-          border: '1px solid var(--border)',
-          background: 'var(--bg-card)',
-          color: 'var(--text-secondary)',
-          fontFamily: 'inherit',
-          fontSize: 12,
-          fontWeight: 800,
-          cursor: 'pointer',
-          textAlign: 'left',
-        }}
-      >
-        {REALTIME_ADVANCED_RECHECK_LABEL} {advancedOpen ? '닫기' : '열기'}
-      </button>
-      {advancedOpen && (
+      {operatorDiagnosticsEnabled && (
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((open) => !open)}
+          aria-expanded={advancedOpen}
+          data-testid="realtime-advanced-toggle"
+          style={{
+            marginTop: 12,
+            width: '100%',
+            padding: '8px 10px',
+            borderRadius: 7,
+            border: '1px solid var(--border)',
+            background: 'var(--bg-card)',
+            color: 'var(--text-secondary)',
+            fontFamily: 'inherit',
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          {REALTIME_ADVANCED_RECHECK_LABEL} {advancedOpen ? '닫기' : '열기'}
+        </button>
+      )}
+      {operatorDiagnosticsEnabled && advancedOpen && (
         <div data-testid="realtime-advanced-panel">
           <div
             style={{
@@ -1037,6 +1053,41 @@ export function RealtimeSessionControl({
   );
 }
 
+export function DevModeControl({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <div
+      data-testid="dev-mode-control"
+      style={{
+        marginTop: 18,
+        padding: '12px 14px',
+        background: 'var(--bg-tint)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
+        개발 모드
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <Toggle
+          value={enabled}
+          onChange={onChange}
+          label={enabled ? '개발 도구 표시 중' : '개발 도구 숨김'}
+        />
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        켜면 Simulated Market과 운영자 재검증 도구가 표시됩니다. 실제 KIS 호출을 만들지 않는 화면 검증용 도구입니다.
+      </div>
+    </div>
+  );
+}
+
 export function BackgroundBackfillControl({
   settings,
   phase,
@@ -1161,8 +1212,20 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
             />
             <Row
               k="일봉 보강"
-              v={health.backfill.enabled ? `자동 · ${health.backfill.range}` : '비상정지'}
-              chipColor={health.backfill.enabled ? 'var(--kr-up)' : 'var(--kr-down)'}
+              v={
+                health.backfill.enabled
+                  ? health.backfill.running
+                    ? `실행 중 · ${health.backfill.range}`
+                    : `자동 · ${health.backfill.range}`
+                  : '비상정지'
+              }
+              chipColor={
+                health.backfill.enabled
+                  ? health.backfill.running
+                    ? 'var(--kr-up)'
+                    : 'var(--text-muted)'
+                  : 'var(--kr-down)'
+              }
             />
             <Row
               k="1분봉 coverage"
@@ -1176,8 +1239,13 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
             />
             <Row
               k="백필 예산"
-              v={`${health.backfill.dailyCallCount}회 사용`}
-              chipColor={health.backfill.cooldownActive ? 'var(--kr-down)' : 'var(--text-muted)'}
+              v={`${health.backfill.dailyCallCount}/${health.backfill.dailyCallBudget}회 사용`}
+              chipColor={
+                health.backfill.cooldownActive ||
+                health.backfill.dailyCallCount >= health.backfill.dailyCallBudget
+                  ? 'var(--gold-text)'
+                  : 'var(--text-muted)'
+              }
             />
             <Row
               k="거래량 기준선"
@@ -1208,6 +1276,12 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
           <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
             최신 1분봉: {formatMaybeLocal(oneMinute?.newestBucketAt ?? null)} · 최신 일봉:{' '}
             {formatMaybeLocal(daily?.newestBucketAt ?? null)}
+            {health.backfill.lastSkippedReason !== null && (
+              <>
+                <br />
+                최근 일봉 보강 상태: {backfillSkippedReasonLabel(health.backfill.lastSkippedReason)}
+              </>
+            )}
             {health.backfill.cooldownActive && health.backfill.cooldownUntil !== null && (
               <>
                 <br />
@@ -1479,6 +1553,29 @@ function formatLocal(iso: string): string {
 
 function formatMaybeLocal(iso: string | null): string {
   return iso === null ? '없음' : formatLocal(iso);
+}
+
+function backfillSkippedReasonLabel(
+  reason: RuntimeDataHealthPayload['backfill']['lastSkippedReason'],
+): string {
+  switch (reason) {
+    case 'disabled':
+      return '비상정지됨';
+    case 'market_not_allowed':
+      return '장중 대기';
+    case 'no_tickers':
+      return '추적 종목 없음';
+    case 'no_stale_tickers':
+      return '최신 상태';
+    case 'already_running':
+      return '이미 실행 중';
+    case 'budget_exhausted':
+      return '오늘 예산 소진';
+    case 'cooldown':
+      return '쿨다운';
+    case null:
+      return '정상';
+  }
 }
 
 // ---------- Notif tab ----------

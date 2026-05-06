@@ -106,6 +106,7 @@ export function mapKisInquirePriceToPrice(ticker: string, raw: unknown): Price {
     dividendYield: toOptionalNumber(out['dvd_yld' as keyof typeof out]),
     updatedAt: new Date().toISOString(),
     isSnapshot: false,
+    source: 'rest',
   };
 }
 

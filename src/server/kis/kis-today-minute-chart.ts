@@ -87,6 +87,13 @@ export function mapKisTodayMinuteItemChartRows(
       continue;
     }
 
+    // KIS can return no-trade minute rows after the selected window where
+    // OHLC is repeated and volume is zero. Rendering those as candles creates
+    // synthetic flat tails, so keep only rows with actual minute activity.
+    if (volume <= 0 && open === high && high === low && low === close) {
+      continue;
+    }
+
     candles.push({
       ticker,
       interval: '1m',

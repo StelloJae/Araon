@@ -39,6 +39,46 @@ describe('KIS today minute chart mapper', () => {
     ]);
   });
 
+  it('drops no-trade flat rows instead of drawing synthetic after-hours candles', () => {
+    const candles = mapKisTodayMinuteItemChartRows(
+      '005930',
+      [
+        {
+          stck_bsop_date: '20260506',
+          stck_cntg_hour: '190000',
+          stck_prpr: '266000',
+          stck_oprc: '266000',
+          stck_hgpr: '266000',
+          stck_lwpr: '266000',
+          cntg_vol: '0',
+        },
+      ],
+      '2026-05-06T11:10:00.000Z',
+    );
+
+    expect(candles).toEqual([]);
+  });
+
+  it('keeps zero-volume rows when OHLC still carries a real price range', () => {
+    const candles = mapKisTodayMinuteItemChartRows(
+      '005930',
+      [
+        {
+          stck_bsop_date: '20260506',
+          stck_cntg_hour: '190000',
+          stck_prpr: '266000',
+          stck_oprc: '265500',
+          stck_hgpr: '266500',
+          stck_lwpr: '265000',
+          cntg_vol: '0',
+        },
+      ],
+      '2026-05-06T11:10:00.000Z',
+    );
+
+    expect(candles).toHaveLength(1);
+  });
+
   it('uses the KIS today minute endpoint and safe query contract', async () => {
     const request = vi.fn(async () => ({
       output2: [

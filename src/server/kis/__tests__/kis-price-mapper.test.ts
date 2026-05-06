@@ -93,7 +93,10 @@ describe('mapKisInquirePriceToPrice', () => {
 
   it('sets isSnapshot=false (REST polling path)', () => {
     const raw = { output: { stck_prpr: '100', prdy_ctrt: '0', acml_vol: '0' } };
-    expect(mapKisInquirePriceToPrice(TICKER, raw).isSnapshot).toBe(false);
+    expect(mapKisInquirePriceToPrice(TICKER, raw)).toMatchObject({
+      isSnapshot: false,
+      source: 'rest',
+    });
   });
 
   it('propagates ticker from argument, not from payload', () => {

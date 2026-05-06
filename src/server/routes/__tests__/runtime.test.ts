@@ -126,6 +126,7 @@ async function build(
     dataRetention?: { snapshot(): { lastRunAt: string | null; candlePruneLastRunAt: string | null; candlePruneLastError: string | null } };
     priceStore?: { getAllPrices(): Array<{ ticker: string; price: number; changeRate: number; volume: number; updatedAt: string; isSnapshot: boolean; volumeBaselineStatus?: 'ready' | 'collecting' | 'unavailable' }> };
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
+    backgroundBackfill?: { snapshot(): { running: boolean; lastRunAt: string | null; lastFinishedAt: string | null; lastAttempted: number; lastSucceeded: number; lastFailed: number; lastSkippedReason: 'disabled' | 'market_not_allowed' | 'no_tickers' | 'no_stale_tickers' | 'already_running' | 'budget_exhausted' | 'cooldown' | null } };
   },
 ) {
   const app = Fastify({ logger: false });
@@ -142,6 +143,7 @@ async function build(
     dataRetention: opts.dataRetention,
     priceStore: opts.priceStore,
     backfillStateStore: opts.backfillStateStore,
+    backgroundBackfill: opts.backgroundBackfill,
   });
   return app;
 }
@@ -219,6 +221,17 @@ describe('GET /runtime/data-health', () => {
         save: vi.fn(async () => undefined),
         snapshot: vi.fn(() => ({ budgetDateKey: '2026-05-06', dailyCallCount: 4, cooldownUntilMs: 0 })),
       },
+      backgroundBackfill: {
+        snapshot: vi.fn(() => ({
+          running: true,
+          lastRunAt: '2026-05-06T11:05:00.000Z',
+          lastFinishedAt: null,
+          lastAttempted: 2,
+          lastSucceeded: 1,
+          lastFailed: 0,
+          lastSkippedReason: null,
+        })),
+      },
     });
 
     const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
@@ -235,8 +248,16 @@ describe('GET /runtime/data-health', () => {
         backfill: {
           enabled: true,
           range: '3m',
+          running: true,
+          lastRunAt: '2026-05-06T11:05:00.000Z',
+          lastFinishedAt: null,
+          lastAttempted: 2,
+          lastSucceeded: 1,
+          lastFailed: 0,
+          lastSkippedReason: null,
           budgetDateKey: '2026-05-06',
           dailyCallCount: 4,
+          dailyCallBudget: 30,
           cooldownUntil: null,
           cooldownActive: false,
         },

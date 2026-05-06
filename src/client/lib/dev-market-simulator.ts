@@ -42,8 +42,11 @@ const FALLBACK_STOCKS: Stock[] = [
 
 const BASE_PRICE_BY_INDEX = [70_000, 142_000, 184_000, 221_000, 48_000, 342_000];
 
-export function isDevMarketSimulatorVisible(isDevBuild: boolean): boolean {
-  return isDevBuild;
+export function isDevMarketSimulatorVisible(
+  isDevBuild: boolean,
+  devModeEnabled = false,
+): boolean {
+  return isDevBuild && devModeEnabled;
 }
 
 export function buildDevMarketFrame({

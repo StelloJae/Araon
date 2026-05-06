@@ -37,6 +37,7 @@ import { LeftCombinedBlock } from './components/MoversCombined';
 import { FavoritesBlock } from './components/FavoritesBlock';
 import { SectionStack } from './components/SectionStack';
 import { StatusBar } from './components/StatusBar';
+import { BackfillStatusStrip } from './components/BackfillStatusStrip';
 import { SettingsModal } from './components/SettingsModal';
 import { StockDetailModal } from './components/StockDetailModal';
 import { ToastStack } from './components/ToastStack';
@@ -291,6 +292,7 @@ export function App() {
         pollingCount={pollingCount}
       />
       <ErrorBanner errors={errors} onDismiss={dismissError} />
+      <BackfillStatusStrip />
       <div className="main">
         <aside className="col-left">
           <LeftCombinedBlock
@@ -337,7 +339,7 @@ export function App() {
       {settingsOpen && <SettingsModal onClose={closeSettings} />}
       {DevMarketSimulator !== null && (
         <Suspense fallback={null}>
-          <DevMarketSimulator />
+          <DevMarketSimulator devModeEnabled={settings.devModeEnabled} />
         </Suspense>
       )}
       <ToastStack onPickStock={openDetail} />

@@ -22,6 +22,7 @@ import { PriceStore } from './price/price-store.js';
 import { SnapshotStore } from './price/snapshot-store.js';
 import { createCandleAggregator, createCandleRecorder } from './price/candle-aggregator.js';
 import { createBackgroundDailyBackfillScheduler } from './chart/background-backfill-scheduler.js';
+import { shouldBackfillDailyTicker } from './chart/daily-backfill-coverage.js';
 import { createFileBackfillStateStore } from './chart/backfill-state-store.js';
 import { createDailyBackfillService } from './chart/daily-backfill-service.js';
 import { createTodayMinuteBackfillService } from './chart/today-minute-backfill-service.js';
@@ -171,6 +172,8 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
         ? state.runtime.marketHoursScheduler.getCurrentPhase()
         : 'unknown';
     },
+    shouldBackfillTicker: ({ ticker, now }) =>
+      shouldBackfillDailyTicker({ ticker, now, repo: candleRepo }),
   });
   const dataRetention = createDataRetentionScheduler({
     candleRepo,
@@ -214,6 +217,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     candleRepo,
     priceStore,
     backfillStateStore,
+    backgroundBackfill,
     signalEventRepo,
     noteRepo,
     newsRepo,

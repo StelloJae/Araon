@@ -17,6 +17,7 @@ import { useStocksStore } from '../stores/stocks-store';
 
 interface DevMarketSimulatorProps {
   isAvailable?: boolean;
+  devModeEnabled?: boolean;
 }
 
 const SCENARIOS: Array<{ id: DevMarketScenarioId; label: string }> = [
@@ -28,8 +29,9 @@ const SCENARIOS: Array<{ id: DevMarketScenarioId; label: string }> = [
 
 export function DevMarketSimulator({
   isAvailable = readClientDevFlag(),
+  devModeEnabled = false,
 }: DevMarketSimulatorProps) {
-  const visible = isDevMarketSimulatorVisible(isAvailable);
+  const visible = isDevMarketSimulatorVisible(isAvailable, devModeEnabled);
   const catalog = useStocksStore((s) => s.catalog);
   const [scenarioId, setScenarioId] =
     useState<DevMarketScenarioId>('momentum-burst');

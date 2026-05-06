@@ -17,6 +17,7 @@ import type {
   Favorite,
   PriceSnapshot,
   PriceCandle,
+  PriceCandleSource,
   StoredCandleInterval,
   StockNote,
   StockNewsFetchStatus,
@@ -986,6 +987,35 @@ export class PriceCandleRepository {
          LIMIT 1`,
       )
       .get(query.ticker, interval, query.at);
+    return row === undefined ? null : rowToPriceCandle(row);
+  }
+
+  findNewestCandle(query: {
+    ticker: string;
+    interval?: StoredCandleInterval;
+    source?: PriceCandleSource;
+  }): PriceCandle | null {
+    const interval = query.interval ?? '1m';
+    const where = ['ticker = @ticker', 'interval = @interval'];
+    const params: Record<string, unknown> = {
+      ticker: query.ticker,
+      interval,
+    };
+    if (query.source !== undefined) {
+      where.push('source = @source');
+      params.source = query.source;
+    }
+    const row = this.db
+      .prepare<Record<string, unknown>, PriceCandleRow>(
+        `SELECT ticker, interval, bucket_at, session,
+                open, high, low, close, volume, sample_count,
+                source, is_partial, created_at, updated_at
+         FROM price_candles
+         WHERE ${where.join(' AND ')}
+         ORDER BY bucket_at DESC
+         LIMIT 1`,
+      )
+      .get(params);
     return row === undefined ? null : rowToPriceCandle(row);
   }
 

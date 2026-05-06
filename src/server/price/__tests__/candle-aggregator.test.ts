@@ -110,6 +110,17 @@ describe('candle aggregator', () => {
 
     expect(repo.bulkUpsertCandles).not.toHaveBeenCalled();
   });
+
+  it('ignores REST polling prices so chart candles are not synthetic snapshots', async () => {
+    const { repo } = writer();
+    const aggregator = createCandleAggregator({ writer: repo });
+
+    aggregator.recordPrice(price({ source: 'rest' }));
+    aggregator.recordPrice(price({ source: undefined }));
+    await aggregator.flushDirty();
+
+    expect(repo.bulkUpsertCandles).not.toHaveBeenCalled();
+  });
 });
 
 describe('candle recorder', () => {

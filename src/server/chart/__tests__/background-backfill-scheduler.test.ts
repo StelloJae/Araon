@@ -171,6 +171,73 @@ describe('createBackgroundDailyBackfillScheduler', () => {
     expect(backfillDailyCandles).toHaveBeenCalledTimes(2);
   });
 
+  it('skips up-to-date tickers before spending daily budget', async () => {
+    const shouldBackfillTicker = vi.fn(({ ticker }: { ticker: string }) => ticker === '042700');
+    const backfillDailyCandles = vi.fn(async (input: { ticker: string }) => ({
+      ticker: input.ticker,
+      requested: 1,
+      inserted: 1,
+      updated: 0,
+      from: '2026-05-01T15:00:00.000Z',
+      to: '2026-05-01T15:00:00.000Z',
+      source: 'kis-daily' as const,
+      coverage: { backfilled: true, localOnly: false },
+    }));
+    const scheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: {
+        findAll: () => [stock('005930'), stock('000660'), stock('042700')],
+      },
+      favoriteRepo: { findAll: () => [favorite('005930')] },
+      dailyBackfillService: { backfillDailyCandles },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:05:00.000Z'),
+      maxTickersPerRun: 2,
+      dailyCallBudget: 1,
+      requestGapMs: 0,
+      shouldBackfillTicker,
+    });
+
+    await expect(scheduler.runOnce()).resolves.toMatchObject({
+      attempted: 1,
+      succeeded: 1,
+      skippedReason: null,
+    });
+    expect(backfillDailyCandles).toHaveBeenCalledOnce();
+    expect(backfillDailyCandles).toHaveBeenCalledWith({
+      ticker: '042700',
+      range: '3m',
+      now: new Date('2026-05-05T11:05:00.000Z'),
+    });
+  });
+
+  it('reports no_stale_tickers when every tracked ticker is already covered', async () => {
+    const backfillDailyCandles = vi.fn();
+    const scheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: {
+        findAll: () => [stock('005930'), stock('000660')],
+      },
+      favoriteRepo: { findAll: () => [] },
+      dailyBackfillService: { backfillDailyCandles },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:05:00.000Z'),
+      requestGapMs: 0,
+      shouldBackfillTicker: () => false,
+    });
+
+    await expect(scheduler.runOnce()).resolves.toMatchObject({
+      attempted: 0,
+      skippedReason: 'no_stale_tickers',
+    });
+    expect(scheduler.snapshot()).toMatchObject({
+      running: false,
+      lastAttempted: 0,
+      lastSkippedReason: 'no_stale_tickers',
+    });
+    expect(backfillDailyCandles).not.toHaveBeenCalled();
+  });
+
   it('persists the daily budget across scheduler restarts', async () => {
     const stateStore = createMemoryBackfillStateStore();
     const firstBackfill = vi.fn(async (input: { ticker: string }) => ({

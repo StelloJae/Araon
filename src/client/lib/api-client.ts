@@ -478,8 +478,24 @@ export interface RuntimeDataHealthPayload {
   backfill: {
     enabled: boolean;
     range: DailyBackfillRange;
+    running: boolean;
+    lastRunAt: string | null;
+    lastFinishedAt: string | null;
+    lastAttempted: number;
+    lastSucceeded: number;
+    lastFailed: number;
+    lastSkippedReason:
+      | 'disabled'
+      | 'market_not_allowed'
+      | 'no_tickers'
+      | 'no_stale_tickers'
+      | 'already_running'
+      | 'budget_exhausted'
+      | 'cooldown'
+      | null;
     budgetDateKey: string | null;
     dailyCallCount: number;
+    dailyCallBudget: number;
     cooldownUntil: string | null;
     cooldownActive: boolean;
   };

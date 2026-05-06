@@ -29,9 +29,10 @@ function catalog(): Record<string, CatalogEntry> {
 }
 
 describe('dev market simulator', () => {
-  it('is only visible when the caller reports a dev build', () => {
-    expect(isDevMarketSimulatorVisible(true)).toBe(true);
-    expect(isDevMarketSimulatorVisible(false)).toBe(false);
+  it('is only visible when both dev build and dev mode are enabled', () => {
+    expect(isDevMarketSimulatorVisible(true, true)).toBe(true);
+    expect(isDevMarketSimulatorVisible(true, false)).toBe(false);
+    expect(isDevMarketSimulatorVisible(false, true)).toBe(false);
     expect(SIMULATED_MARKET_LABEL).toBe('SIMULATED MARKET');
   });
 
