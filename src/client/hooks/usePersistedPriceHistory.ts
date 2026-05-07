@@ -22,6 +22,7 @@ export function usePersistedPriceHistory(ticker: string, enabled: boolean): void
             price: item.price,
             changePct: item.changePct,
             ts: new Date(item.bucketAt).getTime(),
+            source: item.source,
           })),
         );
         hydrationByTicker.set(ticker, Date.now());

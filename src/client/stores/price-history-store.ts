@@ -17,6 +17,11 @@
  */
 
 import { create } from 'zustand';
+import {
+  isRealtimePriceSource,
+  PRICE_HISTORY_FALLBACK_SUPPRESS_MS,
+} from '@shared/price-source.js';
+import type { PriceCandleSource } from '@shared/types.js';
 
 export interface PriceHistoryPoint {
   /** Price in 원. */
@@ -25,6 +30,8 @@ export interface PriceHistoryPoint {
   changePct: number;
   /** Wall-clock ms epoch when the point was received. */
   ts: number;
+  /** Source of the point. REST is used only when no nearby live source exists. */
+  source?: PriceCandleSource | null;
 }
 
 export const HISTORY_TTL_MS = 24 * 60 * 60_000;
@@ -149,10 +156,24 @@ function normalizeTickerHistory(
 ): PriceHistoryPoint[] {
   const cutoff = referenceTs - HISTORY_TTL_MS;
   const byBucket = new Map<number, PriceHistoryPoint>();
-  for (const point of points) {
-    if (!Number.isFinite(point.ts) || point.ts < cutoff) continue;
-    if (!Number.isFinite(point.price) || point.price <= 0) continue;
-    byBucket.set(bucketKey(point.ts), point);
+  const validPoints = points
+    .filter((point) => {
+      if (!Number.isFinite(point.ts) || point.ts < cutoff) return false;
+      return Number.isFinite(point.price) && point.price > 0;
+    })
+    .sort((a, b) => a.ts - b.ts);
+  let lastRealtimePoint: PriceHistoryPoint | undefined;
+  for (const point of validPoints) {
+    if (isNearbyFallbackPointFromLast(lastRealtimePoint, point)) continue;
+    if (isRealtimePriceSource(point.source ?? null)) {
+      lastRealtimePoint = point;
+    }
+    const bucket = bucketKey(point.ts);
+    const existing = byBucket.get(bucket);
+    byBucket.set(
+      bucket,
+      existing === undefined ? point : choosePreferredPoint(existing, point),
+    );
   }
   const sorted = Array.from(byBucket.values()).sort((a, b) => a.ts - b.ts);
   return sorted.length > MAX_POINTS_PER_TICKER
@@ -175,11 +196,13 @@ function appendTickerHistory(
   }
 
   const next = existing.slice(startIndex);
+  if (isNearbyFallbackPoint(next, point)) return undefined;
+
   const bucket = bucketKey(point.ts);
   const last = next.at(-1);
   if (last !== undefined) {
     if (bucketKey(last.ts) === bucket) {
-      next[next.length - 1] = point;
+      next[next.length - 1] = choosePreferredPoint(last, point);
       return capHistory(next);
     }
     if (point.ts >= last.ts) {
@@ -190,7 +213,7 @@ function appendTickerHistory(
 
   const existingBucketIndex = next.findIndex((item) => bucketKey(item.ts) === bucket);
   if (existingBucketIndex >= 0) {
-    next[existingBucketIndex] = point;
+    next[existingBucketIndex] = choosePreferredPoint(next[existingBucketIndex]!, point);
     return capHistory(next);
   }
 
@@ -211,4 +234,56 @@ function capHistory(points: PriceHistoryPoint[]): PriceHistoryPoint[] {
 
 function bucketKey(ts: number): number {
   return Math.floor(ts / PRICE_HISTORY_BUCKET_MS);
+}
+
+function choosePreferredPoint(
+  existing: PriceHistoryPoint,
+  incoming: PriceHistoryPoint,
+): PriceHistoryPoint {
+  return shouldReplacePoint(existing.source ?? null, incoming.source ?? null)
+    ? incoming
+    : existing;
+}
+
+function shouldReplacePoint(
+  previous: PriceCandleSource | null,
+  next: PriceCandleSource | null,
+): boolean {
+  if (isRealtimePriceSource(previous) && !isRealtimePriceSource(next)) return false;
+  if (!isRealtimePriceSource(previous) && isRealtimePriceSource(next)) return true;
+  if (previous !== null && next === null) return false;
+  return true;
+}
+
+function isNearbyFallbackPoint(
+  existing: readonly PriceHistoryPoint[],
+  incoming: PriceHistoryPoint,
+): boolean {
+  if (isRealtimePriceSource(incoming.source ?? null)) return false;
+  const lastLive = findLastRealtimePoint(existing);
+  return isNearbyFallbackPointFromLast(lastLive, incoming);
+}
+
+function isNearbyFallbackPointFromLast(
+  lastLive: PriceHistoryPoint | undefined,
+  incoming: PriceHistoryPoint,
+): boolean {
+  if (isRealtimePriceSource(incoming.source ?? null)) return false;
+  return (
+    lastLive !== undefined &&
+    incoming.ts >= lastLive.ts &&
+    incoming.ts - lastLive.ts <= PRICE_HISTORY_FALLBACK_SUPPRESS_MS
+  );
+}
+
+function findLastRealtimePoint(
+  points: readonly PriceHistoryPoint[],
+): PriceHistoryPoint | undefined {
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    const point = points[i];
+    if (point !== undefined && isRealtimePriceSource(point.source ?? null)) {
+      return point;
+    }
+  }
+  return undefined;
 }

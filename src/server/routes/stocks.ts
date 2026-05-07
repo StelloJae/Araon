@@ -24,6 +24,7 @@ import type {
 } from '../db/repositories.js';
 import { parseStockCsv } from '../parsers/csv-parser.js';
 import { createChildLogger } from '@shared/logger.js';
+import { isRealtimePriceSource } from '@shared/price-source.js';
 import { aggregateCandles } from '../price/candle-aggregation.js';
 import { isBackfillAllowed } from '../chart/backfill-policy.js';
 import { shouldBackfillDailyTicker } from '../chart/daily-backfill-coverage.js';
@@ -824,7 +825,8 @@ export async function stockRoutes(
       to: window.to,
       limit: parsed.data.limit,
     });
-    const items = points.map(toPriceHistoryApiItem);
+    const displayPoints = filterRealtimePreferredPriceHistory(points);
+    const items = displayPoints.map(toPriceHistoryApiItem);
     const first = items[0];
     const last = items[items.length - 1];
 
@@ -1023,6 +1025,18 @@ function toPriceHistoryApiItem(point: {
     sampleCount: point.sampleCount,
     source: point.source,
   };
+}
+
+function filterRealtimePreferredPriceHistory<T extends { source: PriceCandleSource | null }>(
+  points: readonly T[],
+): T[] {
+  let liveCount = 0;
+  for (const point of points) {
+    if (isRealtimePriceSource(point.source)) liveCount += 1;
+    if (liveCount >= 2) break;
+  }
+  if (liveCount < 2) return [...points];
+  return points.filter((point) => isRealtimePriceSource(point.source));
 }
 
 function rangeDurationMs(range: '1d' | '1w' | '1m' | '3m' | '6m' | '1y'): number {

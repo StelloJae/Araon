@@ -95,6 +95,134 @@ describe('usePriceHistoryStore', () => {
     ]);
   });
 
+  it('does not let REST fallback replace a live point in the same bucket', async () => {
+    const mod = await import('../price-history-store');
+    const s = mod.usePriceHistoryStore.getState();
+
+    s.appendPoint('005930', {
+      price: 100_900,
+      changePct: 8.4,
+      ts: 1_000,
+      source: 'ws-integrated',
+    });
+    s.appendPoint('005930', {
+      price: 100_300,
+      changePct: 7.8,
+      ts: 2_000,
+      source: 'rest',
+    });
+
+    expect(mod.usePriceHistoryStore.getState().byTicker['005930']).toEqual([
+      {
+        price: 100_900,
+        changePct: 8.4,
+        ts: 1_000,
+        source: 'ws-integrated',
+      },
+    ]);
+  });
+
+  it('suppresses nearby REST fallback after live ticks are flowing', async () => {
+    const mod = await import('../price-history-store');
+    const s = mod.usePriceHistoryStore.getState();
+
+    s.appendPoint('005930', {
+      price: 100_900,
+      changePct: 8.4,
+      ts: 1_000,
+      source: 'ws-integrated',
+    });
+    s.appendPoint('005930', {
+      price: 100_300,
+      changePct: 7.8,
+      ts: 6_000,
+      source: 'rest',
+    });
+    s.appendPoint('005930', {
+      price: 101_000,
+      changePct: 8.5,
+      ts: 11_000,
+      source: 'ws-integrated',
+    });
+
+    expect(mod.usePriceHistoryStore.getState().byTicker['005930']).toEqual([
+      {
+        price: 100_900,
+        changePct: 8.4,
+        ts: 1_000,
+        source: 'ws-integrated',
+      },
+      {
+        price: 101_000,
+        changePct: 8.5,
+        ts: 11_000,
+        source: 'ws-integrated',
+      },
+    ]);
+  });
+
+  it('does not reintroduce nearby persisted REST fallback when seeding live history', async () => {
+    const mod = await import('../price-history-store');
+    const s = mod.usePriceHistoryStore.getState();
+
+    s.appendPoint('005930', {
+      price: 100_900,
+      changePct: 8.4,
+      ts: 1_000,
+      source: 'ws-integrated',
+    });
+    s.seedTicker('005930', [
+      {
+        price: 100_300,
+        changePct: 7.8,
+        ts: 6_000,
+        source: 'rest',
+      },
+      {
+        price: 101_000,
+        changePct: 8.5,
+        ts: 11_000,
+        source: 'ws-integrated',
+      },
+    ]);
+
+    expect(mod.usePriceHistoryStore.getState().byTicker['005930']).toEqual([
+      {
+        price: 100_900,
+        changePct: 8.4,
+        ts: 1_000,
+        source: 'ws-integrated',
+      },
+      {
+        price: 101_000,
+        changePct: 8.5,
+        ts: 11_000,
+        source: 'ws-integrated',
+      },
+    ]);
+  });
+
+  it('keeps REST fallback when no live source is available', async () => {
+    const mod = await import('../price-history-store');
+    const s = mod.usePriceHistoryStore.getState();
+
+    s.appendPoint('005930', {
+      price: 100_300,
+      changePct: 7.8,
+      ts: 1_000,
+      source: 'rest',
+    });
+
+    expect(mod.usePriceHistoryStore.getState().byTicker['005930']).toEqual([
+      {
+        price: 100_300,
+        changePct: 7.8,
+        ts: 1_000,
+        source: 'rest',
+      },
+    ]);
+  });
+
   it('selectHistory returns empty array for unknown ticker', async () => {
     const { usePriceHistoryStore, selectHistory } = await import(
       '../price-history-store'

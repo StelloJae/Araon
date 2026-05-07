@@ -127,6 +127,7 @@ export function useSSE(url: string = '/events'): void {
                 price: e.price.price,
                 changePct: e.price.changeRate,
                 ts: Date.now(),
+                source: e.price.source ?? null,
               });
             }
             if (shouldProcessRealtimeMomentumPrice(e.price, currentMarketStatus)) {

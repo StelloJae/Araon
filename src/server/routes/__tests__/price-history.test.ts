@@ -48,6 +48,17 @@ function point(bucketAt: string, price = 70_000): PriceHistoryPoint {
   };
 }
 
+function sourcedPoint(
+  bucketAt: string,
+  price: number,
+  source: PriceHistoryPoint['source'],
+): PriceHistoryPoint {
+  return {
+    ...point(bucketAt, price),
+    source,
+  };
+}
+
 describe('GET /stocks/:ticker/price-history', () => {
   let db: Database.Database;
 
@@ -122,5 +133,66 @@ describe('GET /stocks/:ticker/price-history', () => {
 
     expect(invalidTicker.statusCode).toBe(400);
     expect(invalidLimit.statusCode).toBe(400);
+  });
+
+  it('prefers realtime history over REST fallback when both are present', async () => {
+    const repo = new PriceHistoryPointRepository(db);
+    await repo.bulkUpsertPoints([
+      sourcedPoint('2026-05-07T00:00:00.000Z', 100_800, 'ws-integrated'),
+      sourcedPoint('2026-05-07T00:00:05.000Z', 100_300, 'rest'),
+      sourcedPoint('2026-05-07T00:00:10.000Z', 100_300, 'mixed'),
+      sourcedPoint('2026-05-07T00:00:15.000Z', 100_900, 'ws-integrated'),
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      priceHistoryRepo: repo,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/price-history?from=2026-05-07T00:00:00.000Z&to=2026-05-07T00:00:20.000Z',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.items).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-07T00:00:00.000Z',
+        price: 100_800,
+        source: 'ws-integrated',
+      }),
+      expect.objectContaining({
+        bucketAt: '2026-05-07T00:00:15.000Z',
+        price: 100_900,
+        source: 'ws-integrated',
+      }),
+    ]);
+    expect(body.data.coverage.count).toBe(2);
+  });
+
+  it('keeps REST fallback history when no realtime source is present', async () => {
+    const repo = new PriceHistoryPointRepository(db);
+    await repo.bulkUpsertPoints([
+      sourcedPoint('2026-05-07T00:00:00.000Z', 100_300, 'rest'),
+      sourcedPoint('2026-05-07T00:00:05.000Z', 100_400, 'rest'),
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      priceHistoryRepo: repo,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/price-history?from=2026-05-07T00:00:00.000Z&to=2026-05-07T00:00:10.000Z',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.items.map((item: { source: string }) => item.source)).toEqual([
+      'rest',
+      'rest',
+    ]);
   });
 });

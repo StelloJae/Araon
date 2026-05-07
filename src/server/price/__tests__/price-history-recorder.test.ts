@@ -153,6 +153,93 @@ describe('createPriceHistoryAggregator', () => {
     db.close();
   });
 
+  it('keeps realtime points ahead of REST fallback in the same bucket', async () => {
+    const db = openMemoryDb();
+    const repo = new PriceHistoryPointRepository(db);
+    const aggregator = createPriceHistoryAggregator({
+      writer: repo,
+      now: () => new Date('2026-05-07T00:00:06.000Z'),
+    });
+
+    aggregator.recordPrice(price({ price: 100_900, source: 'ws-integrated' }));
+    aggregator.recordPrice(price({ price: 100_300, source: 'rest' }));
+    await aggregator.flushDirty();
+
+    expect(repo.listPoints({ ticker: '005930' })).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-07T00:00:00.000Z',
+        price: 100_900,
+        source: 'ws-integrated',
+        sampleCount: 2,
+      }),
+    ]);
+
+    db.close();
+  });
+
+  it('suppresses nearby REST fallback points after realtime history is flowing', async () => {
+    const db = openMemoryDb();
+    const repo = new PriceHistoryPointRepository(db);
+    const aggregator = createPriceHistoryAggregator({
+      writer: repo,
+      now: () => new Date('2026-05-07T00:00:20.000Z'),
+    });
+
+    aggregator.recordPrice(price({
+      price: 100_900,
+      source: 'ws-integrated',
+      tradeAt: '2026-05-07T00:00:00.000Z',
+    }));
+    aggregator.recordPrice(price({
+      price: 100_300,
+      source: 'rest',
+      tradeAt: '2026-05-07T00:00:05.000Z',
+    }));
+    aggregator.recordPrice(price({
+      price: 101_000,
+      source: 'ws-integrated',
+      tradeAt: '2026-05-07T00:00:10.000Z',
+    }));
+    await aggregator.flushDirty();
+
+    expect(repo.listPoints({ ticker: '005930' })).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-07T00:00:00.000Z',
+        price: 100_900,
+        source: 'ws-integrated',
+      }),
+      expect.objectContaining({
+        bucketAt: '2026-05-07T00:00:10.000Z',
+        price: 101_000,
+        source: 'ws-integrated',
+      }),
+    ]);
+
+    db.close();
+  });
+
+  it('still records REST history when it is the only available source', async () => {
+    const db = openMemoryDb();
+    const repo = new PriceHistoryPointRepository(db);
+    const aggregator = createPriceHistoryAggregator({
+      writer: repo,
+      now: () => new Date('2026-05-07T00:00:06.000Z'),
+    });
+
+    aggregator.recordPrice(price({ price: 100_300, source: 'rest' }));
+    await aggregator.flushDirty();
+
+    expect(repo.listPoints({ ticker: '005930' })).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-07T00:00:00.000Z',
+        price: 100_300,
+        source: 'rest',
+      }),
+    ]);
+
+    db.close();
+  });
+
   it('ignores warm snapshots and invalid prices', async () => {
     const db = openMemoryDb();
     const repo = new PriceHistoryPointRepository(db);

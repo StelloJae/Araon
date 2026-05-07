@@ -1,4 +1,8 @@
 import { createChildLogger } from '@shared/logger.js';
+import {
+  isRealtimePriceSource,
+  PRICE_HISTORY_FALLBACK_SUPPRESS_MS,
+} from '@shared/price-source.js';
 import type {
   Price,
   PriceCandleSource,
@@ -40,16 +44,28 @@ export function createPriceHistoryAggregator(
   const now = options.now ?? (() => new Date());
   const points = new Map<string, PriceHistoryPoint>();
   const dirtyKeys = new Set<string>();
+  const lastRealtimePointMsByTicker = new Map<string, number>();
 
   function recordPrice(price: Price): void {
     if (!validPrice(price)) return;
 
     const timestamp = pointTimestamp(price);
+    const timestampMs = new Date(timestamp).getTime();
     const bucketAt = bucketAtForPoint(timestamp);
     const key = `${price.ticker}:${bucketAt}`;
     const existing = points.get(key);
     const nowIso = now().toISOString();
     const source = price.source ?? null;
+    const realtime = isRealtimePriceSource(source);
+
+    if (realtime) {
+      lastRealtimePointMsByTicker.set(price.ticker, timestampMs);
+    } else if (
+      existing === undefined &&
+      isNearbyRestFallback(price.ticker, timestampMs, lastRealtimePointMsByTicker)
+    ) {
+      return;
+    }
 
     if (existing === undefined) {
       points.set(key, {
@@ -63,12 +79,13 @@ export function createPriceHistoryAggregator(
         updatedAt: nowIso,
       });
     } else {
+      const replaceValue = shouldReplacePoint(existing.source, source);
       points.set(key, {
         ...existing,
-        price: price.price,
-        changeRate: price.changeRate,
+        price: replaceValue ? price.price : existing.price,
+        changeRate: replaceValue ? price.changeRate : existing.changeRate,
         sampleCount: existing.sampleCount + 1,
-        source: mergeSource(existing.source, source),
+        source: replaceValue ? preferredSource(existing.source, source) : existing.source,
         updatedAt: nowIso,
       });
     }
@@ -109,13 +126,34 @@ function bucketAtForPoint(timestamp: string): string {
   return new Date(bucketMs).toISOString();
 }
 
-function mergeSource(
+function shouldReplacePoint(
+  previous: PriceCandleSource | null,
+  next: PriceCandleSource | null,
+): boolean {
+  if (isRealtimePriceSource(previous) && !isRealtimePriceSource(next)) return false;
+  if (!isRealtimePriceSource(previous) && isRealtimePriceSource(next)) return true;
+  if (previous !== null && next === null) return false;
+  return true;
+}
+
+function preferredSource(
   previous: PriceCandleSource | null,
   next: PriceCandleSource | null,
 ): PriceCandleSource | null {
-  if (previous === null) return next;
-  if (next === null) return previous;
-  return previous === next ? previous : 'mixed';
+  return next ?? previous;
+}
+
+function isNearbyRestFallback(
+  ticker: string,
+  timestampMs: number,
+  lastRealtimePointMsByTicker: ReadonlyMap<string, number>,
+): boolean {
+  const lastRealtimeMs = lastRealtimePointMsByTicker.get(ticker);
+  return (
+    lastRealtimeMs !== undefined &&
+    timestampMs >= lastRealtimeMs &&
+    timestampMs - lastRealtimeMs <= PRICE_HISTORY_FALLBACK_SUPPRESS_MS
+  );
 }
 
 export interface PriceHistoryRecorderOptions {
