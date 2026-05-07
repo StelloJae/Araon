@@ -63,16 +63,32 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
         boxShadow: 'var(--shadow) 0px 8px 24px -4px',
       }}
     >
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          height: 28,
+          padding: '0 10px',
+          marginBottom: 12,
+          borderRadius: 999,
+          background: 'rgba(246, 188, 0, 0.16)',
+          color: 'var(--text-secondary)',
+          fontSize: 12,
+          fontWeight: 800,
+        }}
+      >
+        거래는 폰에서 · 관찰은 Araon에서
+      </div>
       <h1
         style={{
           margin: 0,
-          fontSize: 20,
+          fontSize: 22,
           fontWeight: 700,
           color: 'var(--text-strong)',
-          letterSpacing: -0.2,
+          letterSpacing: 0,
         }}
       >
-        KIS 앱키 등록
+        옆 모니터에 켜두는 한국 주식 관찰 화면
       </h1>
       <p
         style={{
@@ -83,11 +99,13 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
           color: 'var(--text-muted)',
         }}
       >
-        한국투자증권 OpenAPI 포털에서 발급받은 앱키와 앱시크릿을 입력하세요.
+        한국투자증권 OpenAPI 포털에서 발급받은 앱키와 앱시크릿을 입력하면
+        관심종목의 흐름, 차트, 뉴스, 알림을 로컬에서 정리합니다.
       </p>
 
       <div style={noticeStyle}>
         <div>Araon은 localhost에서만 실행되는 읽기 전용 모니터링 도구입니다.</div>
+        <div>거래는 기존 증권사 앱에서 하고, Araon은 옆 모니터에서 흐름을 보여줍니다.</div>
         <div>주문/매매 기능은 없고, KIS credentials 등록 후 실시간 시세와 일봉 보강을 자동으로 관리합니다.</div>
       </div>
 

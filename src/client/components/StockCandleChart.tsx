@@ -402,7 +402,7 @@ export function CandleChartView({
     return (
       <ChartMessage
         title="차트 데이터 수집 중"
-        detail="Araon이 실행 중인 동안의 1분봉부터 저장됩니다. 1D/1W/1M은 KIS 일봉 백필 후 표시됩니다."
+        detail="이 종목의 저장된 candle이 아직 부족합니다. 장중에는 현재 선택 종목의 오늘 분봉부터 보강합니다. 1D/1W/1M은 KIS 일봉 백필 후 표시됩니다."
       />
     );
   }

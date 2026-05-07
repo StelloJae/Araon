@@ -1,6 +1,8 @@
 # Installing Araon
 
-This guide walks through the first-run install paths for Araon users.
+This guide walks through the first-run install paths for Araon users. If you
+are trying Araon for the first time, use the npm path below before trying the
+desktop or source-code paths.
 
 Araon is a single-user localhost dashboard. It requires your own KIS OpenAPI
 credentials and does not provide trading or order-entry features.
@@ -10,11 +12,11 @@ credentials and does not provide trading or order-entry features.
 - Node.js 20 or newer
 - npm
 - A live KIS OpenAPI app key/app secret pair
-- A browser that can open `http://127.0.0.1:5173`
+- A browser that can open `http://127.0.0.1:<port>`
 
 ## Run From npm
 
-The easiest path is:
+The easiest path is one command:
 
 ```bash
 npx @stellojae/araon
@@ -40,6 +42,16 @@ intentionally live-only because KIS paper credentials are materially more
 rate-limited and can differ by endpoint. Until credentials are configured,
 Araon makes no external KIS calls. After credentials are configured, Araon
 automatically manages cap40 integrated realtime and guarded daily backfill.
+
+If you do not have a KIS app key yet, follow
+[KIS OpenAPI setup guide](docs/guides/kis-openapi-setup.md) or
+[KIS OpenAPI 키 발급 가이드](docs/guides/kis-openapi-setup.ko.md).
+
+For a non-developer first run, this is the expected flow:
+
+```txt
+Terminal command → localhost page → KIS key setup → search first stock → monitor
+```
 
 ## Install From Source
 

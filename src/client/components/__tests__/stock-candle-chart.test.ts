@@ -24,7 +24,8 @@ describe('StockCandleChart', () => {
     );
 
     expect(html).toContain('차트 데이터 수집 중');
-    expect(html).toContain('Araon이 실행 중인 동안의 1분봉부터 저장됩니다');
+    expect(html).toContain('이 종목의 저장된 candle이 아직 부족합니다');
+    expect(html).toContain('장중에는 현재 선택 종목의 오늘 분봉부터 보강합니다');
     expect(html).not.toContain('<canvas');
   });
 

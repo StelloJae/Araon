@@ -13,6 +13,8 @@ describe('CredentialsSetup first-run copy', () => {
     );
 
     expect(html).toContain('읽기 전용 모니터링 도구');
+    expect(html).toContain('거래는 기존 증권사 앱에서');
+    expect(html).toContain('옆 모니터에서 흐름');
     expect(html).toContain('주문/매매 기능은 없고');
     expect(html).toContain('실시간 시세와 일봉 보강을 자동으로 관리');
     expect(html).toContain('최대 40종목까지 통합 시세');

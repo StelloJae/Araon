@@ -29,6 +29,14 @@ Runbooks are for maintainers and operators.
 - [Long-Run Soak](runbooks/long-run-soak.md)
 - [KIS Realtime Rollout](runbooks/nxt-ws-rollout.md)
 
+## Guides
+
+Guides are written for people trying Araon for the first time.
+
+- [KIS OpenAPI 키 발급 가이드](guides/kis-openapi-setup.ko.md)
+- [KIS OpenAPI setup guide](guides/kis-openapi-setup.md)
+- [Araon 공유용 체크리스트](guides/share-araon.ko.md)
+
 ## Archive
 
 `docs/archive/` contains implementation notes, live-probe evidence, acceptance

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  A local dashboard for watching Korean stocks with KIS OpenAPI.
+  Trade on your phone. Keep Araon open on the side.
 </p>
 
 <p align="center">
@@ -25,17 +25,28 @@
   <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.0-111827">
 </p>
 
-Araon is a personal market-monitoring screen for Korean stocks. It runs on your
-own machine, connects to KIS OpenAPI with your credentials, and gives you a
-clean way to follow the names you care about during the trading day.
+Araon is a personal observation dashboard for Korean stock traders who want a
+quiet second screen. It runs on your own machine, connects to KIS OpenAPI with
+your credentials, and keeps the names you care about visible during the trading
+day.
 
 It is not a broker, trading bot, or advisory product. Araon never places orders
 and does not manage your account. The intent is simple: keep the important
 market context visible while you make decisions somewhere else.
 
+## Who It Is For
+
+Araon is built for people who:
+
+- trade from a phone or brokerage app but want a dedicated monitoring screen
+- follow a small set of Korean stocks during fast sessions
+- want realtime movement, charts, news, disclosures, and alerts in one place
+- prefer a read-only local tool that stores runtime data on their own machine
+
 ## What It Does
 
-Araon keeps a local watchlist and combines several practical views around it:
+Araon keeps a local watchlist and combines the views that matter while you are
+watching the market:
 
 - realtime KIS integrated quotes for up to 40 tracked/favorite stocks
 - REST polling fallback when realtime data is quiet or unavailable
@@ -48,6 +59,19 @@ Araon keeps a local watchlist and combines several practical views around it:
 
 All runtime data stays local. Fresh installs do not contact KIS until you add
 credentials.
+
+## First Five Minutes
+
+```txt
+1. Run npx @stellojae/araon
+2. Open the localhost page
+3. Enter your KIS app key and app secret
+4. Add your first stock from search
+5. Open the stock modal and check realtime, chart, news, and disclosures
+```
+
+If you do not have a KIS key yet, start with the
+[KIS OpenAPI setup guide](docs/guides/kis-openapi-setup.md).
 
 ## Install
 
@@ -110,6 +134,13 @@ ARAON_TELEGRAM_CHAT_ID=
 
 Araon stores titles, timestamps, snippets, and links. It does not store full
 article bodies or generate news summaries.
+
+## Sharing Araon
+
+If you are showing Araon to someone else, lead with the use case rather than the
+implementation detail: trading stays in the brokerage app, Araon stays open as
+the observation screen. The [sharing checklist](docs/guides/share-araon.ko.md)
+lists the screens and copy that make the app easiest to understand.
 
 ## Where Data Is Stored
 

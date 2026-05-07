@@ -515,7 +515,7 @@ function EmptyState() {
       <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>
         관심종목이 없어요
       </div>
-      <div>POST /stocks 또는 /import/kis-watchlist로 종목을 추가해 주세요.</div>
+      <div>상단 검색창에서 종목명이나 종목코드를 입력해 첫 관심종목을 추가해 주세요.</div>
     </div>
   );
 }
