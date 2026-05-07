@@ -15,6 +15,7 @@ import type {
   Sector,
   Tag,
   Favorite,
+  PriceHistoryPoint,
   PriceSnapshot,
   PriceCandle,
   CandleCoverageLedgerEntry,
@@ -119,6 +120,17 @@ interface PriceSnapshotRow {
   change_rate: number;
   volume: number;
   snapshot_at: string;
+}
+
+interface PriceHistoryPointRow {
+  ticker: string;
+  bucket_at: string;
+  price: number;
+  change_rate: number;
+  sample_count: number;
+  source: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface PriceCandleRow {
@@ -307,6 +319,19 @@ function rowToSnapshot(row: PriceSnapshotRow): PriceSnapshot {
     changeRate: row.change_rate,
     volume: row.volume,
     snapshotAt: row.snapshot_at,
+  };
+}
+
+function rowToPriceHistoryPoint(row: PriceHistoryPointRow): PriceHistoryPoint {
+  return {
+    ticker: row.ticker,
+    bucketAt: row.bucket_at,
+    price: row.price,
+    changeRate: row.change_rate,
+    sampleCount: row.sample_count,
+    source: row.source as PriceHistoryPoint['source'],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -1174,6 +1199,106 @@ export class PriceCandleRepository {
             OR (interval = '1d' AND bucket_at < @oneDayCutoff)`,
       )
       .run({ oneMinuteCutoff, oneDayCutoff });
+    return result.changes;
+  }
+
+  private trackedTickerSet(tickers: readonly string[]): Set<string> {
+    const unique = Array.from(new Set(tickers));
+    if (unique.length === 0) return new Set();
+    const placeholders = unique.map((_, i) => `@t${i}`).join(', ');
+    const params = Object.fromEntries(unique.map((t, i) => [`t${i}`, t]));
+    const rows = this.db
+      .prepare<Record<string, string>, { ticker: string }>(
+        `SELECT ticker FROM stocks WHERE ticker IN (${placeholders})`,
+      )
+      .all(params);
+    return new Set(rows.map((r) => r.ticker));
+  }
+}
+
+export interface PriceHistoryPointListQuery {
+  ticker: string;
+  from?: string | undefined;
+  to?: string | undefined;
+  limit?: number | undefined;
+}
+
+export class PriceHistoryPointRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  async bulkUpsertPoints(points: readonly PriceHistoryPoint[]): Promise<void> {
+    if (points.length === 0) return;
+
+    const tracked = this.trackedTickerSet(points.map((p) => p.ticker));
+    const rows = points
+      .filter((p) => tracked.has(p.ticker))
+      .map((p) => ({
+        ticker: p.ticker,
+        bucket_at: p.bucketAt,
+        price: p.price,
+        change_rate: p.changeRate,
+        sample_count: Math.max(0, Math.trunc(p.sampleCount)),
+        source: p.source,
+        created_at: p.createdAt,
+        updated_at: p.updatedAt,
+      }));
+
+    if (rows.length === 0) return;
+
+    const stmt = this.db.prepare(
+      `INSERT INTO price_history_points (
+         ticker, bucket_at, price, change_rate, sample_count, source, created_at, updated_at
+       )
+       VALUES (
+         @ticker, @bucket_at, @price, @change_rate, @sample_count, @source, @created_at, @updated_at
+       )
+       ON CONFLICT(ticker, bucket_at) DO UPDATE SET
+         price = excluded.price,
+         change_rate = excluded.change_rate,
+         sample_count = excluded.sample_count,
+         source = excluded.source,
+         updated_at = excluded.updated_at`,
+    );
+
+    log.debug({ count: rows.length }, 'bulk-upsert price_history_points');
+    await chunkedInsert(this.db, stmt, rows);
+  }
+
+  listPoints(query: PriceHistoryPointListQuery): PriceHistoryPoint[] {
+    const where = ['ticker = @ticker'];
+    const params: Record<string, unknown> = {
+      ticker: query.ticker,
+      limit: Math.max(1, Math.min(query.limit ?? 20_000, 20_000)),
+    };
+    if (query.from !== undefined) {
+      where.push('bucket_at >= @from');
+      params.from = query.from;
+    }
+    if (query.to !== undefined) {
+      where.push('bucket_at <= @to');
+      params.to = query.to;
+    }
+
+    const rows = this.db
+      .prepare<Record<string, unknown>, PriceHistoryPointRow>(
+        `SELECT ticker, bucket_at, price, change_rate, sample_count,
+                source, created_at, updated_at
+         FROM price_history_points
+         WHERE ${where.join(' AND ')}
+         ORDER BY bucket_at ASC
+         LIMIT @limit`,
+      )
+      .all(params);
+    return rows.map(rowToPriceHistoryPoint);
+  }
+
+  pruneOldPoints(now = new Date(), retentionDays = 2): number {
+    const cutoff = new Date(
+      now.getTime() - retentionDays * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const result = this.db
+      .prepare('DELETE FROM price_history_points WHERE bucket_at < ?')
+      .run(cutoff);
     return result.changes;
   }
 

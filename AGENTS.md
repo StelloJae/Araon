@@ -48,6 +48,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **NXT always-on promotion**: 이 사용자 로컬 `data/settings.json`을 `websocketEnabled=true`, `applyTicksToPriceStore=true`로 전환 / warmup 시 current realtime favorite assignment를 즉시 connect+subscribe / tier-manager runtime cap은 `WS_MAX_SUBSCRIPTIONS=40` / integrated market scheduler는 07:55 warmup, 08:00~20:00 open, 20:05 shutdown / REST polling fallback 유지 / StockRow와 SurgeBlock에 실제 누적 거래량 표시 복구. 거래량 배수는 기준선 없이는 표시하지 않음
 - **Araon runtime acceptance**: 2026-04-29 11:10~11:41 KST / always-on `H0UNCNT0` cap40 30.3분 관찰 / parsed +141,132 / applied +78,540 / stale +62,592 / reconnect 0 / parseError 0 / applyError 0 / SSE 10초 sample에서 `price-update` 510건 / 임시 favorite overlay 원복. Browser acceptance 중 cap40 tick burst로 client render loop 발견 후 `lastUpdate` throttle + client price update batching으로 수정. 거래량 배수 P1은 same-session/time-bucket baseline foundation 구현, 기준선 부족 시 `기준선 수집 중`. favicon 404는 Araon favicon으로 해결
 - **Persisted candle + historical backfill**: `price_candles` SQLite table 추가 / canonical stored interval은 local+KIS `1m` + KIS daily `1d` / `kis-time-daily`는 KIS `주식일별분봉조회`에서 가져온 selected ticker 과거 1분봉 / 3m~12h는 1m candle에서 재집계 / 1D·1W·1M은 1d candle에서 KST 기준 재집계 / daily backfill range는 `1m/3m/6m/1y`, 긴 범위는 100일 이하 창으로 pagination / StockDetailModal `차트` 탭은 TradingView Lightweight Charts로 표시 / raw tick 저장·full master backfill·가짜 과거 차트 없음
+- **Persisted price history points**: `price_history_points` SQLite table 추가 / PriceStore `price-update`를 5초 버킷으로 downsample 저장 / disk retention 48h, browser store 24h / dashboard hover sparkline과 StockDetailModal 실시간 탭은 `/stocks/:ticker/price-history`로 same-day trace를 hydrate한 뒤 live SSE로 이어 붙임 / raw tick 영구 저장 아님, historical intraday backfill 정책 변경 아님
 - **Candle chart UI acceptance**: 005930에 저장된 `kis-daily` 20개 candle이 StockDetailModal `차트` 탭에서 `1D · 1m` 20 candles로 표시됨 / `1W · 3m` 5 candles, `1M · 1y` 2 candles 확인 / 빈 종목은 "차트 데이터 수집 중" 유지 / daily 계열 봉 선택 시 너무 짧은 range는 자동 보정(`1D→1m`, `1W→3m`, `1M→1y`) / UI acceptance 중 추가 KIS historical call·WebSocket/cap/background queue 0회
 - **Chart coverage auto-backfill**: StockDetailModal 차트 interval/range 변경 시 `POST /stocks/:ticker/candles/ensure-coverage`가 selected ticker coverage를 자동 확인한다. 1D/1W/1M은 KIS daily `1d`, 1m~12h는 KIS `주식일별분봉조회` `kis-time-daily` 1m candle을 보강하고 서버에서 재집계한다. 장중/프리오픈에는 safe skip, credentials 없으면 보강 실패 대신 기존 local/empty chart를 정직하게 표시한다. full master minute backfill과 background minute queue는 계속 HOLD.
 - **Managed defaults acceptance**: `bd7dbe8` 기준 no-live acceptance 완료 / fresh no-credentials는 defaults true여도 runtime unconfigured·KIS 호출 0회·credentials.enc 미생성 / persisted false emergency-disabled 설정 보존 / emergency disable route·Settings UI·backfill guard 검증 / existing local live UI smoke는 장중 live runtime 회피를 위해 not executed, 판정 CONDITIONAL GO
@@ -179,18 +180,20 @@ npm run dev:client &
 | `src/server/routes/runtime.ts` | runtime operator routes: `GET /runtime/realtime/status`, `POST /runtime/realtime/session-enable`, `POST /runtime/realtime/session-disable`, `GET/POST /runtime/backup/*`, raw key/token/account 미노출 |
 | `src/server/polling/polling-scheduler.ts` | REST polling. cycle ~14초 |
 | `src/server/price/candle-aggregator.ts` | PriceStore `price-update` → local 1m candle in-memory aggregation + 5초 batch flush. snapshot restore는 candle 생성 금지 |
+| `src/server/price/price-history-recorder.ts` | PriceStore `price-update` → 5초 downsampled `price_history_points` batch flush. hover sparkline/realtime tab 복원용이며 raw tick 저장 아님 |
 | `src/server/price/candle-aggregation.ts` | KST bucket boundary + 1m → 3m/5m/10m/15m/30m/1h/2h/4h/6h/12h, 1d → 1D/1W/1M aggregation helper |
 | `src/server/chart/backfill-policy.ts` | historical backfill 허용 시간 정책. 평일 07:55~20:05 KST 차단, 20:05 이후/주말 허용 |
 | `src/server/chart/daily-backfill-service.ts` | KIS daily candle backfill service. `1d` rows만 저장, `1m/3m/6m/1y` range를 100일 이하 창으로 분할 |
 | `src/server/chart/background-backfill-scheduler.ts` | Managed-default background daily backfill scheduler. 장후/주말만 실행, favorites/tracked 우선, sequential low-rate, daily call counter + 429/5xx cooldown |
-| `src/server/maintenance/data-retention.ts` | P1 data-growth maintenance. startup + daily prune: 1m candle 30일, 1d candle 2년, signal 90일, news 7일. 실패는 sanitized diagnostic으로 격리 |
+| `src/server/maintenance/data-retention.ts` | P1 data-growth maintenance. startup + daily prune: price history point 48h, 1m candle 30일, 1d candle 2년, signal 90일, news 7일. 실패는 sanitized diagnostic으로 격리 |
 | `docs/runbooks/local-backup-restore.md` | 로컬 백업/복원 범위. 포함: stocks/favorites/notes/observation plans. 제외: credentials/tokens/account/candles/raw ticks/runtime state |
 | `docs/runbooks/long-run-soak.md` | no-live reliability soak 절차. fresh temp dataDir로 `/credentials/status`, `/runtime/*`, backup export를 반복 조회해 5xx/non-JSON/secret-like value를 잡는다 |
 | `scripts/soak-araon.mts` | no-live soak harness. `npm run soak:no-live`에서 사용 |
 | `src/server/kis/kis-daily-chart.ts` | KIS 국내주식기간별시세 daily mapper/client. 테스트는 mock transport만 사용 |
 | `src/server/db/migrations/004-price-candles.sql` | `price_candles` schema: local `1m` + manual KIS `1d`. raw tick table 아님 |
 | `src/server/db/migrations/008-stock-news-fetch-status.sql` | `stock_news_fetch_status` schema: success/failed, sanitized error code, fetched timestamp만 저장 |
-| `src/server/routes/stocks.ts` | `GET /stocks/:ticker/candles` + `POST /stocks/:ticker/candles/backfill`. backfill은 장중 차단 |
+| `src/server/db/migrations/012-price-history-points.sql` | `price_history_points` schema: tracked ticker + 5초 bucket compact price trace. raw tick table 아님 |
+| `src/server/routes/stocks.ts` | `GET /stocks/:ticker/candles`, `GET /stocks/:ticker/price-history`, `POST /stocks/:ticker/candles/backfill`. backfill은 장중 차단 |
 | `src/client/components/StockCandleChart.tsx` | StockDetailModal `차트` 탭용 Lightweight Charts renderer. 1W/1M interval + 6m/1y range + manual daily backfill control 포함 |
 | `src/server/sse/sse-manager.ts` | SSE — price-update / market-status / heartbeat 이벤트 |
 | `src/shared/kis-constraints.ts` | KIS rate limit / hosts / TR_ID / WS / token 상수 단일 진실 출처 |

@@ -18,7 +18,7 @@ describe('usePriceHistoryStore', () => {
     const { usePriceHistoryStore } = await import('../price-history-store');
     const s = usePriceHistoryStore.getState();
     s.appendPoint('005930', { price: 78_900, changePct: 2.34, ts: 1_000 });
-    s.appendPoint('005930', { price: 79_000, changePct: 2.46, ts: 2_000 });
+    s.appendPoint('005930', { price: 79_000, changePct: 2.46, ts: 6_000 });
     s.appendPoint('000660', { price: 212_500, changePct: 3.12, ts: 1_500 });
 
     const next = usePriceHistoryStore.getState().byTicker;
@@ -43,12 +43,16 @@ describe('usePriceHistoryStore', () => {
     const s = mod.usePriceHistoryStore.getState();
     const cap = mod.MAX_POINTS_PER_TICKER;
     for (let i = 0; i < cap + 50; i++) {
-      s.appendPoint('005930', { price: 100 + i, changePct: 0, ts: 10_000 + i });
+      s.appendPoint('005930', {
+        price: 100 + i,
+        changePct: 0,
+        ts: 10_000 + i * mod.PRICE_HISTORY_BUCKET_MS,
+      });
     }
     const points = mod.usePriceHistoryStore.getState().byTicker['005930'];
     expect(points).toHaveLength(cap);
     // Oldest preserved point should be the (50)th original push (i=50 → ts=10050).
-    expect(points?.[0]?.ts).toBe(10_000 + 50);
+    expect(points?.[0]?.ts).toBe(10_000 + 50 * mod.PRICE_HISTORY_BUCKET_MS);
   });
 
   it('drops the least-recently-touched ticker once MAX_TRACKED_TICKERS exceeded', async () => {
@@ -73,6 +77,22 @@ describe('usePriceHistoryStore', () => {
     s.appendPoint('A', { price: 100, changePct: 0, ts: 1_000 });
     s.appendPoint('A', { price: 100, changePct: 0, ts: 1_000 });
     expect(usePriceHistoryStore.getState().byTicker['A']).toHaveLength(1);
+  });
+
+  it('seeds persisted points and replaces live points in the same 5-second bucket', async () => {
+    const mod = await import('../price-history-store');
+    const s = mod.usePriceHistoryStore.getState();
+
+    s.seedTicker('005930', [
+      { price: 70_000, changePct: 1.1, ts: 1_000 },
+      { price: 70_100, changePct: 1.2, ts: 6_000 },
+    ]);
+    s.appendPoint('005930', { price: 70_200, changePct: 1.3, ts: 6_500 });
+
+    expect(mod.usePriceHistoryStore.getState().byTicker['005930']).toEqual([
+      { price: 70_000, changePct: 1.1, ts: 1_000 },
+      { price: 70_200, changePct: 1.3, ts: 6_500 },
+    ]);
   });
 
   it('selectHistory returns empty array for unknown ticker', async () => {

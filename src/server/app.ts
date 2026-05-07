@@ -9,6 +9,7 @@ import {
   SectorRepository,
   FavoriteRepository,
   PriceSnapshotRepository,
+  PriceHistoryPointRepository,
   PriceCandleRepository,
   StockNoteRepository,
   StockObservationPlanRepository,
@@ -24,6 +25,10 @@ import { createFileCredentialStore } from './credential-store.js';
 import { PriceStore } from './price/price-store.js';
 import { SnapshotStore } from './price/snapshot-store.js';
 import { createCandleAggregator, createCandleRecorder } from './price/candle-aggregator.js';
+import {
+  createPriceHistoryAggregator,
+  createPriceHistoryRecorder,
+} from './price/price-history-recorder.js';
 import { createBackgroundDailyBackfillScheduler } from './chart/background-backfill-scheduler.js';
 import { shouldBackfillDailyTicker } from './chart/daily-backfill-coverage.js';
 import { createFileBackfillStateStore } from './chart/backfill-state-store.js';
@@ -105,6 +110,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const stockRepo = new StockRepository(db);
   const snapshotStore = new SnapshotStore(snapshotRepo);
   const candleRepo = new PriceCandleRepository(db);
+  const priceHistoryRepo = new PriceHistoryPointRepository(db);
   const candleCoverageRepo = new CandleCoverageRepository(db);
   const volumeBaselineEnricher = createVolumeBaselineEnricher({
     stockRepo,
@@ -122,6 +128,10 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const candleRecorder = createCandleRecorder({
     priceStore,
     aggregator: createCandleAggregator({ writer: candleRepo }),
+  });
+  const priceHistoryRecorder = createPriceHistoryRecorder({
+    priceStore,
+    aggregator: createPriceHistoryAggregator({ writer: priceHistoryRepo }),
   });
   const sectorRepo = new SectorRepository(db);
   const favoriteRepo = new FavoriteRepository(db);
@@ -201,6 +211,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   });
   const dataRetention = createDataRetentionScheduler({
     candleRepo,
+    priceHistoryRepo,
     signalEventRepo,
     newsRepo,
   });
@@ -220,6 +231,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(stockRoutes, {
     service: createStockService({ stockRepo, sectorRepo, masterRepo }),
     candleRepo,
+    priceHistoryRepo,
     candleCoverageRepo,
     noteRepo,
     observationPlanRepo,
@@ -282,6 +294,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     dataRetention.stop();
     await runtimeRef.stop();
     await candleRecorder.stop();
+    await priceHistoryRecorder.stop();
     await snapshotStore.saveAll(priceStore);
     runCheckpoint();
     await app.close();
@@ -294,6 +307,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       snapshot: {
         saveAll: async (store) => {
           await candleRecorder.stop();
+          await priceHistoryRecorder.stop();
           await snapshotStore.saveAll(store);
         },
       },

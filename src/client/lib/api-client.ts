@@ -13,6 +13,7 @@ import type {
   Favorite,
   LocalBackupPayload,
   LocalRestoreResult,
+  PriceHistoryApiResponse,
   Stock,
   StockNewsItem,
   StockDisclosureItem,
@@ -205,6 +206,26 @@ export async function getStockCandles(
   });
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles?${params.toString()}`);
   return unwrap<CandleApiResponse>(res);
+}
+
+export async function getStockPriceHistory(
+  ticker: string,
+  options: {
+    range?: '1d';
+    from?: string;
+    to?: string;
+    limit?: number;
+  } = {},
+): Promise<PriceHistoryApiResponse> {
+  const params = new URLSearchParams();
+  params.set('range', options.range ?? '1d');
+  if (options.from !== undefined) params.set('from', options.from);
+  if (options.to !== undefined) params.set('to', options.to);
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  const res = await fetch(
+    `/stocks/${encodeURIComponent(ticker)}/price-history?${params.toString()}`,
+  );
+  return unwrap<PriceHistoryApiResponse>(res);
 }
 
 export async function backfillStockCandles(

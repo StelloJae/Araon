@@ -15,6 +15,7 @@ export interface DataRetentionSnapshot {
 
 export interface DataRetentionRunResult {
   candlePruned: number;
+  priceHistoryPruned: number;
   signalPruned: number;
   newsPruned: number;
   error: string | null;
@@ -29,6 +30,7 @@ export interface DataRetentionScheduler {
 
 export interface CreateDataRetentionSchedulerOptions {
   candleRepo: { pruneOldCandles(now?: Date): number };
+  priceHistoryRepo?: { pruneOldPoints(now?: Date, retentionDays?: number): number };
   signalEventRepo: { pruneOldSignalEvents(now?: Date, retentionDays?: number): number };
   newsRepo: { pruneOldNewsItems(now?: Date, retentionDays?: number): number };
   now?: () => Date;
@@ -51,12 +53,14 @@ export function createDataRetentionScheduler(
     const runAt = now();
     const runAtIso = runAt.toISOString();
     let candlePruned = 0;
+    let priceHistoryPruned = 0;
     let signalPruned = 0;
     let newsPruned = 0;
     let error: string | null = null;
 
     try {
       candlePruned = options.candleRepo.pruneOldCandles(runAt);
+      priceHistoryPruned = options.priceHistoryRepo?.pruneOldPoints(runAt, 2) ?? 0;
       state = {
         ...state,
         candlePruneLastRunAt: runAtIso,
@@ -76,7 +80,7 @@ export function createDataRetentionScheduler(
       state = { ...state, lastRunAt: runAtIso };
     }
 
-    return { candlePruned, signalPruned, newsPruned, error };
+    return { candlePruned, priceHistoryPruned, signalPruned, newsPruned, error };
   }
 
   function start(): void {

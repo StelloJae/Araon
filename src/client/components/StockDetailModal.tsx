@@ -53,6 +53,7 @@ import { StockNotesPanel } from './StockNotesPanel';
 import { StockObservationPlanPanel } from './StockObservationPlanPanel';
 import { StockObservationTimeline } from './StockObservationTimeline';
 import { StockDataQualityPanel } from './StockDataQualityPanel';
+import { usePersistedPriceHistory } from '../hooks/usePersistedPriceHistory';
 
 const PENDING_LABEL = '연동 예정';
 const UNAVAILABLE_LABEL = '미제공';
@@ -81,6 +82,7 @@ export function StockDetailModal({
 }: StockDetailModalProps) {
   const [activeTab, setActiveTab] = useState<'realtime' | 'chart'>('realtime');
   const history = usePriceHistoryStore((s) => selectHistory(s, stock.code));
+  usePersistedPriceHistory(stock.code, true);
   const activeSurge = useSurgeStore(
     (s) => s.feed.find((entry) => entry.code === stock.code) ?? null,
   );

@@ -194,6 +194,43 @@ export interface PriceSnapshot {
   snapshotAt: string;
 }
 
+/**
+ * Downsampled intraday price point for hover sparklines and the realtime
+ * detail chart. This is not raw tick storage: live updates are compressed into
+ * fixed short buckets and pruned aggressively.
+ */
+export interface PriceHistoryPoint {
+  ticker: string;
+  bucketAt: string;
+  price: number;
+  changeRate: number;
+  sampleCount: number;
+  source: PriceCandleSource | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PriceHistoryApiItem {
+  time: number;
+  bucketAt: string;
+  price: number;
+  changePct: number;
+  sampleCount: number;
+  source: PriceCandleSource | null;
+}
+
+export interface PriceHistoryApiResponse {
+  ticker: string;
+  resolutionMs: number;
+  retentionHours: number;
+  items: PriceHistoryApiItem[];
+  coverage: {
+    from: string | null;
+    to: string | null;
+    count: number;
+  };
+}
+
 export type CandleInterval =
   | '1m'
   | '3m'

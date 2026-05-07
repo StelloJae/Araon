@@ -35,6 +35,7 @@ import {
   usePriceHistoryStore,
 } from '../stores/price-history-store';
 import { describeSectorSource } from '../lib/effective-sector';
+import { usePersistedPriceHistory } from '../hooks/usePersistedPriceHistory';
 
 interface StockRowProps {
   stock: StockViewModel;
@@ -106,6 +107,7 @@ export function StockRow({
       : 'transparent';
 
   const history = usePriceHistoryStore((s) => selectHistory(s, code));
+  usePersistedPriceHistory(code, hover);
 
   return (
     <div

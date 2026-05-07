@@ -24,6 +24,7 @@ import {
   usePriceHistoryStore,
 } from '../stores/price-history-store';
 import type { StockViewModel } from '../lib/view-models';
+import { usePersistedPriceHistory } from '../hooks/usePersistedPriceHistory';
 
 interface FavoritesBlockProps {
   stocks: ReadonlyArray<StockViewModel>;
@@ -194,6 +195,7 @@ function FavRow({
       : 'transparent';
 
   const history = usePriceHistoryStore((s) => selectHistory(s, code));
+  usePersistedPriceHistory(code, hover);
 
   return (
     <div

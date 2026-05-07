@@ -7,8 +7,8 @@
  * appended — they're a single bulk frame and don't represent intraday motion.
  *
  * Hard caps to prevent unbounded growth:
- *   - `MAX_POINTS_PER_TICKER` — 120 points (≈ a few minutes of dense ticks)
- *   - `HISTORY_TTL_MS`        — 30 minutes; older points are pruned on append
+ *   - `MAX_POINTS_PER_TICKER` — enough 5s points for today's live session
+ *   - `HISTORY_TTL_MS`        — 24 hours; older points are pruned on append
  *   - `MAX_TRACKED_TICKERS`   — 200; least-recently-touched ticker is dropped
  *                                when exceeded
  *
@@ -27,8 +27,10 @@ export interface PriceHistoryPoint {
   ts: number;
 }
 
-export const MAX_POINTS_PER_TICKER = 120;
-export const HISTORY_TTL_MS = 30 * 60_000;
+export const HISTORY_TTL_MS = 24 * 60 * 60_000;
+export const PRICE_HISTORY_BUCKET_MS = 5_000;
+export const MAX_POINTS_PER_TICKER =
+  Math.ceil(HISTORY_TTL_MS / PRICE_HISTORY_BUCKET_MS) + 1;
 export const MAX_TRACKED_TICKERS = 200;
 export const MIN_POINTS_FOR_SPARKLINE = 2;
 
@@ -38,6 +40,7 @@ interface PriceHistoryState {
   lastTouch: Record<string, number>;
 
   appendPoint: (ticker: string, point: PriceHistoryPoint) => void;
+  seedTicker: (ticker: string, points: readonly PriceHistoryPoint[]) => void;
   clearTicker: (ticker: string) => void;
   clear: () => void;
 }
@@ -48,23 +51,8 @@ export const usePriceHistoryStore = create<PriceHistoryState>((set, get) => ({
 
   appendPoint: (ticker, point) => {
     const state = get();
-    const cutoff = point.ts - HISTORY_TTL_MS;
-
-    const prev = state.byTicker[ticker] ?? [];
-    // De-dup the very last point if it lands in the same millisecond at the
-    // same price — KIS sometimes emits duplicate ticks back-to-back.
-    const last = prev[prev.length - 1];
-    const isDup =
-      last !== undefined && last.ts === point.ts && last.price === point.price;
-    const merged = isDup ? prev : [...prev, point];
-
-    // Drop points outside the TTL window.
-    const fresh = merged.filter((p) => p.ts >= cutoff);
-    // Cap to MAX_POINTS_PER_TICKER (drop oldest).
-    const capped =
-      fresh.length > MAX_POINTS_PER_TICKER
-        ? fresh.slice(fresh.length - MAX_POINTS_PER_TICKER)
-        : fresh;
+    const capped = appendTickerHistory(state.byTicker[ticker] ?? [], point);
+    if (capped === undefined) return;
 
     let nextByTicker: Record<string, PriceHistoryPoint[]> = {
       ...state.byTicker,
@@ -101,6 +89,26 @@ export const usePriceHistoryStore = create<PriceHistoryState>((set, get) => ({
     set({ byTicker: nextByTicker, lastTouch: nextLastTouch });
   },
 
+  seedTicker: (ticker, points) =>
+    set((state) => {
+      if (points.length === 0) return {};
+      const referenceTs = Math.max(...points.map((p) => p.ts));
+      const capped = normalizeTickerHistory(
+        [...(state.byTicker[ticker] ?? []), ...points],
+        referenceTs,
+      );
+      return {
+        byTicker: {
+          ...state.byTicker,
+          [ticker]: capped,
+        },
+        lastTouch: {
+          ...state.lastTouch,
+          [ticker]: referenceTs,
+        },
+      };
+    }),
+
   clearTicker: (ticker) =>
     set((state) => {
       if (
@@ -133,4 +141,74 @@ export function selectHistory(
   ticker: string,
 ): ReadonlyArray<PriceHistoryPoint> {
   return state.byTicker[ticker] ?? EMPTY_HISTORY;
+}
+
+function normalizeTickerHistory(
+  points: readonly PriceHistoryPoint[],
+  referenceTs: number,
+): PriceHistoryPoint[] {
+  const cutoff = referenceTs - HISTORY_TTL_MS;
+  const byBucket = new Map<number, PriceHistoryPoint>();
+  for (const point of points) {
+    if (!Number.isFinite(point.ts) || point.ts < cutoff) continue;
+    if (!Number.isFinite(point.price) || point.price <= 0) continue;
+    byBucket.set(bucketKey(point.ts), point);
+  }
+  const sorted = Array.from(byBucket.values()).sort((a, b) => a.ts - b.ts);
+  return sorted.length > MAX_POINTS_PER_TICKER
+    ? sorted.slice(sorted.length - MAX_POINTS_PER_TICKER)
+    : sorted;
+}
+
+function appendTickerHistory(
+  existing: readonly PriceHistoryPoint[],
+  point: PriceHistoryPoint,
+): PriceHistoryPoint[] | undefined {
+  if (!Number.isFinite(point.ts) || !Number.isFinite(point.price) || point.price <= 0) {
+    return undefined;
+  }
+
+  const cutoff = point.ts - HISTORY_TTL_MS;
+  let startIndex = 0;
+  while (startIndex < existing.length && existing[startIndex]!.ts < cutoff) {
+    startIndex += 1;
+  }
+
+  const next = existing.slice(startIndex);
+  const bucket = bucketKey(point.ts);
+  const last = next.at(-1);
+  if (last !== undefined) {
+    if (bucketKey(last.ts) === bucket) {
+      next[next.length - 1] = point;
+      return capHistory(next);
+    }
+    if (point.ts >= last.ts) {
+      next.push(point);
+      return capHistory(next);
+    }
+  }
+
+  const existingBucketIndex = next.findIndex((item) => bucketKey(item.ts) === bucket);
+  if (existingBucketIndex >= 0) {
+    next[existingBucketIndex] = point;
+    return capHistory(next);
+  }
+
+  const insertIndex = next.findIndex((item) => item.ts > point.ts);
+  if (insertIndex === -1) {
+    next.push(point);
+  } else {
+    next.splice(insertIndex, 0, point);
+  }
+  return capHistory(next);
+}
+
+function capHistory(points: PriceHistoryPoint[]): PriceHistoryPoint[] {
+  return points.length > MAX_POINTS_PER_TICKER
+    ? points.slice(points.length - MAX_POINTS_PER_TICKER)
+    : points;
+}
+
+function bucketKey(ts: number): number {
+  return Math.floor(ts / PRICE_HISTORY_BUCKET_MS);
 }

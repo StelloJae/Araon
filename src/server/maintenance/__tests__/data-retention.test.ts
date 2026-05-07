@@ -12,6 +12,7 @@ describe('data retention maintenance', () => {
     const now = new Date('2026-05-06T00:00:00.000Z');
     const scheduler = createDataRetentionScheduler({
       candleRepo: { pruneOldCandles: vi.fn(() => 2) },
+      priceHistoryRepo: { pruneOldPoints: vi.fn(() => 5) },
       signalEventRepo: { pruneOldSignalEvents: vi.fn(() => 3) },
       newsRepo: { pruneOldNewsItems: vi.fn(() => 4) },
       now: () => now,
@@ -21,6 +22,7 @@ describe('data retention maintenance', () => {
 
     expect(result).toEqual({
       candlePruned: 2,
+      priceHistoryPruned: 5,
       signalPruned: 3,
       newsPruned: 4,
       error: null,
@@ -42,6 +44,7 @@ describe('data retention maintenance', () => {
           throw new Error('database locked: raw-secret-like-material-should-not-be-preserved');
         }),
       },
+      priceHistoryRepo: { pruneOldPoints: vi.fn(() => 0) },
       signalEventRepo: { pruneOldSignalEvents: vi.fn(() => 0) },
       newsRepo: { pruneOldNewsItems: vi.fn(() => 0) },
       now: () => new Date('2026-05-06T00:00:00.000Z'),

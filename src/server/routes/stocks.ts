@@ -18,6 +18,7 @@ import type { StockService } from '../services/stock-service.js';
 import type {
   CandleCoverageRepository,
   PriceCandleRepository,
+  PriceHistoryPointRepository,
   StockDisclosureRepository,
   StockNoteRepository,
   StockObservationPlanRepository,
@@ -37,6 +38,7 @@ import type {
   CandleInterval,
   PriceCandle,
   PriceCandleSource,
+  PriceHistoryApiItem,
   StockNote,
   StockDisclosureItem,
   StockObservationPlan,
@@ -51,6 +53,10 @@ import type {
 import type { TodayMinuteBackfillService } from '../chart/today-minute-backfill-service.js';
 import type { HistoricalMinuteBackfillService } from '../chart/historical-minute-backfill-service.js';
 import type { StockNewsFeedService } from '../news/news-feed-service.js';
+import {
+  PRICE_HISTORY_POINT_BUCKET_MS,
+  PRICE_HISTORY_RETENTION_HOURS,
+} from '../price/price-history-recorder.js';
 
 const log = createChildLogger('routes/stocks');
 const MAX_DISPLAY_MINUTE_TRADE_VALUE_KRW = 5_000_000_000_000;
@@ -62,6 +68,7 @@ const FRESH_TODAY_MINUTE_COVERAGE_MS = 5 * 60 * 1000;
 export interface StockRoutesOptions extends FastifyPluginOptions {
   service: StockService;
   candleRepo?: PriceCandleRepository;
+  priceHistoryRepo?: PriceHistoryPointRepository;
   candleCoverageRepo?: CandleCoverageRepository;
   noteRepo?: StockNoteRepository;
   observationPlanRepo?: StockObservationPlanRepository;
@@ -112,6 +119,13 @@ const candlesQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   limit: z.coerce.number().int().positive().max(20_000).optional(),
+});
+
+const priceHistoryQuerySchema = z.object({
+  range: z.literal('1d').default('1d'),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(20_000).default(20_000),
 });
 
 const candleBackfillBodySchema = z.object({
@@ -903,6 +917,70 @@ export async function stockRoutes(
 
   app.get<{
     Params: { ticker: string };
+    Querystring: z.input<typeof priceHistoryQuerySchema>;
+  }>('/stocks/:ticker/price-history', async (request, reply) => {
+    if (opts.priceHistoryRepo === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'PRICE_HISTORY_REPOSITORY_NOT_WIRED' },
+      });
+    }
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+
+    const parsed = priceHistoryQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues,
+      });
+    }
+
+    const window = resolvePriceHistoryWindow(
+      parsed.data.from,
+      parsed.data.to,
+      (opts.now ?? (() => new Date()))(),
+    );
+    if (window === null) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_PRICE_HISTORY_WINDOW' },
+      });
+    }
+
+    const points = opts.priceHistoryRepo.listPoints({
+      ticker,
+      from: window.from,
+      to: window.to,
+      limit: parsed.data.limit,
+    });
+    const items = points.map(toPriceHistoryApiItem);
+    const first = items[0];
+    const last = items[items.length - 1];
+
+    return reply.send({
+      success: true,
+      data: {
+        ticker,
+        resolutionMs: PRICE_HISTORY_POINT_BUCKET_MS,
+        retentionHours: PRICE_HISTORY_RETENTION_HOURS,
+        items,
+        coverage: {
+          from: first?.bucketAt ?? null,
+          to: last?.bucketAt ?? null,
+          count: items.length,
+        },
+      },
+    });
+  });
+
+  app.get<{
+    Params: { ticker: string };
     Querystring: z.input<typeof candlesQuerySchema>;
   }>('/stocks/:ticker/candles', async (request, reply) => {
     if (opts.candleRepo === undefined) {
@@ -1045,6 +1123,40 @@ function resolveCandleWindow(
   return {
     from: new Date(toDate.getTime() - durationMs).toISOString(),
     to: toDate.toISOString(),
+  };
+}
+
+function resolvePriceHistoryWindow(
+  from: string | undefined,
+  to: string | undefined,
+  now: Date,
+): { from: string; to: string } | null {
+  const toDate = to !== undefined ? new Date(to) : now;
+  if (Number.isNaN(toDate.getTime())) return null;
+
+  if (from !== undefined) {
+    const fromDate = new Date(from);
+    if (Number.isNaN(fromDate.getTime())) return null;
+    return { from: fromDate.toISOString(), to: toDate.toISOString() };
+  }
+
+  return { from: kstStartOfDayIso(now), to: toDate.toISOString() };
+}
+
+function toPriceHistoryApiItem(point: {
+  bucketAt: string;
+  price: number;
+  changeRate: number;
+  sampleCount: number;
+  source: PriceCandleSource | null;
+}): PriceHistoryApiItem {
+  return {
+    time: Math.floor(new Date(point.bucketAt).getTime() / 1000),
+    bucketAt: point.bucketAt,
+    price: point.price,
+    changePct: point.changeRate,
+    sampleCount: point.sampleCount,
+    source: point.source,
   };
 }
 
