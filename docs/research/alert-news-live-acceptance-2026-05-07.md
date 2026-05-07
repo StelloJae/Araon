@@ -20,12 +20,15 @@ candle backfill live run was intentionally executed for this acceptance.
 ### Telegram phone bridge
 
 - Server status route was checked through the running local server.
-- Result: Telegram bridge is not configured in the current environment.
-- `POST /runtime/notifications/telegram/alert` returned the safe
+- Initial result: Telegram bridge was not configured and
+  `POST /runtime/notifications/telegram/alert` returned the safe
   `PHONE_NOTIFICATION_NOT_CONFIGURED` error.
-- Real phone delivery was **not executed** because
-  `ARAON_TELEGRAM_BOT_TOKEN` and `ARAON_TELEGRAM_CHAT_ID` are not present.
-- No raw Telegram token/chat value was printed or stored.
+- Follow-up result after redacted local `.env` configuration:
+  `GET /runtime/notifications/telegram/status` returned `configured=true`.
+- `POST /runtime/notifications/telegram/test` returned
+  `{ success: true, sent: true }`.
+- Settings > 알림 showed the configured Telegram bridge copy.
+- No raw Telegram token/chat value was committed or stored in docs.
 
 ### Stock modal alert quick-add
 
@@ -83,8 +86,7 @@ Browser Use/Playwright verified the existing local profile at
   - cached news page with live links
   - cached DART filing page
 - Settings > 알림 showed:
-  - Telegram unconfigured copy
-  - disabled Telegram test button
+  - Telegram configured copy after the follow-up env configuration
   - recent alert delivery log empty state
 
 ## Verification
@@ -98,17 +100,16 @@ Focused tests:
 
 Focused result: 4 files / 22 tests passed.
 
-Full verification should still include:
+Full verification:
 
-- `npm test`
-- `npm run typecheck`
-- `npm run build`
-- `git diff --check`
-- raw secret/token/key leak grep
+- `npm test` → 107 files / 779 tests passed.
+- `npm run typecheck` → pass.
+- `npm run build` → pass.
+- `git diff --check` → pass.
+- raw secret/token/key leak grep, excluding ignored `.env` → no matches.
 
 ## Remaining
 
-- Telegram real phone delivery remains pending until the user supplies
-  Telegram bot token and chat id in env.
+- Telegram real phone delivery is verified for the local env path.
 - Naver/OpenDART live acceptance is complete for the selected 005930 path, but
   long-run parser/provider observation remains useful.
