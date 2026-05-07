@@ -299,6 +299,7 @@ export async function runtimeRoutes(
             ? new Date(backfillState.cooldownUntilMs).toISOString()
             : null,
           cooldownActive: backfillState.cooldownUntilMs > Date.now(),
+          recent: backgroundBackfill.recent,
         },
         volumeBaseline: baselineCounts,
         growth: {
@@ -646,6 +647,7 @@ function emptyBackgroundBackfill(): BackgroundBackfillSchedulerSnapshot {
     lastSucceeded: 0,
     lastFailed: 0,
     lastSkippedReason: null,
+    recent: [],
   };
 }
 

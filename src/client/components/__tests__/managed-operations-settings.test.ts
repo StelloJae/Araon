@@ -130,6 +130,18 @@ describe('managed operations settings copy', () => {
             dailyCallBudget: null,
             cooldownUntil: null,
             cooldownActive: false,
+            recent: [
+              {
+                ticker: '005930',
+                status: 'success',
+                requested: 20,
+                inserted: 20,
+                updated: 0,
+                source: 'kis-daily',
+                finishedAt: '2026-05-06T11:05:10.000Z',
+                errorCode: null,
+              },
+            ],
           },
           volumeBaseline: {
             total: 12,
@@ -218,6 +230,8 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('candle 정리');
     expect(html).toContain('오늘 백필 호출');
     expect(html).toContain('4회');
+    expect(html).toContain('최근 보강');
+    expect(html).toContain('005930');
   });
 
   it('presents local backup as user data only and excludes credentials copy', () => {

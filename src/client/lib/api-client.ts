@@ -564,6 +564,16 @@ export interface RuntimeDataHealthPayload {
     dailyCallBudget: number | null;
     cooldownUntil: string | null;
     cooldownActive: boolean;
+    recent: Array<{
+      ticker: string;
+      status: 'success' | 'failed';
+      requested: number;
+      inserted: number;
+      updated: number;
+      source: 'kis-daily' | null;
+      finishedAt: string;
+      errorCode: string | null;
+    }>;
   };
   volumeBaseline: {
     total: number;

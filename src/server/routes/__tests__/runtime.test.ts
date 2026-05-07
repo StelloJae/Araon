@@ -267,6 +267,18 @@ describe('GET /runtime/data-health', () => {
           lastSucceeded: 1,
           lastFailed: 0,
           lastSkippedReason: null,
+          recent: [
+            {
+              ticker: '005930',
+              status: 'success',
+              requested: 20,
+              inserted: 20,
+              updated: 0,
+              source: 'kis-daily',
+              finishedAt: '2026-05-06T11:05:10.000Z',
+              errorCode: null,
+            },
+          ],
         })),
       },
     });
@@ -297,6 +309,18 @@ describe('GET /runtime/data-health', () => {
           dailyCallBudget: null,
           cooldownUntil: null,
           cooldownActive: false,
+          recent: [
+            {
+              ticker: '005930',
+              status: 'success',
+              requested: 20,
+              inserted: 20,
+              updated: 0,
+              source: 'kis-daily',
+              finishedAt: '2026-05-06T11:05:10.000Z',
+              errorCode: null,
+            },
+          ],
         },
         volumeBaseline: {
           total: 2,

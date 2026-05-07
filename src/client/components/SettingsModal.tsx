@@ -1347,6 +1347,12 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
                 백필 쿨다운: {formatLocal(health.backfill.cooldownUntil)}까지
               </>
             )}
+            {health.backfill.recent.length > 0 && (
+              <>
+                <br />
+                최근 보강: {formatBackfillRecent(health.backfill.recent)}
+              </>
+            )}
           </div>
         </>
       )}
@@ -1711,6 +1717,17 @@ function backfillSkippedReasonLabel(
     case null:
       return '정상';
   }
+}
+
+function formatBackfillRecent(
+  recent: RuntimeDataHealthPayload['backfill']['recent'],
+): string {
+  return recent.slice(-3).map((item) => {
+    if (item.status === 'failed') {
+      return `${item.ticker} 실패 ${item.errorCode ?? 'UNKNOWN'}`;
+    }
+    return `${item.ticker} 성공 +${item.inserted}/~${item.updated}`;
+  }).join(' · ');
 }
 
 // ---------- Notif tab ----------

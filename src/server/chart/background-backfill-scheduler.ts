@@ -16,6 +16,7 @@ const DEFAULT_MAX_TICKERS_PER_RUN = 5;
 const DEFAULT_REQUEST_GAP_MS = 2_500;
 const DEFAULT_5XX_COOLDOWN_MS = 5 * 60 * 1000;
 const DEFAULT_429_COOLDOWN_MS = 10 * 60 * 1000;
+const RECENT_ATTEMPT_LIMIT = 20;
 
 export type BackgroundBackfillSkippedReason =
   | 'disabled'
@@ -49,6 +50,18 @@ export interface BackgroundBackfillSchedulerSnapshot {
   lastSucceeded: number;
   lastFailed: number;
   lastSkippedReason: BackgroundBackfillSkippedReason;
+  recent: BackgroundBackfillAttemptSummary[];
+}
+
+export interface BackgroundBackfillAttemptSummary {
+  ticker: string;
+  status: 'success' | 'failed';
+  requested: number;
+  inserted: number;
+  updated: number;
+  source: DailyBackfillResult['source'] | null;
+  finishedAt: string;
+  errorCode: string | null;
 }
 
 export interface BackgroundBackfillState {
@@ -102,6 +115,7 @@ export function createBackgroundDailyBackfillScheduler(
   let lastSucceeded = 0;
   let lastFailed = 0;
   let lastSkippedReason: BackgroundBackfillSkippedReason = null;
+  const recentAttempts: BackgroundBackfillAttemptSummary[] = [];
 
   async function runOnce(nowOverride?: Date): Promise<BackgroundBackfillRunResult> {
     if (inFlight !== null) {
@@ -161,17 +175,36 @@ export function createBackgroundDailyBackfillScheduler(
       await persistState();
       attempted += 1;
       try {
-        results.push(
-          await options.dailyBackfillService.backfillDailyCandles({
-            ticker,
-            range,
-            now: runAt,
-          }),
-        );
+        const result = await options.dailyBackfillService.backfillDailyCandles({
+          ticker,
+          range,
+          now: runAt,
+        });
+        results.push(result);
+        pushRecentAttempt({
+          ticker,
+          status: 'success',
+          requested: result.requested,
+          inserted: result.inserted,
+          updated: result.updated,
+          source: result.source,
+          finishedAt: runAt.toISOString(),
+          errorCode: null,
+        });
       } catch (err: unknown) {
         failed += 1;
         cooldownUntilMs = runAt.getTime() + cooldownMsForError(err);
         await persistState();
+        pushRecentAttempt({
+          ticker,
+          status: 'failed',
+          requested: 0,
+          inserted: 0,
+          updated: 0,
+          source: null,
+          finishedAt: runAt.toISOString(),
+          errorCode: classifyBackfillError(err),
+        });
         log.warn(
           { ticker, err: err instanceof Error ? err.message : String(err) },
           'background daily backfill failed for ticker',
@@ -238,6 +271,7 @@ export function createBackgroundDailyBackfillScheduler(
       lastSucceeded,
       lastFailed,
       lastSkippedReason,
+      recent: [...recentAttempts],
     };
   }
 
@@ -295,6 +329,13 @@ export function createBackgroundDailyBackfillScheduler(
     cooldownUntilMs = 0;
     return true;
   }
+
+  function pushRecentAttempt(attempt: BackgroundBackfillAttemptSummary): void {
+    recentAttempts.push(attempt);
+    if (recentAttempts.length > RECENT_ATTEMPT_LIMIT) {
+      recentAttempts.splice(0, recentAttempts.length - RECENT_ATTEMPT_LIMIT);
+    }
+  }
 }
 
 function emptyResult(
@@ -333,6 +374,14 @@ function cooldownMsForError(err: unknown): number {
   return /429|rate.?limit|throttle/i.test(message)
     ? DEFAULT_429_COOLDOWN_MS
     : DEFAULT_5XX_COOLDOWN_MS;
+}
+
+function classifyBackfillError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/429|rate.?limit|throttle/i.test(message)) return 'RATE_LIMIT';
+  if (/401|403|credential|auth/i.test(message)) return 'AUTH';
+  if (/timeout|timed.?out/i.test(message)) return 'TIMEOUT';
+  return 'UPSTREAM';
 }
 
 function sleep(ms: number): Promise<void> {

@@ -170,6 +170,56 @@ describe('createBackgroundDailyBackfillScheduler', () => {
     expect(backfillDailyCandles).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps a compact recent ticker history in the snapshot', async () => {
+    const backfillDailyCandles = vi.fn(async (input: { ticker: string }) => ({
+      ticker: input.ticker,
+      requested: 20,
+      inserted: input.ticker === '005930' ? 20 : 0,
+      updated: input.ticker === '000660' ? 20 : 0,
+      from: '2026-05-01T15:00:00.000Z',
+      to: '2026-05-01T15:00:00.000Z',
+      source: 'kis-daily' as const,
+      coverage: { backfilled: true, localOnly: false },
+    }));
+    const scheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: {
+        findAll: () => [stock('005930'), stock('000660')],
+      },
+      favoriteRepo: { findAll: () => [] },
+      dailyBackfillService: { backfillDailyCandles },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:05:00.000Z'),
+      maxTickersPerRun: 2,
+      requestGapMs: 0,
+    });
+
+    await scheduler.runOnce();
+
+    expect(scheduler.snapshot().recent).toEqual([
+      {
+        ticker: '005930',
+        status: 'success',
+        requested: 20,
+        inserted: 20,
+        updated: 0,
+        source: 'kis-daily',
+        finishedAt: '2026-05-05T11:05:00.000Z',
+        errorCode: null,
+      },
+      {
+        ticker: '000660',
+        status: 'success',
+        requested: 20,
+        inserted: 0,
+        updated: 20,
+        source: 'kis-daily',
+        finishedAt: '2026-05-05T11:05:00.000Z',
+        errorCode: null,
+      },
+    ]);
+  });
+
   it('skips up-to-date tickers before counting calls', async () => {
     const shouldBackfillTicker = vi.fn(({ ticker }: { ticker: string }) => ticker === '042700');
     const backfillDailyCandles = vi.fn(async (input: { ticker: string }) => ({
