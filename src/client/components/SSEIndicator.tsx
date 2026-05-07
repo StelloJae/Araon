@@ -216,7 +216,7 @@ export function SSEIndicator({
             <PanelRow
               k="WS 런타임"
               v={runtimeStatusLabel(runtimeStatus, runtimeStatusError)}
-              chip={runtimeStatus?.source === 'integrated' ? '통합' : '대기'}
+              chip={runtimeSourceChip(runtimeStatus?.source)}
               chipColor="var(--text-muted)"
             />
             <PanelRow
@@ -327,6 +327,12 @@ function runtimeStatusLabel(
   if (hasError) return '조회 실패';
   if (status === null) return '조회 중';
   return RUNTIME_STATE_LABEL[status.state];
+}
+
+function runtimeSourceChip(source: RealtimeStatusPayload['source'] | undefined): string {
+  if (source === 'nxt') return 'NXT';
+  if (source === 'integrated') return '통합';
+  return '대기';
 }
 
 function runtimeGateLabel(status: RealtimeStatusPayload | null): string {

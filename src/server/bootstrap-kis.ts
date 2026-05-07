@@ -222,6 +222,7 @@ import {
   shouldApplyRuntimeWsTicks,
   type SessionEndReason,
 } from './realtime/runtime-operator.js';
+import { resolveRealtimeTickTrId } from './realtime/realtime-feed-route.js';
 
 // NXT4a wrapper: parse real KIS WS frames and expose parsed ticks to the
 // bridge. The bridge still defaults to applyTicksToPriceStore=false, so parsing
@@ -404,13 +405,22 @@ export async function defaultActuallyStart(
     },
   });
 
+  const syncRealtimeFeedRoute = async (): Promise<void> => {
+    await bridge.setTrId(resolveRealtimeTickTrId());
+  };
+
   const marketHoursScheduler = createMarketHoursScheduler({
     onWarmup: async () => {
       if (deps.settingsStore.snapshot().websocketEnabled) {
+        await syncRealtimeFeedRoute();
         await connectRealtimeFavoritesOnWarmup({ bridge, tierManager });
       }
     },
-    onOpen: async () => { /* connection established during warmup */ },
+    onOpen: async () => {
+      if (deps.settingsStore.snapshot().websocketEnabled) {
+        await syncRealtimeFeedRoute();
+      }
+    },
     onClose: async () => {
       if (deps.settingsStore.snapshot().websocketEnabled) {
         await bridge.disconnectAll();
@@ -430,6 +440,15 @@ export async function defaultActuallyStart(
   pollingScheduler.start();
   const stopSnapshotTimer = deps.snapshotStore.startPeriodicSave(deps.priceStore);
   marketHoursScheduler.start();
+  const realtimeFeedRouteTimer = setInterval(() => {
+    if (!deps.settingsStore.snapshot().websocketEnabled) return;
+    void syncRealtimeFeedRoute().catch((err: unknown) => {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'realtime feed route sync failed',
+      );
+    });
+  }, 60_000);
 
   return {
     auth,
@@ -442,6 +461,9 @@ export async function defaultActuallyStart(
     pollingScheduler,
     sseManager,
     marketHoursScheduler,
-    stopSnapshotTimer,
+    stopSnapshotTimer: () => {
+      clearInterval(realtimeFeedRouteTimer);
+      stopSnapshotTimer();
+    },
   };
 }

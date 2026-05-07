@@ -97,7 +97,7 @@ export interface RuntimeRealtimeStatusPayload {
   readonly configured: boolean;
   readonly runtimeStatus: KisRuntimeState['status'];
   readonly state: RealtimeOperatorState;
-  readonly source: 'integrated';
+  readonly source: RealtimeOperatorStatus['source'];
   readonly websocketEnabled: boolean;
   readonly applyTicksToPriceStore: boolean;
   readonly canApplyTicksToPriceStore: boolean;
@@ -477,6 +477,13 @@ export async function runtimeRoutes(
 
     if (runtimeState.status === 'started') {
       await enforceSessionLimits(runtimeState.runtime);
+      const bridgeWithSource = runtimeState.runtime.bridge as {
+        getSource?: () => RealtimeOperatorStatus['source'];
+      };
+      const bridgeSource =
+        typeof bridgeWithSource.getSource === 'function'
+          ? bridgeWithSource.getSource()
+          : 'integrated';
       const status = buildRealtimeOperatorStatus({
         wsStatus: runtimeState.runtime.wsClient.getStatus(),
         activeSubscriptions: runtimeState.runtime.wsClient.activeSubscriptions(),
@@ -484,6 +491,7 @@ export async function runtimeRoutes(
         session: runtimeState.runtime.sessionGate.snapshot(),
         stats: runtimeState.runtime.bridge.getStats(),
         approvalKeyState: runtimeState.runtime.approvalIssuer.getState(),
+        source: bridgeSource,
       });
 
       return reply.send({

@@ -5,6 +5,7 @@ import type {
   WsSubscription,
 } from '../kis/kis-ws-client.js';
 import type { RealtimeBridge, RealtimeBridgeStats } from './realtime-bridge.js';
+import type { RealtimeFeedSource } from './realtime-feed-route.js';
 import type { Settings } from '../settings-store.js';
 
 export const SESSION_REALTIME_CAPS = [1, 3, 5, 10, 20, 40] as const;
@@ -79,7 +80,7 @@ export interface RealtimeSessionGate {
 
 export interface RealtimeOperatorStatus {
   readonly state: RealtimeOperatorState;
-  readonly source: 'integrated';
+  readonly source: RealtimeFeedSource;
   readonly enabledGates: RuntimeWsGates & {
     readonly canApplyTicksToPriceStore: boolean;
   };
@@ -109,6 +110,7 @@ export interface BuildRealtimeOperatorStatusInput {
   readonly session?: RealtimeSessionState;
   readonly stats: RealtimeBridgeStats;
   readonly approvalKeyState?: ApprovalKeyState;
+  readonly source?: RealtimeFeedSource;
 }
 
 export interface OperatorDisableDeps {
@@ -384,7 +386,7 @@ export function buildRealtimeOperatorStatus(
   );
   return {
     state: mapWsState(input.wsStatus),
-    source: 'integrated',
+    source: input.source ?? 'integrated',
     enabledGates: {
       ...input.gates,
       canApplyTicksToPriceStore,

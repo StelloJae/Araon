@@ -18,6 +18,7 @@ import Database from 'better-sqlite3';
 import type { Favorite, Price } from '@shared/types.js';
 import {
   KIS_WS_TICK_TR_ID_INTEGRATED,
+  KIS_WS_TICK_TR_ID_NXT,
   WS_MAX_SUBSCRIPTIONS,
   WS_SUBSCRIBE_INTERVAL_MS,
 } from '@shared/kis-constraints.js';
@@ -431,6 +432,39 @@ describe('RealtimeBridge — progressive re-subscribe', () => {
 
     expect(ws.subscribeCalls).toEqual([
       { trId: KIS_WS_TICK_TR_ID_INTEGRATED, trKey: '005930' },
+    ]);
+  });
+
+  it('switches active tier 1 subscriptions to the NXT tick TR_ID without opening a second socket', async () => {
+    const ws = makeFakeWs();
+    const writes: Price[] = [];
+    const parseTick: WsTickParser = (): ParsedWsFrame => ({
+      kind: 'ignore',
+      reason: 'test',
+    });
+
+    const bridge = createRealtimeBridge({
+      wsClient: ws.client,
+      priceStore: makeTestPriceStore(writes),
+      parseTick,
+    });
+
+    await bridge.connect();
+    await bridge.applyDiff({ subscribe: ['005930', '000660'], unsubscribe: [] });
+    ws.subscribeCalls.length = 0;
+
+    const switchPromise = bridge.setTrId(KIS_WS_TICK_TR_ID_NXT);
+    await vi.advanceTimersByTimeAsync(WS_SUBSCRIBE_INTERVAL_MS * 4);
+    await switchPromise;
+
+    expect(ws.disconnectCalls).toBe(0);
+    expect(ws.unsubscribeCalls).toEqual([
+      { trId: KIS_WS_TICK_TR_ID_INTEGRATED, trKey: '005930' },
+      { trId: KIS_WS_TICK_TR_ID_INTEGRATED, trKey: '000660' },
+    ]);
+    expect(ws.subscribeCalls).toEqual([
+      { trId: KIS_WS_TICK_TR_ID_NXT, trKey: '005930' },
+      { trId: KIS_WS_TICK_TR_ID_NXT, trKey: '000660' },
     ]);
   });
 });

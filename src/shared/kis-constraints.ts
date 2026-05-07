@@ -40,6 +40,15 @@ export const WS_SUBSCRIBE_INTERVAL_MS = 100;
 export const KIS_WS_TICK_TR_ID_INTEGRATED = 'H0UNCNT0';
 
 /**
+ * NXT-only realtime 체결가 TR_ID.
+ *
+ * The integrated feed is still the regular-session default, but live evidence
+ * showed no premarket ticks on `H0UNCNT0` while the official KIS samples expose
+ * `H0NXCNT0` for NXT pre/after-hours trading.
+ */
+export const KIS_WS_TICK_TR_ID_NXT = 'H0NXCNT0';
+
+/**
  * KIS WebSocket ping interval (server-side keepalive).
  *
  * Source: https://wikidocs.net/170517 (`ping_interval=60` in Python samples)

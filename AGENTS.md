@@ -10,7 +10,7 @@ Araon은 localhost 단일 사용자용 한국 주식 watchlist 대시보드다.
 
 - Runtime: Node 20, Fastify 5, React 19, Vite
 - Data source: KIS OpenAPI
-- Realtime: KIS credentials 등록 후 H0UNCNT0 통합 WebSocket cap40 managed default
+- Realtime: KIS credentials 등록 후 장중 H0UNCNT0, 장전/장후 H0NXCNT0 WebSocket cap40 managed default
 - Fallback: REST polling 유지
 - Chart: local 1m candle, KIS daily 1d candle, 서버 집계 3m~12h/1W/1M
 - Packaging: CLI/npm and Electron desktop

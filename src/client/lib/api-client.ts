@@ -360,7 +360,7 @@ export interface RealtimeStatusPayload {
   configured: boolean;
   runtimeStatus: 'unconfigured' | 'starting' | 'started' | 'failed';
   state: 'idle' | 'connecting' | 'connected' | 'degraded' | 'disabled' | 'manual-disabled';
-  source: 'integrated';
+  source: 'integrated' | 'nxt';
   websocketEnabled: boolean;
   applyTicksToPriceStore: boolean;
   canApplyTicksToPriceStore: boolean;

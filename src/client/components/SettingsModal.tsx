@@ -859,9 +859,9 @@ export function RealtimeSessionControl({
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        통합 실시간 시세는 H0UNCNT0 기반으로 검증 완료됐고, credentials 등록 후 자동 운영됩니다.
+        실시간 시세는 장중 통합 feed, 장전/장후 NXT feed로 자동 전환됩니다.
         <br />
-        최대 40종목까지 통합 시세로 받고 REST 폴링 fallback은 항상 유지됩니다.
+        최대 40종목까지 실시간으로 받고 REST 폴링 fallback은 항상 유지됩니다.
         <br />
         일반 설정을 켤 필요 없이 Araon이 favorites와 추적 종목을 관리합니다.
         <br />

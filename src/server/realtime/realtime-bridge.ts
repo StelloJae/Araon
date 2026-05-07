@@ -33,6 +33,10 @@ import type {
   WsConnectionState,
   WsSubscription,
 } from '../kis/kis-ws-client.js';
+import {
+  realtimeFeedSourceFromTrId,
+  type RealtimeFeedSource,
+} from './realtime-feed-route.js';
 import type { TierDiff } from './tier-manager.js';
 
 const log = createChildLogger('realtime-bridge');
@@ -173,7 +177,7 @@ export class RealtimeBridge extends EventEmitter {
   private readonly wsClient: KisWsClient;
   private readonly priceStore: PriceStoreWriter;
   private readonly parseTick: WsTickParser;
-  private readonly trId: string;
+  private trId: string;
   private readonly subscribeIntervalMs: number;
   private readonly applyTicksToPriceStore: boolean;
   private readonly canApplyTicksToPriceStore: (
@@ -236,6 +240,59 @@ export class RealtimeBridge extends EventEmitter {
   /** Returns the current Tier 1 ticker set (defensive copy). */
   getRealtimeTickers(): readonly string[] {
     return Array.from(this.tier1);
+  }
+
+  getTrId(): string {
+    return this.trId;
+  }
+
+  getSource(): RealtimeFeedSource {
+    return realtimeFeedSourceFromTrId(this.trId);
+  }
+
+  async setTrId(nextTrId: string): Promise<void> {
+    if (nextTrId === this.trId) return;
+
+    const previousTrId = this.trId;
+    const tickers = Array.from(this.tier1);
+    if (this.wsClient.state() !== 'connected' || tickers.length === 0) {
+      this.trId = nextTrId;
+      return;
+    }
+
+    for (const ticker of tickers) {
+      try {
+        await this.wsClient.unsubscribe({ trId: previousTrId, trKey: ticker });
+      } catch (err: unknown) {
+        log.warn(
+          {
+            ticker,
+            previousTrId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'ws route-switch unsubscribe failed',
+        );
+      }
+      await this.wait(this.subscribeIntervalMs);
+    }
+
+    this.trId = nextTrId;
+
+    for (const ticker of tickers) {
+      try {
+        await this.wsClient.subscribe(this.toSub(ticker));
+      } catch (err: unknown) {
+        log.warn(
+          {
+            ticker,
+            nextTrId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'ws route-switch subscribe failed',
+        );
+      }
+      await this.wait(this.subscribeIntervalMs);
+    }
   }
 
   /**
