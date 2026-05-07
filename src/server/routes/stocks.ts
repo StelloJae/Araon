@@ -129,6 +129,7 @@ const ensureCoverageBodySchema = z.object({
   range: candleRangeSchema,
   from: z.string().optional(),
   to: z.string().optional(),
+  force: z.boolean().optional().default(false),
 });
 
 const stockNoteBodySchema = z.object({
@@ -622,7 +623,8 @@ export async function stockRoutes(
       }
       const range = dailyBackfillRangeForCandleRange(parsed.data.range);
       if (
-        opts.candleCoverageRepo?.hasCompleteCoverage({
+        parsed.data.force !== true &&
+        (opts.candleCoverageRepo?.hasCompleteCoverage({
           ticker,
           interval: '1d',
           source: 'kis-daily',
@@ -634,7 +636,7 @@ export async function stockRoutes(
           range,
           now,
           repo: opts.candleRepo,
-        })
+        }))
       ) {
         return reply.send({
           success: true,
@@ -708,7 +710,7 @@ export async function stockRoutes(
           },
         });
       }
-      if (hasFreshTodayMinuteCoverage(opts.candleRepo, ticker, now)) {
+      if (parsed.data.force !== true && hasFreshTodayMinuteCoverage(opts.candleRepo, ticker, now)) {
         return reply.send({
           success: true,
           data: {
@@ -780,7 +782,10 @@ export async function stockRoutes(
       });
     }
 
-    if (hasBackfilledIntradayInWindow(opts.candleRepo, opts.candleCoverageRepo, ticker, window)) {
+    if (
+      parsed.data.force !== true &&
+      hasBackfilledIntradayInWindow(opts.candleRepo, opts.candleCoverageRepo, ticker, window)
+    ) {
       return reply.send({
         success: true,
         data: {

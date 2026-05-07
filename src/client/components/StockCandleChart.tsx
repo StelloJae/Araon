@@ -45,6 +45,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
   const [items, setItems] = useState<CandleApiItem[]>([]);
   const [coverage, setCoverage] = useState<CandleApiCoverage | null>(null);
   const [coveragePending, setCoveragePending] = useState(false);
+  const [repairPending, setRepairPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [dataSourceText, setDataSourceText] = useState('로컬 저장 candle');
 
@@ -114,6 +115,49 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
     };
   }, [ticker, interval, range]);
 
+  const refetchCandles = () => {
+    setStatus('loading');
+    return getStockCandles(ticker, { interval, range })
+      .then((data) => {
+        setItems(data.items);
+        setCoverage(data.coverage);
+        setStatus(data.items.length === 0 ? 'empty' : 'ready');
+        const sources = data.coverage.sourceMix;
+        setDataSourceText(
+          sources.includes('kis-time-daily')
+            ? 'KIS 과거 분봉 포함'
+            : sources.includes('kis-time-today')
+              ? 'KIS 당일분봉 포함'
+            : data.coverage.backfilled
+              ? 'KIS 일봉 백필 포함'
+              : '로컬 저장 candle',
+        );
+        if (data.items.length === 0) setMessage(data.status.message);
+      })
+      .catch(() => {
+        setItems([]);
+        setCoverage(null);
+        setStatus('error');
+        setDataSourceText('로컬 저장 candle');
+      });
+  };
+
+  const handleRepair = () => {
+    setRepairPending(true);
+    setMessage(dailyInterval(interval) ? '일봉 차트 재검사 중' : '분봉 차트 재검사 중');
+    ensureStockCandleCoverage(ticker, { interval, range, force: true })
+      .then((coverage) => {
+        setMessage(coverage.message);
+      })
+      .catch(() => {
+        setMessage('현재 범위 재보강을 시작하지 못했습니다.');
+      })
+      .then(() => refetchCandles())
+      .finally(() => {
+        setRepairPending(false);
+      });
+  };
+
   return (
     <div>
       <div
@@ -145,9 +189,10 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
         />
         <ChartAutoBackfillStatus
           interval={interval}
-          pending={coveragePending}
+          pending={coveragePending || repairPending}
           message={message}
         />
+        <ChartRepairButton running={repairPending} onRepair={handleRepair} />
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           {dataSourceText}
@@ -166,6 +211,36 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
         range={range}
       />
     </div>
+  );
+}
+
+export function ChartRepairButton({
+  running,
+  onRepair,
+}: {
+  running: boolean;
+  onRepair: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onRepair}
+      disabled={running}
+      title="현재 보이는 종목과 범위만 다시 보강합니다"
+      style={{
+        height: 30,
+        border: '1px solid var(--border-soft)',
+        borderRadius: 8,
+        background: running ? 'var(--bg-muted)' : 'var(--bg-card)',
+        color: running ? 'var(--text-muted)' : 'var(--text-primary)',
+        fontSize: 11,
+        fontWeight: 800,
+        padding: '0 9px',
+        cursor: running ? 'wait' : 'pointer',
+      }}
+    >
+      {running ? '재검사 중' : '차트 재검사'}
+    </button>
   );
 }
 

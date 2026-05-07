@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CandleChartView,
   ChartAutoBackfillStatus,
+  ChartRepairButton,
   CandleDataInspector,
   PinnedCandlePanel,
   formatCandleTooltipRows,
@@ -149,6 +150,19 @@ describe('StockCandleChart', () => {
     expect(daily).toContain('보강 중');
     expect(intraday).not.toContain('오늘 분봉 가져오기');
     expect(daily).not.toContain('과거 일봉 가져오기');
+  });
+
+  it('renders a compact chart repair control for the visible range', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChartRepairButton, {
+        running: false,
+        onRepair: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('차트 재검사');
+    expect(html).toContain('현재 보이는 종목과 범위만 다시 보강합니다');
+    expect(html).not.toContain('disabled');
   });
 
   it('can render weekly chart metadata without synthetic data', () => {

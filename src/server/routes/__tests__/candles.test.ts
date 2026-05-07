@@ -641,6 +641,62 @@ describe('GET /stocks/:ticker/candles', () => {
     });
   });
 
+  it('force-repairs selected intraday coverage even when the ledger is already complete', async () => {
+    const backfillHistoricalMinuteCandles = vi.fn().mockResolvedValue({
+      ticker: '005930',
+      requested: 120,
+      inserted: 0,
+      updated: 120,
+      from: '2026-05-04T00:00:00.000Z',
+      to: '2026-05-04T11:00:00.000Z',
+      source: 'kis-time-daily',
+      pages: 2,
+      tradingDays: 1,
+      coverage: { backfilled: true, localOnly: false },
+    });
+    const coverageRepo = new CandleCoverageRepository(db);
+    coverageRepo.upsertSegment({
+      ticker: '005930',
+      interval: '1m',
+      source: 'kis-time-daily',
+      rangeFrom: '2026-05-04T00:00:00.000Z',
+      rangeTo: '2026-05-04T11:00:00.000Z',
+      status: 'complete',
+      requested: 240,
+      inserted: 200,
+      updated: 40,
+      now: new Date('2026-05-05T11:00:00.000Z'),
+    });
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      candleCoverageRepo: coverageRepo,
+      historicalMinuteBackfillService: { backfillHistoricalMinuteCandles },
+      now: () => new Date('2026-05-05T11:10:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload: {
+        interval: '5m',
+        range: '1d',
+        from: '2026-05-04T00:00:00.000Z',
+        to: '2026-05-04T11:00:00.000Z',
+        force: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(backfillHistoricalMinuteCandles).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(res.body).data).toMatchObject({
+      state: 'backfilled',
+      source: 'kis-time-daily',
+      requested: 120,
+    });
+  });
+
   it('repository lists stored local candles and skips untracked tickers', async () => {
     const repo = new PriceCandleRepository(db);
     await repo.bulkUpsertCandles([

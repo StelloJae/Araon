@@ -265,6 +265,7 @@ export async function ensureStockCandleCoverage(
   options: {
     interval: CandleInterval;
     range: CandleRange;
+    force?: boolean;
   },
 ): Promise<{
   state: 'backfilled' | 'current' | 'empty' | 'skipped';
