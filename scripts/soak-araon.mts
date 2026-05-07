@@ -24,6 +24,7 @@ const dataDir =
 
 const endpoints = [
   '/credentials/status',
+  '/stocks',
   '/runtime/realtime/status',
   '/runtime/data-health',
   '/runtime/signals/outcomes',

@@ -10,6 +10,7 @@ The harness starts Araon with a fresh temporary data directory and no KIS
 credentials. It polls:
 
 - `GET /credentials/status`
+- `GET /stocks`
 - `GET /runtime/realtime/status`
 - `GET /runtime/data-health`
 - `GET /runtime/signals/outcomes`
@@ -17,6 +18,14 @@ credentials. It polls:
 
 The run fails if a sampled endpoint returns non-2xx, non-JSON, or a
 sensitive-looking raw value.
+
+The data-health sample is the main operational surface for:
+
+- background daily backfill state and recent ticker attempts
+- signal outcome evaluation counts
+- candle coverage and retention diagnostics
+- news/note/signal table growth
+- volume baseline readiness
 
 ## Scope
 

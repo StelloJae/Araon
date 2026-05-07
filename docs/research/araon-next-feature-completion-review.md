@@ -2,8 +2,8 @@
 
 Date: 2026-05-07 KST
 
-This document summarizes the seven feature/hardening items completed after the
-beta desktop work. It is written as a compact review packet for GPT 5.5 Pro.
+This document summarizes the seven product hardening items completed after the
+desktop beta work. It is written as a compact review packet for GPT 5.5 Pro.
 
 ## Verdict
 
@@ -13,187 +13,151 @@ Release status: **not released in this task**
 
 Live-call status:
 
-- KIS token issuance: 0
-- KIS approval-key issuance: 0
-- WebSocket/cap test: 0
-- daily/minute backfill live call: 0
+- KIS token issuance: 0 during this feature batch
+- KIS approval-key issuance: 0 during this feature batch
+- WebSocket/cap test: 0 during this feature batch
+- daily/minute backfill live call: 0 during this feature batch
 
 ## Completed items
 
-### 1. Candle Coverage Ledger + Gap-Aware Backfill
+### 1. Chart visible-range repair
 
-Commit: `df403f9 feat(chart): track candle coverage ledger`
-
-What changed:
-
-- Added `candle_coverage_segments`.
-- Recorded successful selected-ticker coverage windows.
-- `ensure-coverage` skips repeated exact window fetches when the ledger already
-  has a complete segment.
-- Candle API coverage can include ledger metadata.
-
-Product value:
-
-- Chart range changes no longer blindly repeat backfill calls for the same
-  already-covered window.
-
-### 2. Chart Data Inspector
-
-Commit: `85902f9 feat(chart): show candle data inspector`
+Commit: `13ab4ad feat(chart): add visible range repair control`
 
 What changed:
 
-- Candle coverage now reports visible bucket gaps.
-- Stock candle chart includes a compact data inspector for source mix, gaps,
-  partial candles, and coverage ledger state.
+- `POST /stocks/:ticker/candles/ensure-coverage` accepts an explicit `force`.
+- `StockCandleChart` exposes a small `차트 재검사` control.
+- Forced repair bypasses stale coverage ledger state only for the selected
+  ticker/range.
 
 Product value:
 
-- Users can see why a chart looks sparse instead of assuming the app is broken.
+- If a chart range looks wrong, the user can repair that visible range without
+  pretending missing data exists.
 
-### 3. Signal Outcome Dashboard
+### 2. Background daily backfill transparency
 
-Commit: `61062ff feat(signals): summarize signal outcome performance`
+Commit: `a53454a feat(backfill): surface recent daily backfill activity`
 
 What changed:
 
-- Added `GET /runtime/signals/outcomes`.
-- Summarizes signal outcomes across 5m, 15m, and 30m horizons.
-- Data health panel surfaces evaluated/pending signal outcome counts.
-- Missing candle coverage stays pending; no synthetic return is created.
+- Background daily backfill snapshots include a compact recent ticker history.
+- `/runtime/data-health` exposes recent success/failure attempts.
+- Settings data-health panel shows recent ticker activity.
 
 Product value:
 
-- Araon can start judging whether its realtime signal stream is useful.
+- The user can see that daily filling is waiting, running, succeeding, or
+  failing for actual tickers instead of guessing from a vague banner.
 
-### 4. Watch Thesis / Observation Plan
+### 3. Signal outcome dashboard visibility
 
-Commit: `ed9786b feat(notes): add stock observation plans`
+Commit: `546a14b feat(signals): show outcome dashboard in data health`
 
 What changed:
 
-- Added `stock_observation_plans`.
-- Added per-ticker plan API and StockDetailModal panel.
-- Stores thesis, trigger, invalidation, and status.
+- Data-health now shows 5m/15m/30m average signal outcomes when candle coverage
+  exists.
+- Missing post-signal candles remain pending; no synthetic return is created.
 
 Product value:
 
-- A tracked stock can now have a concrete observation plan instead of just a
-  passive note list.
+- Araon starts answering whether its realtime signal stream is useful, while
+  staying honest about missing candle coverage.
 
-### 5. Structured Disclosure Feed
+### 4. Observation plan readiness
 
-Commit: `fd57abb feat(news): add structured disclosure links`
+Commit: `5521450 feat(observation): clarify plan readiness before save`
 
 What changed:
 
-- Added `stock_disclosure_items`.
-- Added `GET /stocks/:ticker/disclosures`.
-- Generates structured DART/KIND search-link items without scraping or
-  summarizing filings.
-- Stock detail news panel shows structured disclosure links separately from
-  news links.
+- The observation-plan editor shows whether thesis, trigger, and invalidation
+  are complete before save.
+- Missing fields are named directly instead of leaving only a disabled button.
 
 Product value:
 
-- Users get a clean path to official disclosure search surfaces without Araon
-  pretending to analyze filings.
+- The watch thesis workflow is easier to complete and less confusing during
+  quick market review.
 
-### 6. Backup / Export / Restore
+### 5. News link change marker
 
-Commit: `0bf1132 feat(backup): add local export and restore`
+Commit: `ebd9e26 feat(news): mark newly discovered feed links`
 
 What changed:
 
-- Added `GET /runtime/backup/export`.
-- Added `POST /runtime/backup/restore`.
-- Added Settings connection-tab backup panel.
-- Added repository restore helpers for notes and observation plans.
-- Added runbook: `docs/runbooks/local-backup-restore.md`.
-
-Included:
-
-- tracked stocks
-- favorites
-- observation notes
-- observation plans
-
-Excluded:
-
-- KIS credentials
-- tokens
-- approval keys
-- account identifiers
-- candles
-- raw ticks
-- runtime state
+- News refresh compares parsed Naver Finance URLs against cached URLs.
+- Newly discovered links are returned with `isNew=true`.
+- The detail panel marks them as `새 링크`.
 
 Product value:
 
-- Local user intent can be moved or backed up without leaking credentials or
-  wasting historical market-data storage.
+- The user can spot fresh external news links without Araon claiming news
+  analysis, summarization, or filing interpretation.
 
-### 7. Long-run Reliability Soak
+### 6. Per-stock data quality score
 
-Commit: `f0e84de chore(soak): add no-live reliability harness`
+Commit: `37e2cb8 feat(data): show per-stock data quality score`
 
 What changed:
 
-- Added `npm run soak:no-live`.
-- Added `scripts/soak-araon.mts`.
-- Added evaluator tests for non-2xx, non-JSON, and sensitive-looking values.
-- Added runbook: `docs/runbooks/long-run-soak.md`.
-
-Short local proof:
-
-- Command: `npm run soak:no-live -- --duration-ms 3000 --interval-ms 1000`
-- Result: `ok=true`
-- Endpoints sampled: `/credentials/status`, `/runtime/realtime/status`,
-  `/runtime/data-health`, `/runtime/signals/outcomes`,
-  `/runtime/backup/export`
-- Samples: 20
-- Issues: 0
+- Stock detail modal now shows a compact data quality panel.
+- The score combines live/snapshot price state, 1m candle presence, daily candle
+  presence, and volume-baseline readiness.
+- Candle checks are read-only local API reads.
 
 Product value:
 
-- Araon now has a repeatable no-live stability harness before future beta
-  releases.
+- Sparse charts and collecting states become explainable per ticker.
 
-## Verification already run during the work
+### 7. No-live operational observation harness update
+
+Commit: pending in this stage
+
+What changed:
+
+- `npm run soak:no-live` now samples `GET /stocks` in addition to runtime and
+  backup health endpoints.
+- `docs/runbooks/long-run-soak.md` documents the new data-health scope:
+  backfill attempts, signal outcomes, candle retention, news/note/signal growth,
+  and volume baseline readiness.
+
+Product value:
+
+- Future beta candidates have a repeatable no-live guard before release prep.
+
+## Verification run during the work
 
 Focused tests:
 
-- stock news/disclosure routes + DB migration tests: pass
-- runtime backup routes + managed settings component tests: pass
-- soak evaluator tests: pass
+- candle ensure-coverage and chart repair UI: passed
+- background backfill scheduler/runtime/settings visibility: passed
+- signal outcome data-health display: passed
+- observation plan readiness display: passed
+- news feed change marker and routes: passed
+- per-stock data quality panel: passed
 
-Typecheck:
-
-- `npm run typecheck`: pass after each implementation checkpoint
-
-Short soak:
-
-- `npm run soak:no-live -- --duration-ms 3000 --interval-ms 1000`: pass
-
-Final full validation is expected after this document commit:
+Final full validation for this batch should include:
 
 - `npm test`
 - `npm run typecheck`
 - `npm run build`
+- `npm run soak:no-live -- --duration-ms 3000 --interval-ms 1000`
 - `git diff --check`
 - raw secret/token/key leak grep
-- browser smoke, if local server validation is available
+- Browser/Computer UI smoke against the local app
 
 ## Remaining risks
 
-- Disclosure feed is link-based. It is not filing parsing, filing alerting, or
-  disclosure summarization.
-- Signal outcome quality depends on candle coverage. Pending outcomes are
-  expected when post-signal candles are unavailable.
-- Backup/restore intentionally excludes candles; market data should be
-  regenerated from persisted local collection and approved KIS backfill flows.
-- Soak harness is no-live. It does not replace long market-hours observation.
-- Windows desktop execution remains separate from this feature set.
+- News remains link-based and parser-dependent. It is not article analysis or
+  filing summarization.
+- Signal outcome quality depends on stored candle coverage.
+- Per-stock data quality is a user-facing diagnostic score, not a trading
+  signal.
+- No-live soak does not replace long market-hours observation.
+- Windows desktop execution and signed/notarized desktop release remain outside
+  this feature batch.
 
 ## Suggested GPT 5.5 Pro review prompt
 
@@ -203,27 +167,27 @@ Araon next feature completion review 요청.
 아래 문서와 현재 HEAD를 기준으로 PM/architecture review를 해주세요:
 
 - docs/research/araon-next-feature-completion-review.md
-- commits:
-  - df403f9 feat(chart): track candle coverage ledger
-  - 85902f9 feat(chart): show candle data inspector
-  - 61062ff feat(signals): summarize signal outcome performance
-  - ed9786b feat(notes): add stock observation plans
-  - fd57abb feat(news): add structured disclosure links
-  - 0bf1132 feat(backup): add local export and restore
-  - f0e84de chore(soak): add no-live reliability harness
+- 최근 7개 작업:
+  1. chart visible-range repair
+  2. background daily backfill transparency
+  3. signal outcome dashboard visibility
+  4. observation plan readiness
+  5. news link change marker
+  6. per-stock data quality score
+  7. no-live operational observation harness update
 
 Review focus:
-1. 제품적으로 이 7개가 Araon의 “관찰 도구” 방향에 맞는가?
-2. 너무 넓힌 기능이나 위험한 기본값이 있는가?
-3. raw credentials/token/account/candle/raw tick boundary가 잘 지켜졌는가?
-4. chart coverage / signal outcome / backup / soak의 remaining risk는 beta에서 허용 가능한가?
-5. 다음에 기능을 더 추가한다면 무엇이 가장 ROI가 높은가?
+1. 제품적으로 이 7개가 Araon의 “자동 관찰 도구” 방향에 맞는가?
+2. 지금도 사용자가 불신할 만한 빈 상태/불투명 상태가 남아 있는가?
+3. raw credentials/token/account/raw tick boundary가 잘 지켜졌는가?
+4. chart coverage / signal outcome / news marker / data quality score의 remaining risk는 beta에서 허용 가능한가?
+5. 이제 새 기능을 더 넣는다면 무엇이 가장 ROI가 높은가?
 
 중요:
-- 이번 작업 중 live KIS/token/approval/WebSocket/backfill 호출은 0회.
+- 이번 기능 배치 중 live KIS/token/approval/WebSocket/backfill 호출은 0회.
 - release/npm publish는 하지 않았음.
-- disclosure/news는 요약/분석이 아니라 외부 링크 기반.
-- backup은 user-authored local state만 포함하고 credentials/candles/raw ticks는 제외.
+- news는 요약/분석이 아니라 외부 링크 기반.
+- per-stock data quality score는 진단용이며 trading signal이 아님.
 - soak는 no-live reliability harness이며 market-hours long-run observation 대체물이 아님.
 
 원하는 출력:
