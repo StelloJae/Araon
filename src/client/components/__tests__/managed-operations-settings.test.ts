@@ -225,6 +225,9 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('신호 기록');
     expect(html).toContain('신호 성과');
     expect(html).toContain('6/9 평가');
+    expect(html).toContain('5m 평균 +0.80%');
+    expect(html).toContain('15m 평균 +0.60%');
+    expect(html).toContain('30m 평균 +0.30%');
     expect(html).toContain('관찰 메모');
     expect(html).toContain('뉴스 캐시');
     expect(html).toContain('candle 정리');

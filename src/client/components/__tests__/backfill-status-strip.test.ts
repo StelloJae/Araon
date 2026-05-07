@@ -32,6 +32,7 @@ function health(
       dailyCallBudget: null,
       cooldownUntil: null,
       cooldownActive: false,
+      recent: [],
       ...backfill,
     },
     volumeBaseline: { total: 12, ready: 0, collecting: 0, unavailable: 12 },

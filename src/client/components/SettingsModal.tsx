@@ -1353,6 +1353,12 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
                 최근 보강: {formatBackfillRecent(health.backfill.recent)}
               </>
             )}
+            {health.signalOutcomes.totalSignals > 0 && (
+              <>
+                <br />
+                신호 성과: {formatSignalOutcomeSummary(health.signalOutcomes)}
+              </>
+            )}
           </div>
         </>
       )}
@@ -1728,6 +1734,21 @@ function formatBackfillRecent(
     }
     return `${item.ticker} 성공 +${item.inserted}/~${item.updated}`;
   }).join(' · ');
+}
+
+function formatSignalOutcomeSummary(
+  dashboard: RuntimeDataHealthPayload['signalOutcomes'],
+): string {
+  return dashboard.horizons.map((item) => {
+    if (item.averageChangePct === null) {
+      return `${item.horizon} 대기 ${item.pending}/${item.total}`;
+    }
+    return `${item.horizon} 평균 ${formatSignedPct(item.averageChangePct)} (${item.ready}/${item.total})`;
+  }).join(' · ');
+}
+
+function formatSignedPct(value: number): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
 // ---------- Notif tab ----------
