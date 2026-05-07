@@ -8,6 +8,7 @@ type RealtimeTickTrId =
   | typeof KIS_WS_TICK_TR_ID_NXT;
 
 export type RealtimeFeedSource = 'integrated' | 'nxt';
+export type RestQuoteMarketDivCode = 'NX' | 'UN';
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const NXT_PREMARKET_START_MINUTES = 8 * 60;
@@ -24,6 +25,19 @@ export function resolveRealtimeTickTrId(now: Date = new Date()): RealtimeTickTrI
     return KIS_WS_TICK_TR_ID_NXT;
   }
   return KIS_WS_TICK_TR_ID_INTEGRATED;
+}
+
+export function resolveRestQuoteMarketDivCode(
+  now: Date = new Date(),
+): RestQuoteMarketDivCode {
+  const minutes = kstMinutes(now);
+  if (
+    (minutes >= NXT_PREMARKET_START_MINUTES && minutes < REGULAR_START_MINUTES) ||
+    (minutes >= REGULAR_END_MINUTES && minutes < NXT_AFTER_HOURS_END_MINUTES)
+  ) {
+    return 'NX';
+  }
+  return 'UN';
 }
 
 export function realtimeFeedSourceFromTrId(trId: string): RealtimeFeedSource {

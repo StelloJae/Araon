@@ -222,7 +222,10 @@ import {
   shouldApplyRuntimeWsTicks,
   type SessionEndReason,
 } from './realtime/runtime-operator.js';
-import { resolveRealtimeTickTrId } from './realtime/realtime-feed-route.js';
+import {
+  resolveRealtimeTickTrId,
+  resolveRestQuoteMarketDivCode,
+} from './realtime/realtime-feed-route.js';
 
 // NXT4a wrapper: parse real KIS WS frames and expose parsed ticks to the
 // bridge. The bridge still defaults to applyTicksToPriceStore=false, so parsing
@@ -383,11 +386,16 @@ export async function defaultActuallyStart(
     restClient: {
       fetchPrice: async (ticker: string): Promise<Price> => {
         // KIS 주식현재가 시세 TR — same ID for both live (FH...) and paper hosts.
+        // KIS supports J:KRX, NX:NXT, UN:통합. During NXT-only windows,
+        // KRX-only `J` returns stale/static pre/after-market values.
         const trId = 'FHKST01010100';
         const resp = await restClient.request<Record<string, unknown>>({
           method: 'GET',
           path: '/uapi/domestic-stock/v1/quotations/inquire-price',
-          query: { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: ticker },
+          query: {
+            FID_COND_MRKT_DIV_CODE: resolveRestQuoteMarketDivCode(),
+            FID_INPUT_ISCD: ticker,
+          },
           trId,
         });
         return mapKisInquirePriceToPrice(ticker, resp);

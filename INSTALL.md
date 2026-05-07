@@ -198,8 +198,8 @@ installation.
 Download the installers from the GitHub Release page:
 
 ```txt
-macOS:   Araon-1.1.0-arm64.dmg
-Windows: Araon.Setup.1.1.0.exe
+macOS:   Araon-1.1.1-arm64.dmg
+Windows: Araon.Setup.1.1.1.exe
 ```
 
 Build a local unpacked desktop app:
