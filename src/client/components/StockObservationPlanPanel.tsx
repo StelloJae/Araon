@@ -105,6 +105,7 @@ export function ObservationPlanEditorView({
   onChange: (draft: Draft) => void;
   onSave: () => void;
 }) {
+  const missingFields = missingObservationFields(draft);
   return (
     <section style={{ marginTop: 18 }} aria-label="관찰 계획">
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -138,6 +139,17 @@ export function ObservationPlanEditorView({
               placeholder="예: 직전 저점 이탈 또는 거래대금 급감"
               onChange={(value) => onChange({ ...draft, invalidation: value })}
             />
+            <div
+              style={{
+                fontSize: 11,
+                color: missingFields.length === 0 ? 'var(--kr-up)' : 'var(--text-muted)',
+                fontWeight: 700,
+              }}
+            >
+              {missingFields.length === 0
+                ? '저장 준비 완료'
+                : `저장하려면 ${missingFields.join(', ')}을 채워주세요`}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 800 }}>
                 상태{' '}
@@ -193,6 +205,14 @@ export function ObservationPlanEditorView({
       </div>
     </section>
   );
+}
+
+function missingObservationFields(draft: Draft): string[] {
+  const fields: string[] = [];
+  if (draft.thesis.trim().length === 0) fields.push('thesis');
+  if (draft.trigger.trim().length === 0) fields.push('trigger');
+  if (draft.invalidation.trim().length === 0) fields.push('무효화 조건');
+  return fields;
 }
 
 function PlanTextarea({
