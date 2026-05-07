@@ -137,26 +137,7 @@ export function StockNewsDisclosurePanel({
           <FeedState label="저장된 뉴스 피드가 없습니다. 필요할 때 갱신해 주세요." />
         ) : (
           items.map((item, idx) => (
-            <a
-              key={item.id}
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                display: 'block',
-                padding: '10px 12px',
-                borderTop: idx === 0 ? 'none' : '1px solid var(--border-soft)',
-                textDecoration: 'none',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.45 }}>
-                {item.title}
-              </div>
-              <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-                네이버 금융 · {formatFeedTime(item.publishedAt ?? item.fetchedAt)}
-              </div>
-            </a>
+            <NewsFeedItemLink key={item.id} item={item} first={idx === 0} />
           ))
         )}
       </div>
@@ -232,6 +213,52 @@ export function StockNewsDisclosurePanel({
         ))}
       </div>
     </section>
+  );
+}
+
+export function NewsFeedItemLink({
+  item,
+  first,
+}: {
+  item: StockNewsItem;
+  first: boolean;
+}) {
+  return (
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noreferrer"
+      style={{
+        display: 'block',
+        padding: '10px 12px',
+        borderTop: first ? 'none' : '1px solid var(--border-soft)',
+        textDecoration: 'none',
+        color: 'var(--text-primary)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.45 }}>
+          {item.title}
+        </span>
+        {item.isNew === true && (
+          <span
+            style={{
+              border: '1px solid rgba(0, 194, 113, 0.28)',
+              borderRadius: 999,
+              padding: '2px 6px',
+              color: 'var(--kr-up)',
+              fontSize: 10,
+              fontWeight: 800,
+            }}
+          >
+            새 링크
+          </span>
+        )}
+      </div>
+      <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+        네이버 금융 · {formatFeedTime(item.publishedAt ?? item.fetchedAt)}
+      </div>
+    </a>
   );
 }
 

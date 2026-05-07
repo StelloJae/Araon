@@ -418,6 +418,7 @@ export interface StockNewsItem {
   url: string;
   publishedAt: string | null;
   fetchedAt: string;
+  isNew?: boolean;
 }
 
 export type StockNewsFetchStatusValue = 'success' | 'failed';

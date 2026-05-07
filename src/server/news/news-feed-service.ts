@@ -28,6 +28,9 @@ export function createStockNewsFeedService(
     const url = `${NAVER_FINANCE_NEWS_URL}?code=${encodeURIComponent(input.ticker)}&page=1`;
     const fetchedAt = input.now.toISOString();
     try {
+      const existingUrls = new Set(
+        options.repo.listByTicker(input.ticker, 100).map((item) => item.url),
+      );
       const html = await fetchHtml(url);
       const items = parseNaverFinanceNews(html, input.ticker, fetchedAt);
       options.repo.recordFetchStatus({
@@ -38,7 +41,10 @@ export function createStockNewsFeedService(
         updatedAt: fetchedAt,
       });
       if (items.length === 0) return options.repo.listByTicker(input.ticker);
-      return options.repo.upsertMany(items);
+      return options.repo.upsertMany(items).map((item) => ({
+        ...item,
+        isNew: !existingUrls.has(item.url),
+      }));
     } catch (err: unknown) {
       options.repo.recordFetchStatus({
         ticker: input.ticker,
