@@ -13,12 +13,15 @@ import { create } from 'zustand';
 
 /** Surge block first-row filter — see `lib/surge-aggregator.ts`. */
 export type SurgeFilter = 'live' | 'today' | 'all';
+export type SurgeMarketCapFilter = 'all' | 'large' | 'mid' | 'small';
 
 export interface ClientSettings {
   /** Master switch for all client-generated alert/toast/sound output. */
   notifGlobalEnabled: boolean;
   /** Surge block filter, persisted across reloads. */
   surgeFilter: SurgeFilter;
+  /** Surge block market-cap bucket filter, persisted across reloads. */
+  surgeMarketCapFilter: SurgeMarketCapFilter;
   /** Client-only developer tools switch. Hidden by default for normal use. */
   devModeEnabled: boolean;
 
@@ -44,6 +47,7 @@ export interface ClientSettings {
 const DEFAULTS: ClientSettings = {
   notifGlobalEnabled: true,
   surgeFilter: 'live',
+  surgeMarketCapFilter: 'all',
   devModeEnabled: false,
 
   notifPctThreshold: 5,
@@ -61,6 +65,8 @@ const VALID_SURGE_FILTERS: ReadonlySet<SurgeFilter> = new Set([
   'today',
   'all',
 ]);
+const VALID_SURGE_MARKET_CAP_FILTERS: ReadonlySet<SurgeMarketCapFilter> =
+  new Set(['all', 'large', 'mid', 'small']);
 
 const STORAGE_KEY = 'araon-settings-v1';
 
@@ -93,6 +99,15 @@ function loadSettings(): ClientSettings {
       VALID_SURGE_FILTERS.has(obj.surgeFilter as SurgeFilter)
     ) {
       merged.surgeFilter = obj.surgeFilter as SurgeFilter;
+    }
+    if (
+      typeof obj.surgeMarketCapFilter === 'string' &&
+      VALID_SURGE_MARKET_CAP_FILTERS.has(
+        obj.surgeMarketCapFilter as SurgeMarketCapFilter,
+      )
+    ) {
+      merged.surgeMarketCapFilter =
+        obj.surgeMarketCapFilter as SurgeMarketCapFilter;
     }
     if (typeof obj.devModeEnabled === 'boolean') {
       merged.devModeEnabled = obj.devModeEnabled;

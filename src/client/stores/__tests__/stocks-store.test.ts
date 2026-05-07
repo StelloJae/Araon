@@ -95,6 +95,18 @@ describe('useStocksStore.removeStock', () => {
       });
   });
 
+  it('keeps official market cap size on the stock view model', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+
+    store.setCatalog([{ ...STOCK_A, marketCapSize: 'large' }]);
+
+    expect(buildStockVM('005930', useStocksStore.getState().catalog, {}))
+      .toMatchObject({
+        marketCapSize: 'large',
+      });
+  });
+
   it('keeps manual sectors ahead of instrument grouping', async () => {
     const { buildStockVM, useStocksStore } = await import('../stocks-store');
     const store = useStocksStore.getState();

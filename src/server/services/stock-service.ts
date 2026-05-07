@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { InstrumentType, Stock } from '@shared/types.js';
+import type { InstrumentType, MarketCapSize, Stock } from '@shared/types.js';
 import type {
   StockRepository,
   SectorRepository,
@@ -140,6 +140,9 @@ export function createStockService(deps: StockServiceDeps): StockService {
         return {
           ...s,
           autoSector: result?.sector ?? null,
+          marketCapSize: mapStoredMarketCapSize(
+            classification?.marketCapSize ?? null,
+          ),
           instrumentType: detectInstrumentType(
             s.name,
             classification?.securityGroupCode ?? null,
@@ -166,6 +169,21 @@ export function detectInstrumentType(
   }
   if (securityGroupCode !== null && securityGroupCode !== 'ST') return 'fund';
   return 'equity';
+}
+
+export function mapStoredMarketCapSize(
+  raw: string | null,
+): MarketCapSize | null {
+  switch (raw?.trim()) {
+    case '1':
+      return 'large';
+    case '2':
+      return 'mid';
+    case '3':
+      return 'small';
+    default:
+      return null;
+  }
 }
 
 function isReitName(name: string, normalized: string): boolean {

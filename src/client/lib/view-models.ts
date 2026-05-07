@@ -9,6 +9,7 @@
  */
 
 import type { EffectiveSector } from './effective-sector';
+import type { MarketCapSize } from '@shared/types';
 
 export type SortKey = 'changeDesc' | 'changeAsc' | 'volume' | 'name';
 
@@ -32,6 +33,7 @@ export interface StockViewModel {
   highPrice?: number | null;
   lowPrice?: number | null;
   marketCapKrw?: number | null;
+  marketCapSize?: MarketCapSize | null;
   per?: number | null;
   pbr?: number | null;
   foreignOwnershipRate?: number | null;

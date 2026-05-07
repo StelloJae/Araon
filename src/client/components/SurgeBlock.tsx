@@ -4,7 +4,7 @@
  * Two-row filter chrome:
  *
  *   [최근 급상승] [오늘 강세] [전체]          ← from useSettingsStore
- *   [시총 전체] [대형] [중형] [소형]            ← all disabled (no marketCap data)
+ *   [시총 전체] [대형] [중형] [소형]            ← KIS marketCapSize filter
  *
  * Filter semantics (defined in `lib/surge-aggregator.ts`):
  *   - 최근 급상승 — 10s/20s/30s momentum signals.
@@ -45,6 +45,7 @@ import {
 import {
   useSettingsStore,
   type SurgeFilter,
+  type SurgeMarketCapFilter,
 } from '../stores/settings-store';
 import { isMarketLive, isPreOpen } from '../lib/market-status';
 import type { StockViewModel } from '../lib/view-models';
@@ -70,6 +71,9 @@ export function SurgeBlock({
   const tick = useSurgeStore((s) => s.tick);
   const clear = useSurgeStore((s) => s.clear);
   const filter = useSettingsStore((s) => s.settings.surgeFilter);
+  const marketCapFilter = useSettingsStore(
+    (s) => s.settings.surgeMarketCapFilter,
+  );
   const surgeThreshold = useSettingsStore((s) => s.settings.surgeThreshold);
   const updateSettings = useSettingsStore((s) => s.update);
   const favorites = useWatchlistStore((s) => s.favorites);
@@ -98,8 +102,17 @@ export function SurgeBlock({
         surgeThreshold,
         now,
         SURGE_MAX_ROWS,
+        marketCapFilter,
       ),
-    [feed, allStocks, filter, marketStatus, surgeThreshold, now],
+    [
+      feed,
+      allStocks,
+      filter,
+      marketStatus,
+      surgeThreshold,
+      now,
+      marketCapFilter,
+    ],
   );
 
   const stockByCode = useMemo(() => {
@@ -184,8 +197,12 @@ export function SurgeBlock({
       {!preOpen && (
         <FilterChrome
           filter={filter}
+          marketCapFilter={marketCapFilter}
           surgeThreshold={surgeThreshold}
           onFilterChange={(next) => updateSettings({ surgeFilter: next })}
+          onMarketCapFilterChange={(next) =>
+            updateSettings({ surgeMarketCapFilter: next })
+          }
           sessionLive={sessionLive}
         />
       )}
@@ -206,6 +223,7 @@ export function SurgeBlock({
       ) : items.length === 0 ? (
         <EmptyState
           filter={filter}
+          marketCapFilter={marketCapFilter}
           surgeThreshold={surgeThreshold}
           liveDisabledByMarket={liveDisabledByMarket}
         />
@@ -244,35 +262,54 @@ export function SurgeBlock({
 
 interface FilterChromeProps {
   filter: SurgeFilter;
+  marketCapFilter: SurgeMarketCapFilter;
   surgeThreshold: number;
   onFilterChange: (next: SurgeFilter) => void;
+  onMarketCapFilterChange: (next: SurgeMarketCapFilter) => void;
   sessionLive: boolean;
 }
 
 function FilterChrome({
   filter,
+  marketCapFilter,
   surgeThreshold: _surgeThreshold,
   onFilterChange,
+  onMarketCapFilterChange,
   sessionLive,
 }: FilterChromeProps) {
-  type FilterOpt = { v: SurgeFilter; l: string; disabled: boolean; title: string | null };
+  type FilterOpt = {
+    v: SurgeFilter;
+    l: string;
+    disabled: boolean;
+    title: string | null;
+  };
   const filterOpts: FilterOpt[] = [
     {
       v: 'live',
       l: '최근 급상승',
       disabled: !sessionLive,
-      title: sessionLive ? '최근 10초~30초 기준' : '장 시간 외 — 실시간 이벤트 없음',
+      title: sessionLive
+        ? '최근 10초~30초 기준'
+        : '장 시간 외 — 실시간 이벤트 없음',
     },
-    { v: 'today', l: '오늘 강세', disabled: false, title: '전일 종가 대비 기준' },
+    {
+      v: 'today',
+      l: '오늘 강세',
+      disabled: false,
+      title: '전일 종가 대비 기준',
+    },
     { v: 'all', l: '전체', disabled: false, title: null },
   ];
 
-  // Market cap tiers — UI present but disabled until backend supplies marketCap.
-  const capOpts: Array<{ v: string; l: string }> = [
-    { v: 'all', l: '시총 전체' },
-    { v: 'large', l: '대형' },
-    { v: 'mid', l: '중형' },
-    { v: 'small', l: '소형' },
+  const capOpts: Array<{
+    v: SurgeMarketCapFilter;
+    l: string;
+    title: string;
+  }> = [
+    { v: 'all', l: '시총 전체', title: '전체 시총 규모' },
+    { v: 'large', l: '대형', title: 'KIS 시총규모 1' },
+    { v: 'mid', l: '중형', title: 'KIS 시총규모 2' },
+    { v: 'small', l: '소형', title: 'KIS 시총규모 3' },
   ];
 
   return (
@@ -330,30 +367,32 @@ function FilterChrome({
           );
         })}
       </div>
-      <div
-        style={{ display: 'flex', gap: 4 }}
-        title="시총 데이터 연동 전 — 비활성"
-      >
-        {capOpts.map((o) => (
-          <button
-            key={o.v}
-            type="button"
-            disabled
-            style={{
-              padding: '3px 8px',
-              fontSize: 10,
-              fontWeight: 700,
-              cursor: 'not-allowed',
-              background: 'transparent',
-              color: 'var(--text-inactive)',
-              border: '1px solid var(--border-soft)',
-              borderRadius: 5,
-              opacity: 0.6,
-            }}
-          >
-            {o.l}
-          </button>
-        ))}
+      <div style={{ display: 'flex', gap: 4 }}>
+        {capOpts.map((o) => {
+          const active = marketCapFilter === o.v;
+          return (
+            <button
+              key={o.v}
+              type="button"
+              title={o.title}
+              onClick={() => onMarketCapFilterChange(o.v)}
+              style={{
+                padding: '3px 8px',
+                fontSize: 10,
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: active ? 'var(--accent)' : 'var(--bg-tint)',
+                color: active ? '#fff' : 'var(--text-secondary)',
+                border: `1px solid ${
+                  active ? 'var(--accent)' : 'var(--border)'
+                }`,
+                borderRadius: 5,
+              }}
+            >
+              {o.l}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -363,12 +402,14 @@ function FilterChrome({
 
 interface EmptyStateProps {
   filter: SurgeFilter;
+  marketCapFilter: SurgeMarketCapFilter;
   surgeThreshold: number;
   liveDisabledByMarket: boolean;
 }
 
 function EmptyState({
   filter,
+  marketCapFilter,
   surgeThreshold,
   liveDisabledByMarket,
 }: EmptyStateProps) {
@@ -382,6 +423,9 @@ function EmptyState({
   } else {
     message = `급상승 종목 없음`;
   }
+  if (marketCapFilter !== 'all' && !liveDisabledByMarket) {
+    message = `${formatMarketCapFilterLabel(marketCapFilter)} 조건에 맞는 ${message}`;
+  }
   return (
     <div
       style={{
@@ -394,6 +438,19 @@ function EmptyState({
       {message}
     </div>
   );
+}
+
+function formatMarketCapFilterLabel(filter: SurgeMarketCapFilter): string {
+  switch (filter) {
+    case 'large':
+      return '대형';
+    case 'mid':
+      return '중형';
+    case 'small':
+      return '소형';
+    default:
+      return '시총 전체';
+  }
 }
 
 // ---------- SurgeRow ----------

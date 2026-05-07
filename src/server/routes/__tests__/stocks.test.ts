@@ -258,6 +258,28 @@ describe('GET /stocks — list', () => {
     });
   });
 
+  it('returns official KIS market cap size for tracked stocks', async () => {
+    db.prepare(
+      `INSERT INTO master_stocks (
+         ticker, name, market, standard_code, source, updated_at,
+         security_group_code, market_cap_size
+       ) VALUES (?, ?, ?, ?, 'kis_mst', '2026-04-27T00:00:00.000Z', 'ST', ?)`,
+    ).run('005930', '삼성전자', 'KOSPI', 'KR7005930003', '1');
+
+    await app.inject({
+      method: 'POST',
+      url: '/stocks',
+      payload: { ticker: '005930', name: '삼성전자', market: 'KOSPI' },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/stocks' });
+    const body = res.json<{
+      data: Array<{ ticker: string; marketCapSize?: string | null }>;
+    }>();
+    const entry = body.data.find((s) => s.ticker === '005930');
+    expect(entry?.marketCapSize).toBe('large');
+  });
+
   it('does not classify Meritz names as REIT just because they contain 리츠', async () => {
     db.prepare(
       `INSERT INTO master_stocks (

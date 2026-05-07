@@ -23,10 +23,13 @@
  * baseline is still being collected.
  */
 
-import type { MarketStatus } from '@shared/types';
+import type { MarketCapSize, MarketStatus } from '@shared/types';
 import type { SurgeEntry } from '../stores/surge-store';
 import { SURGE_TOTAL_MS } from '../stores/surge-store';
-import type { SurgeFilter } from '../stores/settings-store';
+import type {
+  SurgeFilter,
+  SurgeMarketCapFilter,
+} from '../stores/settings-store';
 import { isMarketLive } from './market-status';
 import {
   isPrimaryRealtimeSignal,
@@ -44,6 +47,7 @@ export interface SurgeViewItem {
   changePct: number;
   /** Raw share volume from the latest quote. `null` when no quote exists yet. */
   volume: number | null;
+  marketCapSize?: MarketCapSize | null;
   volumeSurgeRatio?: number | null;
   volumeBaselineStatus?: 'collecting' | 'ready' | 'unavailable';
   signalType?: MomentumSignalType;
@@ -64,11 +68,12 @@ export function aggregateSurgeView(
   threshold: number,
   now: number,
   maxRows: number,
+  marketCapFilter: SurgeMarketCapFilter = 'all',
 ): SurgeViewItem[] {
   const liveItems: SurgeViewItem[] = [];
+  const stockByCode = new Map<string, StockViewModel>();
+  for (const s of allStocks) stockByCode.set(s.code, s);
   if (isMarketLive(marketStatus)) {
-    const stockByCode = new Map<string, StockViewModel>();
-    for (const s of allStocks) stockByCode.set(s.code, s);
     for (const e of feed) {
       if (now - e.ts >= SURGE_TOTAL_MS) continue;
       if (
@@ -80,12 +85,14 @@ export function aggregateSurgeView(
         continue;
       }
       const stock = stockByCode.get(e.code);
+      if (!matchesMarketCapFilter(stock, marketCapFilter)) continue;
       liveItems.push({
         code: e.code,
         name: e.name,
         price: e.price,
         changePct: e.momentumPct ?? e.surgePct,
         volume: e.volume ?? stock?.volume ?? null,
+        marketCapSize: stock?.marketCapSize ?? null,
         volumeSurgeRatio:
           e.volumeSurgeRatio ?? stock?.volumeSurgeRatio ?? null,
         volumeBaselineStatus:
@@ -109,13 +116,14 @@ export function aggregateSurgeView(
 
   const todayItems: SurgeViewItem[] = [];
   for (const s of allStocks) {
-    if (s.changePct >= threshold) {
+    if (s.changePct >= threshold && matchesMarketCapFilter(s, marketCapFilter)) {
       todayItems.push({
         code: s.code,
         name: s.name,
         price: s.price,
         changePct: s.changePct,
         volume: s.volume,
+        marketCapSize: s.marketCapSize ?? null,
         volumeSurgeRatio: s.volumeSurgeRatio ?? null,
         volumeBaselineStatus: s.volumeBaselineStatus ?? 'unavailable',
         ts: null,
@@ -138,4 +146,12 @@ export function aggregateSurgeView(
     ...todayItems.filter((it) => !liveCodes.has(it.code)),
   ];
   return merged.slice(0, maxRows);
+}
+
+function matchesMarketCapFilter(
+  stock: StockViewModel | undefined,
+  filter: SurgeMarketCapFilter,
+): boolean {
+  if (filter === 'all') return true;
+  return stock?.marketCapSize === filter;
 }

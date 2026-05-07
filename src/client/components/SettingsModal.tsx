@@ -1967,7 +1967,7 @@ function SurgeTab() {
         </div>
       </Field>
 
-      <Field label="시총 / 거래량 배수 기반 필터">
+      <Field label="시총 / 거래량 필터">
         <div
           style={{
             padding: '10px 12px',
@@ -1979,7 +1979,8 @@ function SurgeTab() {
             lineHeight: 1.6,
           }}
         >
-          시총 / 평균 거래량 데이터가 백엔드에 추가된 후 활성화됩니다.
+          메인 최근 급상승 카드에서 KIS 시총 규모별 필터를 바로 사용할 수
+          있습니다. 거래량 배수는 기준선이 준비된 종목만 정직하게 표시됩니다.
         </div>
       </Field>
     </div>

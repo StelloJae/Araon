@@ -259,6 +259,7 @@ export interface MasterStockInput {
 export interface MasterStockClassificationRow {
   market: 'KOSPI' | 'KOSDAQ';
   securityGroupCode: string | null;
+  marketCapSize: string | null;
   indexIndustryLarge: string | null;
   indexIndustryMiddle: string | null;
   indexIndustrySmall: string | null;
@@ -700,7 +701,7 @@ export class MasterStockRepository {
     const rows = this.db
       .prepare(
         `SELECT
-           ticker, market, security_group_code, index_industry_large, index_industry_middle,
+           ticker, market, security_group_code, market_cap_size, index_industry_large, index_industry_middle,
            index_industry_small, krx_sector_flags
          FROM master_stocks
          WHERE ticker IN (${placeholders})`,
@@ -709,6 +710,7 @@ export class MasterStockRepository {
         ticker: string;
         market: string;
         security_group_code: string | null;
+        market_cap_size: string | null;
         index_industry_large: string | null;
         index_industry_middle: string | null;
         index_industry_small: string | null;
@@ -719,6 +721,7 @@ export class MasterStockRepository {
       out.set(r.ticker, {
         market: r.market,
         securityGroupCode: r.security_group_code,
+        marketCapSize: r.market_cap_size,
         indexIndustryLarge: r.index_industry_large,
         indexIndustryMiddle: r.index_industry_middle,
         indexIndustrySmall: r.index_industry_small,

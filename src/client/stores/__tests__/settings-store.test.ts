@@ -44,6 +44,7 @@ describe('useSettingsStore', () => {
     const { useSettingsStore } = await import('../settings-store');
     expect(useSettingsStore.getState().settings.notifGlobalEnabled).toBe(true);
     expect(useSettingsStore.getState().settings.surgeFilter).toBe('live');
+    expect(useSettingsStore.getState().settings.surgeMarketCapFilter).toBe('all');
     expect(useSettingsStore.getState().settings.devModeEnabled).toBe(false);
   });
 
@@ -71,6 +72,16 @@ describe('useSettingsStore', () => {
     expect(reloaded.useSettingsStore.getState().settings.surgeFilter).toBe('all');
   });
 
+  it('persists surgeMarketCapFilter and reloads it on next import', async () => {
+    const mod = await import('../settings-store');
+    mod.useSettingsStore.getState().update({ surgeMarketCapFilter: 'mid' });
+    expect(mod.useSettingsStore.getState().settings.surgeMarketCapFilter).toBe('mid');
+
+    vi.resetModules();
+    const reloaded = await import('../settings-store');
+    expect(reloaded.useSettingsStore.getState().settings.surgeMarketCapFilter).toBe('mid');
+  });
+
   it('persists dev mode and reloads it on next import', async () => {
     const mod = await import('../settings-store');
     mod.useSettingsStore.getState().update({ devModeEnabled: true });
@@ -90,11 +101,21 @@ describe('useSettingsStore', () => {
     expect(useSettingsStore.getState().settings.surgeFilter).toBe('live');
   });
 
+  it('rejects unknown surgeMarketCapFilter values from storage', async () => {
+    globalThis.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ surgeMarketCapFilter: 'mega' }),
+    );
+    const { useSettingsStore } = await import('../settings-store');
+    expect(useSettingsStore.getState().settings.surgeMarketCapFilter).toBe('all');
+  });
+
   it('falls back to defaults on malformed JSON', async () => {
     globalThis.localStorage.setItem(STORAGE_KEY, '{not json');
     const { useSettingsStore } = await import('../settings-store');
     expect(useSettingsStore.getState().settings.notifGlobalEnabled).toBe(true);
     expect(useSettingsStore.getState().settings.surgeFilter).toBe('live');
+    expect(useSettingsStore.getState().settings.surgeMarketCapFilter).toBe('all');
   });
 
   it('open/close toggles settingsOpen', async () => {

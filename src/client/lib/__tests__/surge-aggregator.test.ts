@@ -143,6 +143,26 @@ describe('aggregateSurgeView — today filter', () => {
     expect(got.map((it) => it.code)).toEqual(['A']);
   });
 
+  it('filters today items by official market cap size', () => {
+    const stocks = [
+      vm('A', 'AlphaCo', 4.0, { marketCapSize: 'large' }),
+      vm('B', 'BetaCo', 8.0, { marketCapSize: 'mid' }),
+      vm('C', 'GammaCo', 7.0, { marketCapSize: 'small' }),
+      vm('D', 'UnknownCo', 9.0, { marketCapSize: null }),
+    ];
+    const got = aggregateSurgeView(
+      [],
+      stocks,
+      'today',
+      STATUS_OPEN,
+      3,
+      NOW,
+      15,
+      'mid',
+    );
+    expect(got.map((it) => it.code)).toEqual(['B']);
+  });
+
   it('does not include live feed entries under today filter', () => {
     const feed: SurgeEntry[] = [entry('A', 'AlphaCo', 5.5, 1_000)];
     const got = aggregateSurgeView(feed, [], 'today', STATUS_OPEN, 3, NOW, 15);
@@ -179,6 +199,29 @@ describe('aggregateSurgeView — all filter', () => {
       signalType: 'trend',
       momentumWindow: '5m',
     });
+  });
+
+  it('filters live entries by official market cap size when requested', () => {
+    const feed: SurgeEntry[] = [
+      entry('A', 'AlphaCo', 5.5, 1_000),
+      entry('B', 'BetaCo', 5.5, 1_000),
+    ];
+    const stocks = [
+      vm('A', 'AlphaCo', 5.5, { marketCapSize: 'large' }),
+      vm('B', 'BetaCo', 5.5, { marketCapSize: 'small' }),
+    ];
+    const got = aggregateSurgeView(
+      feed,
+      stocks,
+      'all',
+      STATUS_OPEN,
+      3,
+      NOW,
+      15,
+      'small',
+    );
+    expect(got.map((it) => it.code)).toEqual(['B']);
+    expect(got[0]?.isLive).toBe(true);
   });
 
   it('falls back to today-only when market closed', () => {

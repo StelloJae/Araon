@@ -17,7 +17,12 @@
  */
 
 import { create } from 'zustand';
-import type { AutoSectorName, InstrumentType, Price } from '@shared/types';
+import type {
+  AutoSectorName,
+  InstrumentType,
+  MarketCapSize,
+  Price,
+} from '@shared/types';
 import type { Stock } from '@shared/types';
 import type { StockViewModel } from '../lib/view-models';
 import type { ThemeDetail } from '../lib/api-client';
@@ -41,6 +46,7 @@ export interface CatalogEntry {
    */
   autoSector: AutoSectorName | null;
   instrumentType: InstrumentType | null;
+  marketCapSize: MarketCapSize | null;
 }
 
 export interface SectorMeta {
@@ -86,6 +92,7 @@ export const useStocksStore = create<StocksState>((set) => ({
           manualSectorName: prev?.manualSectorName ?? null,
           autoSector: s.autoSector ?? null,
           instrumentType: s.instrumentType ?? null,
+          marketCapSize: s.marketCapSize ?? null,
         };
       }
       return { catalog: next };
@@ -125,6 +132,7 @@ export const useStocksStore = create<StocksState>((set) => ({
             sectorId !== null ? (themeNameById.get(sectorId) ?? null) : null,
           autoSector: entry.autoSector,
           instrumentType: entry.instrumentType,
+          marketCapSize: entry.marketCapSize,
         };
       }
 
@@ -229,6 +237,7 @@ export function buildStockVM(
     highPrice: q?.highPrice ?? null,
     lowPrice: q?.lowPrice ?? null,
     marketCapKrw: q?.marketCapKrw ?? null,
+    marketCapSize: meta.marketCapSize,
     per: q?.per ?? null,
     pbr: q?.pbr ?? null,
     foreignOwnershipRate: q?.foreignOwnershipRate ?? null,
