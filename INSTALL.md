@@ -1,6 +1,6 @@
 # Installing Araon
 
-This guide walks through the first-run install paths for Araon beta users.
+This guide walks through the first-run install paths for Araon users.
 
 Araon is a single-user localhost dashboard. It requires your own KIS OpenAPI
 credentials and does not provide trading or order-entry features.
@@ -12,21 +12,21 @@ credentials and does not provide trading or order-entry features.
 - A live KIS OpenAPI app key/app secret pair
 - A browser that can open `http://127.0.0.1:5173`
 
-## Run The npm Beta
+## Run From npm
 
-The easiest beta path is:
+The easiest path is:
 
 ```bash
-npx @stellojae/araon@beta
+npx @stellojae/araon
 ```
 
-During the beta period, use the explicit `@beta` tag. Araon starts a local
-server, prints a `http://127.0.0.1:<port>` URL, and opens your default browser.
+Araon starts a local server, prints a `http://127.0.0.1:<port>` URL, and opens
+your default browser.
 
 Or install the CLI globally:
 
 ```bash
-npm install -g @stellojae/araon@beta
+npm install -g @stellojae/araon
 araon
 ```
 
@@ -118,10 +118,10 @@ and SSE requests from `127.0.0.1:5173`.
 
 ## Run With The CLI Launcher
 
-From npm beta:
+From npm:
 
 ```bash
-npx @stellojae/araon@beta
+npx @stellojae/araon
 ```
 
 From source, build Araon, then start the production localhost app from one
@@ -135,7 +135,7 @@ node dist/cli/araon.js
 If Araon is installed as a package, use:
 
 ```bash
-npm install -g @stellojae/araon@beta
+npm install -g @stellojae/araon
 araon
 ```
 
@@ -177,17 +177,17 @@ directory. Fresh installs have no credentials and make no external KIS calls.
 After credentials are configured, Araon manages cap40 realtime and guarded
 daily backfill by default.
 
-## Desktop Beta
+## Desktop App
 
-The desktop beta packages Araon as an unsigned Electron app for macOS and
+The desktop app packages Araon as an unsigned Electron app for macOS and
 Windows. It is intended for early local testing, not frictionless public
 installation.
 
-Download the beta installers from the GitHub Release page:
+Download the installers from the GitHub Release page:
 
 ```txt
-macOS:   Araon-1.1.0-beta.12-arm64.dmg
-Windows: Araon.Setup.1.1.0-beta.12.exe
+macOS:   Araon-1.1.0-arm64.dmg
+Windows: Araon.Setup.1.1.0.exe
 ```
 
 Build a local unpacked desktop app:
@@ -221,9 +221,8 @@ applyTicksToPriceStore=true
 backgroundDailyBackfillEnabled=true
 ```
 
-Desktop beta artifacts can show OS warnings. macOS beta artifacts are ad-hoc
-signed for local bundle integrity, but they are not Apple Developer ID-signed or
-notarized:
+Desktop artifacts can show OS warnings. macOS artifacts are ad-hoc signed for
+local bundle integrity, but they are not Apple Developer ID-signed or notarized:
 
 - macOS: Gatekeeper warning or manual allow step.
 - Windows: SmartScreen warning.
@@ -233,7 +232,7 @@ validated.
 
 ## First Run
 
-1. Start Araon with `npx @stellojae/araon@beta`, `araon`, or a desktop beta app.
+1. Start Araon with `npx @stellojae/araon`, `araon`, or a desktop app.
 2. Open the printed localhost URL if your browser did not open automatically.
 3. Use the local setup screen to enter your live KIS app key/app secret.
 4. Confirm the read-only setup copy, then let Araon start the KIS runtime.
@@ -247,8 +246,8 @@ credentials.enc
 ```
 
 For source development this is usually `data/`. For the CLI it is `--data-dir`,
-`ARAON_DATA_DIR`, or the OS default user-data directory. For desktop beta apps it
-is the OS app user-data directory. Runtime data must not be committed.
+`ARAON_DATA_DIR`, or the OS default user-data directory. For desktop apps it is
+the OS app user-data directory. Runtime data must not be committed.
 
 ## Managed Realtime
 

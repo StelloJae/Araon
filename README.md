@@ -86,19 +86,19 @@ toggles. Emergency pause remains available for realtime and daily backfill.
 
 ## Quick Start
 
-The fastest first-run path is the npm beta:
+The fastest first-run path is npm:
 
 ```bash
-npx @stellojae/araon@beta
+npx @stellojae/araon
 ```
 
 Araon starts a local server on `127.0.0.1`, prints the URL, and opens your
-browser. During the beta period, use the explicit `@beta` tag.
+browser.
 
 Or install the CLI globally:
 
 ```bash
-npm install -g @stellojae/araon@beta
+npm install -g @stellojae/araon
 araon
 ```
 
@@ -162,10 +162,10 @@ For a fuller first-run walkthrough, see [INSTALL.md](INSTALL.md).
 
 ## CLI Launcher
 
-Araon can run as a single localhost command from the npm beta:
+Araon can run as a single localhost command from npm:
 
 ```bash
-npx @stellojae/araon@beta
+npx @stellojae/araon
 ```
 
 Or after a production build:
@@ -178,7 +178,7 @@ node dist/cli/araon.js
 When installed globally, the binary name is:
 
 ```bash
-npm install -g @stellojae/araon@beta
+npm install -g @stellojae/araon
 araon
 ```
 
@@ -210,14 +210,14 @@ Fresh installs have no credentials, so they make no external KIS calls. After
 credentials are configured, managed realtime and daily backfill are enabled by
 default. Araon remains a localhost-only read-only monitoring tool.
 
-## Desktop Beta
+## Desktop App
 
-Araon also has an unsigned desktop beta packaging path for macOS and Windows.
+Araon also has an unsigned desktop packaging path for macOS and Windows.
 This channel wraps the same local Fastify server and React UI in Electron.
 
-The desktop beta is not Developer ID-signed or notarized yet. macOS beta
-artifacts are ad-hoc signed for local bundle integrity, but they can still show
-OS security warnings:
+The desktop app is not Developer ID-signed or notarized yet. macOS artifacts are
+ad-hoc signed for local bundle integrity, but they can still show OS security
+warnings:
 
 - macOS may show a Gatekeeper warning.
 - Windows may show a SmartScreen warning.
@@ -241,12 +241,12 @@ especially because Araon uses the native `better-sqlite3` dependency.
 
 ## First Run
 
-1. Run `npx @stellojae/araon@beta` or the installed `araon` command.
+1. Run `npx @stellojae/araon` or the installed `araon` command.
 2. Open the printed localhost URL if the browser did not open automatically.
 3. Enter your live KIS OpenAPI credentials in the local setup screen.
 4. Confirm the read-only setup copy, then let Araon start the KIS runtime.
 5. Add or favorite stocks from the dashboard.
-6. Enable realtime from Settings only when you are ready.
+6. Use Settings to inspect managed realtime, daily backfill, alerts, and data health.
 
 The CLI prints the selected data directory at startup. Araon stores encrypted
 credentials, settings, SQLite state, and local baseline history there. Do not
@@ -359,7 +359,7 @@ same-time-bucket baseline samples before showing a volume-surge ratio.
 - Clean installs make no external KIS calls until credentials exist; after
   credentials, managed realtime/backfill are enabled by default.
 - Volume-surge ratios appear only after enough local baseline samples exist.
-- Desktop beta artifacts are unsigned and may trigger OS security warnings.
+- Desktop artifacts are unsigned and may trigger OS security warnings.
 - Docker Compose packaging is planned after v1.0.0.
 - Windows service / task scheduler packaging is planned after v1.0.0.
 - Araon is currently optimized for a single-user localhost workflow.
