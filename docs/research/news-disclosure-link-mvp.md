@@ -18,14 +18,24 @@ Araon-generated summaries.
   - Naver Finance stock-news HTML parser
   - optional Naver Search API provider when `NAVER_SEARCH_CLIENT_ID` and
     `NAVER_SEARCH_CLIENT_SECRET` are configured
+  - Naver Search requests the maximum supported display size in one call and
+    stores the returned links locally for paginated browsing
 - Cached per-ticker disclosure feed:
   - optional DART OpenAPI filings when `DART_API_KEY` is configured
   - DART corp-code catalog is fetched and cached locally on demand
+  - DART 공시검색 uses the maximum supported `page_count=100` for the selected
+    ticker
+- News and disclosures are exposed through page contracts:
+  - `GET /stocks/:ticker/news?limit=&offset=`
+  - `GET /stocks/:ticker/disclosures?limit=&offset=`
+  - `POST /stocks/:ticker/news/refresh`
+  - `POST /stocks/:ticker/disclosures/refresh`
 - Per-ticker external links:
   - Naver Finance stock news
   - Naver Finance stock page
   - DART disclosure search
   - KIND disclosure search
+  - shown only as compact fallback links when no cached feed data exists
 
 ## Data Policy
 
@@ -36,6 +46,8 @@ Araon-generated summaries.
   fetched time.
 - Article body text is not stored.
 - DART document bodies are not downloaded.
+- Display badges such as "새 링크", "주요 공시", and "정기" are source/type
+  labels only. They are not generated analysis or recommendations.
 - No KIS calls, WebSocket calls, or background jobs are required for this feed.
 
 ## Optional API Keys

@@ -308,6 +308,67 @@ describe('stock news routes', () => {
     await dartApp.close();
   });
 
+  it('refreshes DART disclosures on demand and returns the first disclosure page', async () => {
+    const stockRepo = new StockRepository(db);
+    const sectorRepo = new SectorRepository(db);
+    const masterRepo = new MasterStockRepository(db);
+    const disclosureRepo = new StockDisclosureRepository(db);
+    const service = createStockService({ stockRepo, sectorRepo, masterRepo });
+    stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
+    const dartDisclosureService = {
+      isConfigured: vi.fn(() => true),
+      refreshTicker: vi.fn(async () =>
+        disclosureRepo.upsertMany([
+          {
+            ticker: '005930',
+            source: 'dart',
+            kind: 'filing',
+            title: '주요사항보고서',
+            url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260507000001',
+            publishedAt: '2026-05-06T15:00:00.000Z',
+            fetchedAt: '2026-05-07T04:00:00.000Z',
+          },
+        ]),
+      ),
+    };
+    const dartApp = Fastify({ logger: false });
+    await dartApp.register(stockRoutes, {
+      service,
+      disclosureRepo,
+      dartDisclosureService,
+      now: () => new Date('2026-05-07T04:00:00.000Z'),
+    });
+
+    const res = await dartApp.inject({
+      method: 'POST',
+      url: '/stocks/005930/disclosures/refresh',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(dartDisclosureService.refreshTicker).toHaveBeenCalledWith({
+      ticker: '005930',
+      now: new Date('2026-05-07T04:00:00.000Z'),
+    });
+    expect(res.json().data.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'filing', title: '주요사항보고서' }),
+        expect.objectContaining({ kind: 'search-link', source: 'dart' }),
+        expect.objectContaining({ kind: 'search-link', source: 'kind' }),
+      ]),
+    );
+    expect(res.json().data.items[0]).toEqual(
+      expect.objectContaining({ kind: 'filing', title: '주요사항보고서' }),
+    );
+    expect(res.json().data.pagination).toEqual({
+      limit: 5,
+      offset: 0,
+      total: 3,
+      hasNext: false,
+      hasPrev: false,
+    });
+    await dartApp.close();
+  });
+
   it('paginates disclosure items after fallback search links are stored', async () => {
     const first = await app.inject({ method: 'GET', url: '/stocks/005930/disclosures' });
     expect(first.statusCode).toBe(200);
@@ -326,5 +387,34 @@ describe('stock news routes', () => {
       hasNext: false,
       hasPrev: true,
     });
+  });
+
+  it('orders real disclosure filings before fallback search links', () => {
+    const disclosureRepo = new StockDisclosureRepository(db);
+    disclosureRepo.upsertMany([
+      {
+        ticker: '005930',
+        source: 'dart',
+        kind: 'search-link',
+        title: 'DART 전자공시 검색',
+        url: 'https://dart.fss.or.kr/search',
+        publishedAt: null,
+        fetchedAt: '2026-05-07T05:00:00.000Z',
+      },
+      {
+        ticker: '005930',
+        source: 'dart',
+        kind: 'filing',
+        title: '주요사항보고서',
+        url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260507000001',
+        publishedAt: '2026-05-07T00:00:00.000Z',
+        fetchedAt: '2026-05-07T04:00:00.000Z',
+      },
+    ]);
+
+    expect(disclosureRepo.listByTicker('005930').map((item) => item.kind)).toEqual([
+      'filing',
+      'search-link',
+    ]);
   });
 });

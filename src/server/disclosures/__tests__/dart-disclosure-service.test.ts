@@ -85,6 +85,41 @@ describe('DART disclosure service', () => {
     expect(items[0]).toMatchObject({ id: 'filing-0', title: '주요사항보고서' });
   });
 
+  it('requests the maximum DART page size for recent filing coverage', async () => {
+    const fetchDisclosureList = vi.fn(async () => ({
+      status: '013',
+      message: '조회된 데이타가 없습니다.',
+      list: [],
+    }));
+    const service = createDartDisclosureService({
+      apiKey: 'redacted-dart-key',
+      corpCodeRepo: {
+        findByTicker: vi.fn(() => ({
+          ticker: '005930',
+          corpCode: '00126380',
+          corpName: '삼성전자',
+          stockName: '삼성전자',
+          updatedAt: '2026-05-07T00:00:00.000Z',
+        })),
+        upsertMany: vi.fn(),
+      },
+      disclosureRepo: { upsertMany: vi.fn((items) => items) },
+      fetchDisclosureList,
+    });
+
+    await service.refreshTicker({
+      ticker: '005930',
+      now: new Date('2026-05-07T04:00:00.000Z'),
+    });
+
+    expect(fetchDisclosureList).toHaveBeenCalledWith(
+      expect.objectContaining({
+        corpCode: '00126380',
+        pageCount: 100,
+      }),
+    );
+  });
+
   it('is disabled when the DART API key is missing', () => {
     const service = createDartDisclosureService({
       apiKey: '',

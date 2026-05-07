@@ -17,7 +17,7 @@ export interface CreateDartDisclosureServiceOptions {
   disclosureRepo: Pick<StockDisclosureRepository, 'upsertMany'>;
   fetchCorpCodeZip?: (apiKey: string) => Promise<Buffer>;
   fetchDisclosureList?: (
-    input: { apiKey: string; corpCode: string; fromYmd: string; toYmd: string },
+    input: { apiKey: string; corpCode: string; fromYmd: string; toYmd: string; pageCount: number },
   ) => Promise<DartDisclosureListResponse>;
 }
 
@@ -72,6 +72,7 @@ export function createDartDisclosureService(
         corpCode: corp.corpCode,
         fromYmd: formatYmd(new Date(input.now.getTime() - 90 * 24 * 60 * 60 * 1000)),
         toYmd: formatYmd(input.now),
+        pageCount: 100,
       });
       if (response.status !== '000' && response.status !== '013') {
         throw new Error(`dart disclosure fetch failed: ${response.status}`);
@@ -126,7 +127,7 @@ async function defaultFetchCorpCodeZip(apiKey: string): Promise<Buffer> {
 }
 
 async function defaultFetchDisclosureList(
-  input: { apiKey: string; corpCode: string; fromYmd: string; toYmd: string },
+  input: { apiKey: string; corpCode: string; fromYmd: string; toYmd: string; pageCount: number },
 ): Promise<DartDisclosureListResponse> {
   const url = new URL(DART_DISCLOSURE_LIST_URL);
   url.searchParams.set('crtfc_key', input.apiKey);
@@ -135,7 +136,7 @@ async function defaultFetchDisclosureList(
   url.searchParams.set('end_de', input.toYmd);
   url.searchParams.set('sort', 'date');
   url.searchParams.set('sort_mth', 'desc');
-  url.searchParams.set('page_count', '20');
+  url.searchParams.set('page_count', String(input.pageCount));
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`dart disclosure fetch failed: ${res.status}`);

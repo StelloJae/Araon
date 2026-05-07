@@ -196,6 +196,13 @@ export async function refreshStockNews(ticker: string): Promise<StockNewsPage> {
   return unwrap<StockNewsPage>(res);
 }
 
+export async function refreshStockDisclosures(ticker: string): Promise<StockDisclosurePage> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/disclosures/refresh`, {
+    method: 'POST',
+  });
+  return unwrap<StockDisclosurePage>(res);
+}
+
 export type CandleRange = '1d' | '1w' | '1m' | '3m' | '6m' | '1y';
 export type DailyBackfillRange = '1m' | '3m' | '6m' | '1y';
 

@@ -3,6 +3,7 @@ import type { StockDisclosureItem, StockNewsItem } from '@shared/types';
 import {
   getStockDisclosures,
   getStockNews,
+  refreshStockDisclosures,
   refreshStockNews,
 } from '../lib/api-client';
 
@@ -112,12 +113,18 @@ export function StockNewsDisclosurePanel({
     setRefreshing(true);
     setError(null);
     try {
-      const next = await refreshStockNews(ticker);
+      const [next, nextDisclosures] = await Promise.all([
+        refreshStockNews(ticker),
+        refreshStockDisclosures(ticker),
+      ]);
       setNewsOffset(0);
+      setDisclosureOffset(0);
       setItems(next.items);
       setNewsPage(next.pagination);
+      setDisclosures(nextDisclosures.items);
+      setDisclosurePage(nextDisclosures.pagination);
     } catch {
-      setError('뉴스 피드를 갱신하지 못했습니다.');
+      setError('뉴스·공시 피드를 갱신하지 못했습니다.');
     } finally {
       setRefreshing(false);
     }
@@ -151,7 +158,7 @@ export function StockNewsDisclosurePanel({
             cursor: refreshing ? 'not-allowed' : 'pointer',
           }}
         >
-          {refreshing ? '갱신 중' : '뉴스 피드 갱신'}
+          {refreshing ? '갱신 중' : '뉴스·공시 갱신'}
         </button>
       </div>
       <div
@@ -286,7 +293,7 @@ export function NewsFeedItemLink({
   );
 }
 
-function DisclosureItemLink({
+export function DisclosureItemLink({
   item,
   first,
 }: {
@@ -312,15 +319,15 @@ function DisclosureItemLink({
         </span>
         <span
           style={{
-            border: '1px solid var(--border)',
+            border: disclosureBadgeStyle(item.title).border,
             borderRadius: 999,
             padding: '2px 6px',
-            color: 'var(--text-muted)',
+            color: disclosureBadgeStyle(item.title).color,
             fontSize: 10,
             fontWeight: 800,
           }}
         >
-          {item.kind === 'filing' ? '공시' : '검색'}
+          {item.kind === 'filing' ? disclosureBadgeStyle(item.title).label : '검색'}
         </span>
       </div>
       <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
@@ -414,6 +421,28 @@ function disclosureSourceLabel(source: StockDisclosureItem['source']): string {
     case 'kind':
       return 'KIND';
   }
+}
+
+function disclosureBadgeStyle(title: string): { label: string; color: string; border: string } {
+  if (/주요사항|유상증자|무상증자|전환사채|신주인수권|합병|분할|영업양수|영업양도|소송|횡령|배임|상장폐지|관리종목/i.test(title)) {
+    return {
+      label: '주요 공시',
+      color: 'var(--kr-down)',
+      border: '1px solid rgba(246, 70, 93, 0.28)',
+    };
+  }
+  if (/사업보고서|반기보고서|분기보고서|감사보고서/i.test(title)) {
+    return {
+      label: '정기',
+      color: 'var(--text-secondary)',
+      border: '1px solid var(--border)',
+    };
+  }
+  return {
+    label: '공시',
+    color: 'var(--text-muted)',
+    border: '1px solid var(--border)',
+  };
 }
 
 function FeedState({ label, danger = false }: { label: string; danger?: boolean }) {

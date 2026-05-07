@@ -583,6 +583,45 @@ export async function stockRoutes(
     },
   );
 
+  app.post<{ Params: { ticker: string } }>(
+    '/stocks/:ticker/disclosures/refresh',
+    async (request, reply) => {
+      const ticker = request.params.ticker;
+      if (!/^\d{6}$/.test(ticker)) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'INVALID_TICKER' },
+        });
+      }
+      if (opts.disclosureRepo === undefined) {
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'STOCK_DISCLOSURE_REPOSITORY_NOT_WIRED' },
+        });
+      }
+      const fetchedAt = (opts.now ?? (() => new Date()))();
+      try {
+        if (opts.dartDisclosureService?.isConfigured() === true) {
+          await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+        }
+        opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt.toISOString()));
+        return reply.send({
+          success: true,
+          data: buildDisclosurePage(opts.disclosureRepo, ticker, { limit: 5, offset: 0 }),
+        });
+      } catch (err: unknown) {
+        log.warn(
+          { ticker, err: err instanceof Error ? err.message : String(err) },
+          'DART disclosure refresh failed',
+        );
+        return reply.status(502).send({
+          success: false,
+          error: { code: 'STOCK_DISCLOSURE_REFRESH_FAILED' },
+        });
+      }
+    },
+  );
+
   app.post<{
     Params: { ticker: string };
     Body: CandleBackfillBody;

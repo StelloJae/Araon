@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  createNaverSearchNewsProvider,
   createStockNewsFeedService,
   parseNaverFinanceNews,
 } from '../news-feed-service';
@@ -191,5 +192,75 @@ describe('stock news feed service', () => {
         publishedAt: '2026-05-06T08:30:00.000Z',
       }),
     ]);
+  });
+
+  it('requests the maximum Naver Search display size to widen cached news coverage with one call', async () => {
+    const fetchJson = vi.fn(async (url: string) => {
+      return {
+        items: [
+          {
+            title: '<b>삼성전자</b> 검색 뉴스',
+            originallink: 'https://news.example.com/article',
+            description: '검색 API 패시지',
+            pubDate: 'Wed, 06 May 2026 17:30:00 +0900',
+          },
+        ],
+      };
+    });
+    const provider = createNaverSearchNewsProvider({
+      clientId: 'redacted-client-id',
+      clientSecret: 'redacted-client-secret',
+      fetchJson,
+    });
+
+    const items = await provider!({
+      ticker: '005930',
+      name: '삼성전자',
+      now: new Date('2026-05-06T09:00:00.000Z'),
+    });
+
+    expect(fetchJson).toHaveBeenCalledTimes(1);
+    expect(new URL(fetchJson.mock.calls[0]![0]).searchParams.get('display')).toBe('100');
+    expect(new URL(fetchJson.mock.calls[0]![0]).searchParams.get('start')).toBe('1');
+    expect(items.map((item) => item.url)).toEqual([
+      'https://news.example.com/article',
+    ]);
+  });
+
+  it('keeps more than one page of search news in the local cache', async () => {
+    const upsertMany = vi.fn((items) =>
+      items.map((item: any, index: number) => ({ id: `news-${index}`, ...item })),
+    );
+    const service = createStockNewsFeedService({
+      repo: {
+        upsertMany,
+        listByTicker: vi.fn(() => []),
+        countByTicker: vi.fn(() => 0),
+        recordFetchStatus: vi.fn(),
+        getFetchStatus: vi.fn(() => null),
+      },
+      fetchHtml: vi.fn(async () => ''),
+      searchNews: vi.fn(async () =>
+        Array.from({ length: 25 }, (_, index) => ({
+          title: `검색 뉴스 ${index}`,
+          url: `https://news.example.com/article-${index}`,
+          description: null,
+          publishedAt: '2026-05-06T08:30:00.000Z',
+        })),
+      ),
+    });
+
+    await service.refresh({
+      ticker: '005930',
+      name: '삼성전자',
+      now: new Date('2026-05-06T09:00:00.000Z'),
+    });
+
+    expect(upsertMany).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ url: 'https://news.example.com/article-24' }),
+      ]),
+    );
+    expect(upsertMany.mock.calls[0]?.[0]).toHaveLength(25);
   });
 });

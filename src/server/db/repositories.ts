@@ -2033,7 +2033,11 @@ export class StockDisclosureRepository {
         `SELECT id, ticker, source, kind, title, url, published_at, fetched_at
          FROM stock_disclosure_items
          WHERE ticker = ?
-         ORDER BY fetched_at DESC,
+         ORDER BY CASE kind
+             WHEN 'filing' THEN 0
+             ELSE 1
+           END,
+           fetched_at DESC,
            CASE source
              WHEN 'dart' THEN 0
              WHEN 'kind' THEN 1

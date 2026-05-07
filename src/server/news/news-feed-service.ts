@@ -277,7 +277,7 @@ function dedupeNewsItems(items: ParsedStockNewsItem[]): ParsedStockNewsItem[] {
     seen.add(item.url);
     result.push(item);
   }
-  return result.slice(0, 20);
+  return result.slice(0, 120);
 }
 
 export function createNaverSearchNewsProvider(
@@ -289,14 +289,14 @@ export function createNaverSearchNewsProvider(
   const fetchJson = options.fetchJson ?? defaultFetchJson;
   return async ({ ticker, name }) => {
     const query = `${name} ${ticker}`;
-    const url = `${NAVER_SEARCH_NEWS_URL}?query=${encodeURIComponent(query)}&display=10&start=1&sort=date`;
+    const url = `${NAVER_SEARCH_NEWS_URL}?query=${encodeURIComponent(query)}&display=100&start=1&sort=date`;
     const data = await fetchJson(url, {
       headers: {
         'X-Naver-Client-Id': clientId,
         'X-Naver-Client-Secret': clientSecret,
       },
     });
-    return parseNaverSearchResponse(data);
+    return parseNaverSearchResponse(data).slice(0, 100);
   };
 }
 
