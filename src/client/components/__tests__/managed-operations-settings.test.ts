@@ -6,6 +6,7 @@ import {
   BackgroundBackfillControl,
   DataHealthPanel,
   DevModeControl,
+  LocalBackupPanel,
   RealtimeSessionControl,
 } from '../SettingsModal';
 
@@ -217,5 +218,25 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('candle 정리');
     expect(html).toContain('오늘 백필 호출');
     expect(html).toContain('4회');
+  });
+
+  it('presents local backup as user data only and excludes credentials copy', () => {
+    const html = renderToStaticMarkup(
+      createElement(LocalBackupPanel, {
+        phase: { kind: 'idle' },
+        onExport: vi.fn(),
+        onRestore: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('로컬 백업 / 복원');
+    expect(html).toContain('추적 종목');
+    expect(html).toContain('즐겨찾기');
+    expect(html).toContain('관찰 메모');
+    expect(html).toContain('관찰 계획');
+    expect(html).toContain('credentials');
+    expect(html).toContain('candle 데이터는 포함하지 않습니다');
+    expect(html).toContain('백업 내보내기');
+    expect(html).toContain('백업 복원');
   });
 });

@@ -21,7 +21,7 @@
  *     cancelled when the modal closes or a different tab is opened.
  */
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties } from 'react';
 import { CloseIcon } from '../lib/icons';
 import {
   ALERT_RULE_KIND_LABEL,
@@ -43,6 +43,7 @@ import {
   disableRealtimeSession,
   emergencyDisableRealtime,
   enableRealtimeSession,
+  exportLocalBackup,
   getFavorites,
   getRealtimeStatus,
   getRuntimeDataHealth,
@@ -50,6 +51,7 @@ import {
   getStocks,
   getThemesWithStocks,
   importKisWatchlist,
+  restoreLocalBackup,
   updateServerSettings,
   type KisWatchlistImportResult,
   type RealtimeStatusPayload,
@@ -246,6 +248,12 @@ type ServerSettingsPhase =
   | { kind: 'success'; message: string }
   | { kind: 'error'; message: string };
 
+type BackupPhase =
+  | { kind: 'idle' }
+  | { kind: 'running'; action: 'export' | 'restore' }
+  | { kind: 'success'; message: string }
+  | { kind: 'error'; message: string };
+
 function ConnectionTab() {
   const [status, setStatus] = useState<CredentialStatus | null>(null);
   const [realtimeStatus, setRealtimeStatus] =
@@ -259,6 +267,8 @@ function ConnectionTab() {
   const [dataHealth, setDataHealth] = useState<RuntimeDataHealthPayload | null>(null);
   const [serverSettingsPhase, setServerSettingsPhase] =
     useState<ServerSettingsPhase>({ kind: 'idle' });
+  const [backupPhase, setBackupPhase] =
+    useState<BackupPhase>({ kind: 'idle' });
   const [selectedCap, setSelectedCap] = useState<SessionRealtimeCap>(1);
   const [operatorConfirmed, setOperatorConfirmed] = useState(false);
 
@@ -298,6 +308,50 @@ function ConnectionTab() {
             ? err.message
             : String(err);
       setImportPhase({ kind: 'error', message });
+    }
+  }
+
+  async function handleBackupExport(): Promise<void> {
+    setBackupPhase({ kind: 'running', action: 'export' });
+    try {
+      const backup = await exportLocalBackup();
+      const blob = new Blob([JSON.stringify(backup, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `araon-local-backup-${backup.exportedAt.slice(0, 10)}.json`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setBackupPhase({
+        kind: 'success',
+        message: `백업 파일을 만들었습니다 · ${backup.stocks.length}종목`,
+      });
+    } catch (err) {
+      setBackupPhase({ kind: 'error', message: operatorErrorMessage(err) });
+    }
+  }
+
+  async function handleBackupRestore(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.currentTarget.files?.[0] ?? null;
+    event.currentTarget.value = '';
+    if (file === null) return;
+    setBackupPhase({ kind: 'running', action: 'restore' });
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const result = await restoreLocalBackup(
+        parsed as Parameters<typeof restoreLocalBackup>[0],
+      );
+      await reloadCatalog();
+      setBackupPhase({
+        kind: 'success',
+        message: `복원 완료 · ${result.stocks}종목 / ${result.favorites}즐겨찾기 / ${result.notes}메모`,
+      });
+    } catch (err) {
+      setBackupPhase({ kind: 'error', message: operatorErrorMessage(err) });
     }
   }
 
@@ -573,6 +627,11 @@ function ConnectionTab() {
         }}
       />
       <DataHealthPanel health={dataHealth} />
+      <LocalBackupPanel
+        phase={backupPhase}
+        onExport={() => void handleBackupExport()}
+        onRestore={(event) => void handleBackupRestore(event)}
+      />
 
       {status.errorMessage !== null && (
         <div
@@ -1290,6 +1349,84 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+export function LocalBackupPanel({
+  phase,
+  onExport,
+  onRestore,
+}: {
+  phase: BackupPhase;
+  onExport: () => void;
+  onRestore: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  const running = phase.kind === 'running';
+  return (
+    <div
+      data-testid="local-backup-panel"
+      style={{
+        marginTop: 18,
+        padding: '12px 14px',
+        background: 'var(--bg-tint)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 800,
+          color: 'var(--text-primary)',
+          marginBottom: 8,
+        }}
+      >
+        로컬 백업 / 복원
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        추적 종목, 즐겨찾기, 관찰 메모, 관찰 계획만 JSON으로 백업합니다.
+        credentials, 토큰, 계좌, candle 데이터는 포함하지 않습니다.
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={running}
+          style={operatorButtonStyle(!running)}
+        >
+          {phase.kind === 'running' && phase.action === 'export'
+            ? '백업 중…'
+            : '백업 내보내기'}
+        </button>
+        <label
+          style={{
+            ...operatorButtonStyle(!running),
+            textAlign: 'center',
+          }}
+        >
+          {phase.kind === 'running' && phase.action === 'restore'
+            ? '복원 중…'
+            : '백업 복원'}
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={onRestore}
+            disabled={running}
+            style={{ display: 'none' }}
+          />
+        </label>
+      </div>
+      {phase.kind === 'success' && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-up)' }}>
+          {phase.message}
+        </div>
+      )}
+      {phase.kind === 'error' && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-down)' }}>
+          백업 처리 실패: {phase.message}
+        </div>
       )}
     </div>
   );

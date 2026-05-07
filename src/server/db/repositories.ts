@@ -1351,6 +1351,19 @@ const STOCK_NOTE_MAX_LIMIT = 200;
 export class StockNoteRepository {
   constructor(private readonly db: Database.Database) {}
 
+  listAll(limit = 5000): StockNote[] {
+    const safeLimit = Math.max(1, Math.min(limit, 5000));
+    const rows = this.db
+      .prepare<[number], StockNoteRow>(
+        `SELECT id, ticker, body, created_at, updated_at
+         FROM stock_notes
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(safeLimit);
+    return rows.map(rowToStockNote);
+  }
+
   listByTicker(ticker: string, options: StockNoteListOptions = {}): StockNote[] {
     const limit = Math.max(1, Math.min(options.limit ?? STOCK_NOTE_DEFAULT_LIMIT, STOCK_NOTE_MAX_LIMIT));
     const offset = Math.max(0, options.offset ?? 0);
@@ -1405,6 +1418,23 @@ export class StockNoteRepository {
     return note;
   }
 
+  restoreMany(notes: readonly StockNote[]): number {
+    const stmt = this.db.prepare(
+      `INSERT INTO stock_notes (id, ticker, body, created_at, updated_at)
+       VALUES (@id, @ticker, @body, @createdAt, @updatedAt)
+       ON CONFLICT(id) DO UPDATE SET
+         ticker = excluded.ticker,
+         body = excluded.body,
+         created_at = excluded.created_at,
+         updated_at = excluded.updated_at`,
+    );
+    const write = this.db.transaction((rows: readonly StockNote[]) => {
+      for (const note of rows) stmt.run(note);
+    });
+    write(notes);
+    return notes.length;
+  }
+
   delete(ticker: string, id: string): boolean {
     const result = this.db
       .prepare('DELETE FROM stock_notes WHERE ticker = ? AND id = ?')
@@ -1415,6 +1445,17 @@ export class StockNoteRepository {
 
 export class StockObservationPlanRepository {
   constructor(private readonly db: Database.Database) {}
+
+  listAll(): StockObservationPlan[] {
+    const rows = this.db
+      .prepare<[], StockObservationPlanRow>(
+        `SELECT ticker, thesis, trigger, invalidation, status, created_at, updated_at
+         FROM stock_observation_plans
+         ORDER BY updated_at DESC, ticker`,
+      )
+      .all();
+    return rows.map(rowToStockObservationPlan);
+  }
 
   findByTicker(ticker: string): StockObservationPlan | null {
     const row = this.db
@@ -1464,6 +1505,27 @@ export class StockObservationPlanRepository {
     const row = this.findByTicker(input.ticker);
     if (row === null) throw new Error('stock observation plan upsert failed');
     return row;
+  }
+
+  restoreMany(plans: readonly StockObservationPlan[]): number {
+    const stmt = this.db.prepare(
+      `INSERT INTO stock_observation_plans (
+         ticker, thesis, trigger, invalidation, status, created_at, updated_at
+       )
+       VALUES (@ticker, @thesis, @trigger, @invalidation, @status, @createdAt, @updatedAt)
+       ON CONFLICT(ticker) DO UPDATE SET
+         thesis = excluded.thesis,
+         trigger = excluded.trigger,
+         invalidation = excluded.invalidation,
+         status = excluded.status,
+         created_at = excluded.created_at,
+         updated_at = excluded.updated_at`,
+    );
+    const write = this.db.transaction((rows: readonly StockObservationPlan[]) => {
+      for (const plan of rows) stmt.run(plan);
+    });
+    write(plans);
+    return plans.length;
   }
 
   delete(ticker: string): boolean {

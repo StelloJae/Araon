@@ -3,9 +3,13 @@ import { z } from 'zod';
 
 import type {
   Favorite,
+  LocalBackupPayload,
+  LocalRestoreResult,
   Price,
   PriceCandle,
   Stock,
+  StockNote,
+  StockObservationPlan,
   StockSignalEvent,
   StockSignalOutcome,
   StockSignalOutcomeDashboard,
@@ -56,8 +60,8 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
   settingsStore: SettingsStore;
   credentialStore: CredentialStore;
-  stockRepo?: { findAll(): Stock[] };
-  favoriteRepo?: { findAll(): Favorite[] };
+  stockRepo?: { findAll(): Stock[]; bulkUpsert?(stocks: readonly Stock[]): Promise<void> | void; upsert?(stock: Stock): void };
+  favoriteRepo?: { findAll(): Favorite[]; upsert?(favorite: Favorite): void };
   candleRepo?: {
     summarizeCoverage(): PriceCandleCoverageSummary[];
     findFirstCandleAtOrAfter?(query: {
@@ -73,7 +77,15 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
     summarizeGrowth(): StockSignalGrowthSummary;
     listRecent?(limit?: number): StockSignalEvent[];
   };
-  noteRepo?: { summarizeGrowth(): StockNoteGrowthSummary };
+  noteRepo?: {
+    summarizeGrowth(): StockNoteGrowthSummary;
+    listAll?(limit?: number): StockNote[];
+    restoreMany?(notes: readonly StockNote[]): number;
+  };
+  observationPlanRepo?: {
+    listAll?(): StockObservationPlan[];
+    restoreMany?(plans: readonly StockObservationPlan[]): number;
+  };
   newsRepo?: { summarizeGrowth(now?: Date, staleAfterMs?: number): StockNewsGrowthSummary };
   dataRetention?: { snapshot(): DataRetentionSnapshot };
 }
@@ -157,6 +169,47 @@ const sessionEnableBodySchema = z.object({
   maxSessionMs: z.number().int().optional(),
 });
 
+const backupStockSchema = z.object({
+  ticker: z.string().min(1).max(16),
+  name: z.string().min(1).max(100),
+  market: z.enum(['KOSPI', 'KOSDAQ']),
+  autoSector: z.string().nullable().optional(),
+  instrumentType: z.string().nullable().optional(),
+});
+
+const backupFavoriteSchema = z.object({
+  ticker: z.string().min(1).max(16),
+  tier: z.enum(['realtime', 'polling']),
+  addedAt: z.string().min(1),
+});
+
+const backupNoteSchema = z.object({
+  id: z.string().min(1).max(128),
+  ticker: z.string().min(1).max(16),
+  body: z.string().min(1).max(5000),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+});
+
+const backupObservationPlanSchema = z.object({
+  ticker: z.string().min(1).max(16),
+  thesis: z.string().max(2000),
+  trigger: z.string().max(2000),
+  invalidation: z.string().max(2000),
+  status: z.enum(['watching', 'paused', 'archived']),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+});
+
+const localBackupPayloadSchema = z.object({
+  schemaVersion: z.literal(1),
+  exportedAt: z.string().min(1),
+  stocks: z.array(backupStockSchema).max(5000),
+  favorites: z.array(backupFavoriteSchema).max(5000),
+  notes: z.array(backupNoteSchema).max(5000),
+  observationPlans: z.array(backupObservationPlanSchema).max(5000),
+});
+
 const sessionTimers = new WeakMap<KisRuntime, ReturnType<typeof setTimeout>>();
 
 export async function runtimeRoutes(
@@ -169,6 +222,37 @@ export async function runtimeRoutes(
       success: true,
       data: summarizeSignalOutcomeDashboard(signals, opts.candleRepo),
     });
+  });
+
+  app.get('/runtime/backup/export', async (_request, reply) => {
+    const payload = buildLocalBackupPayload(opts, new Date());
+    return reply.send({ success: true, data: payload });
+  });
+
+  app.post('/runtime/backup/restore', async (request, reply) => {
+    const parsed = localBackupPayloadSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'INVALID_BACKUP_PAYLOAD',
+          message: '백업 파일 형식이 올바르지 않습니다.',
+        },
+      });
+    }
+
+    if (!canRestoreLocalBackup(opts)) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: 'BACKUP_RESTORE_UNAVAILABLE',
+          message: '로컬 백업 복원 저장소가 준비되지 않았습니다.',
+        },
+      });
+    }
+
+    const result = await restoreLocalBackup(opts, parsed.data as LocalBackupPayload);
+    return reply.send({ success: true, data: result });
   });
 
   app.get('/runtime/data-health', async (_request, reply) => {
@@ -427,6 +511,55 @@ export async function runtimeRoutes(
     );
     return reply.send({ success: true, data: result });
   });
+}
+
+function buildLocalBackupPayload(
+  opts: RuntimeRoutesOptions,
+  now: Date,
+): LocalBackupPayload {
+  return {
+    schemaVersion: 1,
+    exportedAt: now.toISOString(),
+    stocks: opts.stockRepo?.findAll() ?? [],
+    favorites: opts.favoriteRepo?.findAll() ?? [],
+    notes: opts.noteRepo?.listAll?.() ?? [],
+    observationPlans: opts.observationPlanRepo?.listAll?.() ?? [],
+  };
+}
+
+function canRestoreLocalBackup(opts: RuntimeRoutesOptions): boolean {
+  const stockWritable =
+    opts.stockRepo?.bulkUpsert !== undefined || opts.stockRepo?.upsert !== undefined;
+  return (
+    stockWritable
+    && opts.favoriteRepo?.upsert !== undefined
+    && opts.noteRepo?.restoreMany !== undefined
+    && opts.observationPlanRepo?.restoreMany !== undefined
+  );
+}
+
+async function restoreLocalBackup(
+  opts: RuntimeRoutesOptions,
+  payload: LocalBackupPayload,
+): Promise<LocalRestoreResult> {
+  if (!canRestoreLocalBackup(opts)) {
+    throw new Error('backup restore repositories are not writable');
+  }
+  if (opts.stockRepo?.bulkUpsert !== undefined) {
+    await opts.stockRepo.bulkUpsert(payload.stocks);
+  } else {
+    for (const stock of payload.stocks) opts.stockRepo?.upsert?.(stock);
+  }
+  for (const favorite of payload.favorites) opts.favoriteRepo?.upsert?.(favorite);
+  const noteCount = opts.noteRepo?.restoreMany?.(payload.notes) ?? 0;
+  const planCount =
+    opts.observationPlanRepo?.restoreMany?.(payload.observationPlans) ?? 0;
+  return {
+    stocks: payload.stocks.length,
+    favorites: payload.favorites.length,
+    notes: noteCount,
+    observationPlans: planCount,
+  };
 }
 
 function summarizeSignalOutcomeDashboard(

@@ -11,6 +11,8 @@ import type {
   CandleApiResponse,
   CandleInterval,
   Favorite,
+  LocalBackupPayload,
+  LocalRestoreResult,
   Stock,
   StockNewsItem,
   StockDisclosureItem,
@@ -604,6 +606,22 @@ export interface RuntimeDataHealthPayload {
 export async function getRuntimeDataHealth(): Promise<RuntimeDataHealthPayload> {
   const res = await fetch('/runtime/data-health');
   return unwrap<RuntimeDataHealthPayload>(res);
+}
+
+export async function exportLocalBackup(): Promise<LocalBackupPayload> {
+  const res = await fetch('/runtime/backup/export');
+  return unwrap<LocalBackupPayload>(res);
+}
+
+export async function restoreLocalBackup(
+  backup: LocalBackupPayload,
+): Promise<LocalRestoreResult> {
+  const res = await fetch('/runtime/backup/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(backup),
+  });
+  return unwrap<LocalRestoreResult>(res);
 }
 
 // === Imports ==============================================================

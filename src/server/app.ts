@@ -248,6 +248,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     backgroundBackfill,
     signalEventRepo,
     noteRepo,
+    observationPlanRepo,
     newsRepo,
     dataRetention,
   });

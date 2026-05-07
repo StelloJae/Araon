@@ -58,6 +58,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Desktop beta.11 install acceptance**: GitHub Release `v1.1.0-beta.11` macOS DMG/ZIP 다운로드·checksum 확인 / DMG mount와 ZIP extract 성공 / Computer Use로 first-run KIS 앱키 등록 화면 확인 / no credentials 상태에서 runtime unconfigured, master refresh blocked, `credentials.enc` 미생성 / direct executable과 `open -n` 경로는 실행 가능 / macOS `codesign`·`spctl`은 `code has no resources but signature indicates they must be present`로 실패 / Windows EXE는 asset 존재·checksum만 확인, 실행 not executed
 - **Desktop packaging hardening**: macOS signing failure 원인은 `mac.identity=null`로 bundle signing을 완전히 skip하면서 Mach-O linker/ad-hoc signature metadata와 sealed resources 상태가 어긋난 것. `mac.identity="-"` ad-hoc signing으로 로컬 macOS app bundle은 `codesign --verify --deep --strict` 통과. beta.12 release validation 중 `better-sqlite3`가 host Node ABI 141로 packaged되는 문제도 발견해 `nativeRebuilder="legacy"`로 Electron 41 ABI 145 packaging을 고정. `spctl`은 Developer ID/notarization이 없어서 여전히 rejected가 정상. Browser quarantine/Finder path와 Windows EXE 실행은 계속 pending.
 - **P1 data-growth hardening**: `stock_signal_events` 90일 retention + max 200 read clamp / `stock_notes` limit+offset pagination, no auto-prune / `stock_news_items` 24h stale + 7일 prune + sanitized fetch failure status / `price_candles` prune는 server start 후 daily maintenance로 호출 / `/runtime/data-health`가 signal/news/note growth와 candle prune 상태를 표시 / live KIS·WS·selected minute probe 0회
+- **Local backup/restore**: Settings 연결 탭과 `/runtime/backup/export`·`/runtime/backup/restore`에서 추적 종목, 즐겨찾기, 관찰 메모, 관찰 계획만 JSON으로 백업/복원한다. `credentials.enc`, token, approval key, account, candle, raw tick, runtime state는 절대 포함하지 않는다.
 
 ### NXT 시리즈 진행도
 
@@ -174,7 +175,7 @@ npm run dev:client &
 | `src/server/realtime/realtime-bridge.ts` | WS frames → guarded priceStore apply. runtime에서는 persisted gates 또는 session-scoped gate가 허용한 ticker만 priceStore/SSE 반영. NXT7e 이후 session hard limit을 apply path에서 즉시 검사 |
 | `src/server/realtime/runtime-operator.ts` | NXT5c/NXT6e/NXT7a operator helpers: apply gate, session gate, credential-safe status shape, manual disable/rollback helper, auto-stop decision helper, rollout readiness helper |
 | `src/server/realtime/tier-manager.ts` | favorites-only realtime tiering + NXT9a `previewRealtimeCandidates()` cap20 후보/shortage preview. non-favorites는 preview에서도 WS 후보가 아님 |
-| `src/server/routes/runtime.ts` | runtime operator routes: `GET /runtime/realtime/status`, `POST /runtime/realtime/session-enable`, `POST /runtime/realtime/session-disable`, raw key/token/account 미노출 |
+| `src/server/routes/runtime.ts` | runtime operator routes: `GET /runtime/realtime/status`, `POST /runtime/realtime/session-enable`, `POST /runtime/realtime/session-disable`, `GET/POST /runtime/backup/*`, raw key/token/account 미노출 |
 | `src/server/polling/polling-scheduler.ts` | REST polling. cycle ~14초 |
 | `src/server/price/candle-aggregator.ts` | PriceStore `price-update` → local 1m candle in-memory aggregation + 5초 batch flush. snapshot restore는 candle 생성 금지 |
 | `src/server/price/candle-aggregation.ts` | KST bucket boundary + 1m → 3m/5m/10m/15m/30m/1h/2h/4h/6h/12h, 1d → 1D/1W/1M aggregation helper |
@@ -182,6 +183,7 @@ npm run dev:client &
 | `src/server/chart/daily-backfill-service.ts` | KIS daily candle backfill service. `1d` rows만 저장, `1m/3m/6m/1y` range를 100일 이하 창으로 분할 |
 | `src/server/chart/background-backfill-scheduler.ts` | Managed-default background daily backfill scheduler. 장후/주말만 실행, favorites/tracked 우선, sequential low-rate, daily call counter + 429/5xx cooldown |
 | `src/server/maintenance/data-retention.ts` | P1 data-growth maintenance. startup + daily prune: 1m candle 30일, 1d candle 2년, signal 90일, news 7일. 실패는 sanitized diagnostic으로 격리 |
+| `docs/runbooks/local-backup-restore.md` | 로컬 백업/복원 범위. 포함: stocks/favorites/notes/observation plans. 제외: credentials/tokens/account/candles/raw ticks/runtime state |
 | `src/server/kis/kis-daily-chart.ts` | KIS 국내주식기간별시세 daily mapper/client. 테스트는 mock transport만 사용 |
 | `src/server/db/migrations/004-price-candles.sql` | `price_candles` schema: local `1m` + manual KIS `1d`. raw tick table 아님 |
 | `src/server/db/migrations/008-stock-news-fetch-status.sql` | `stock_news_fetch_status` schema: success/failed, sanitized error code, fetched timestamp만 저장 |

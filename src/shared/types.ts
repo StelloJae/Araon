@@ -324,6 +324,22 @@ export interface StockObservationPlan {
   updatedAt: string;
 }
 
+export interface LocalBackupPayload {
+  schemaVersion: 1;
+  exportedAt: string;
+  stocks: Stock[];
+  favorites: Favorite[];
+  notes: StockNote[];
+  observationPlans: StockObservationPlan[];
+}
+
+export interface LocalRestoreResult {
+  stocks: number;
+  favorites: number;
+  notes: number;
+  observationPlans: number;
+}
+
 export type StockSignalType = 'scalp' | 'strong_scalp' | 'overheat' | 'trend';
 export type StockSignalWindow = '10s' | '20s' | '30s' | '1m' | '3m' | '5m';
 
