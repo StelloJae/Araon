@@ -1,128 +1,114 @@
 # Araon
 
-![License](https://img.shields.io/badge/license-Apache--2.0-blue)
-![Node](https://img.shields.io/badge/node-%3E%3D20-339933)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="public/logo-dark.png">
-    <img src="public/logo.png" alt="Araon logo" width="96" height="96">
+    <img src="public/logo.png" alt="Araon logo" width="104" height="104">
   </picture>
 </p>
 
-**KIS OpenAPI 기반 한국 주식 관심종목 실시간 대시보드.**
+<p align="center">
+  <strong>A local Korean stock monitoring dashboard for KIS OpenAPI users.</strong>
+</p>
 
-Araon is a localhost-first Korean stock watchlist dashboard for people who want
-fast, readable KRX/NXT market monitoring without sending brokerage credentials
-to a hosted service. It combines KIS REST polling with the integrated
-`H0UNCNT0` WebSocket realtime feed, while keeping REST polling available as a
-fallback.
+<p align="center">
+  <a href="README.ko.md">한국어 README</a>
+  ·
+  <a href="INSTALL.md">Install Guide</a>
+  ·
+  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.0">Latest Release</a>
+</p>
 
-> Araon is a read-only monitoring tool. It does not place orders, execute
-> trades, or provide financial advice. You are responsible for your brokerage
-> credentials, API quota, trading decisions, and compliance with KIS OpenAPI
-> terms.
+<p align="center">
+  <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
+  <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933">
+  <img alt="Version" src="https://img.shields.io/badge/npm-v1.1.0-111827">
+</p>
 
-## Highlights
+Araon is a **single-user, localhost-first dashboard** for watching Korean stocks
+through KIS OpenAPI. It is built for people who trade elsewhere, but want a calm
+local screen for realtime prices, charts, alerts, news, and disclosure links.
 
-- 관심종목 중심의 한국 주식 대시보드
-- KIS REST polling fallback for tracked stocks
-- KIS `H0UNCNT0` integrated KRX+NXT WebSocket realtime feed
-- cap40 controlled realtime acceptance completed for the v1 release
-- Managed cap40 realtime by default after credentials are configured
-- Emergency realtime/backfill pause from the local UI
-- Cached news/disclosure feed links, with optional Naver Search and OpenDART
-  enrichment
-- KIS master catalog for searchable KOSPI/KOSDAQ universe data
-- KIS official index industry grouping with manual sector override support
-- 한국어 초성 검색 for stock names
-- Server-Sent Events for live UI updates
-- Real cumulative volume display
-- Trustworthy volume-surge baseline foundation
-  - no fake multiplier without baseline data
-  - shows `기준선 수집 중` until enough same-session/time-bucket samples exist
+Araon is read-only. It does **not** place orders, execute trades, manage
+accounts, or provide financial advice.
 
-## What Araon Is For
+---
 
-Araon is designed for a **single-user localhost setup**:
+## What You Can Do With Araon
 
-- You run the server and browser UI on your own machine.
-- KIS credentials are entered in the local UI.
-- Runtime state is stored under `data/`, which is ignored by git.
-- Fresh installs make no external KIS calls until credentials are configured.
-- After credentials are configured, Araon manages realtime and daily candle
-  backfill automatically.
+- Watch your tracked and favorite Korean stocks in one local dashboard.
+- Use KIS integrated realtime quotes for up to 40 stocks after credentials are
+  configured.
+- Keep REST polling as a fallback when realtime is quiet or unavailable.
+- Open a stock detail view with live price movement, candles, news, disclosures,
+  and data-quality status.
+- View local intraday candles and KIS daily/weekly/monthly candle history.
+- Automatically fill daily candle history for tracked/favorite stocks outside
+  market hours.
+- Fetch today-minute candles for a selected ticker when the guarded route allows
+  it.
+- Receive local alerts, desktop alerts, sound alerts, and optional Telegram
+  phone alerts.
+- Enrich news/disclosure feeds with optional Naver Search and OpenDART API keys.
+- Keep all credentials and market data on your own machine.
 
-This is not a hosted SaaS app, a trading bot, or an order-entry system.
-
-## Managed Operations
-
-Fresh installs have no credentials, so Araon does not start KIS REST,
-WebSocket, or daily backfill calls. Once you register live KIS credentials,
-managed operations are enabled by default:
-
-```txt
-websocketEnabled=true
-applyTicksToPriceStore=true
-backgroundDailyBackfillEnabled=true
-```
-
-Realtime uses the integrated `H0UNCNT0` feed for up to 40 tracked/favorite
-tickers. REST polling remains available as a fallback. Daily historical candle
-backfill runs only after close/weekends, stays within tracked/favorite tickers,
-and never synthesizes missing chart data.
-
-Settings shows managed status and diagnostics instead of ordinary enable
-toggles. Emergency pause remains available for realtime and daily backfill.
-
-## Requirements
-
-- Node.js 20 or newer
-- npm
-- A live KIS OpenAPI app key/app secret pair
-  - Araon's first-run UI is intentionally live-only
-  - KIS paper credentials are materially more rate-limited and can differ by endpoint
+---
 
 ## Quick Start
 
-The fastest first-run path is npm:
+You need:
+
+- Node.js 20 or newer
+- npm
+- A live KIS OpenAPI app key and app secret
+
+Run Araon:
 
 ```bash
 npx @stellojae/araon
 ```
 
-Araon starts a local server on `127.0.0.1`, prints the URL, and opens your
-browser.
+Araon starts a local server, prints a `http://127.0.0.1:<port>` URL, and opens
+your browser.
 
-Or install the CLI globally:
+You can also install it globally:
 
 ```bash
 npm install -g @stellojae/araon
 araon
 ```
 
-On first run, Araon shows the local KIS credentials setup screen. You need your
-own KIS OpenAPI app key/app secret pair. After credentials are configured,
-Araon automatically manages cap40 integrated realtime and guarded daily
-backfill. Araon remains read-only: no orders, no trading, no brokerage actions.
+On first run, Araon shows a local setup screen for your KIS app key and app
+secret. Until credentials are configured, Araon makes no external KIS calls.
 
-For local development from source:
+---
 
-```bash
-git clone https://github.com/StelloJae/Araon.git
-cd Araon
-npm install
-cp .env.example .env
+## First Run Checklist
+
+1. Install Node.js 20 or newer.
+2. Run `npx @stellojae/araon`.
+3. Open the printed localhost URL if your browser does not open automatically.
+4. Enter your live KIS OpenAPI app key and app secret.
+5. Add stocks from search or the master catalog.
+6. Favorite the stocks you want Araon to prioritize.
+7. Leave Araon running while you monitor the market.
+
+After credentials are configured, Araon automatically manages:
+
+```txt
+Integrated realtime quotes: ON
+REST polling fallback: ON
+Daily candle backfill: ON, outside market hours
 ```
 
-Set a private local encryption seed in `.env`:
+You can pause realtime or daily backfill from Settings if needed.
 
-```bash
-KIS_CRED_KEY=replace-with-a-long-random-local-secret
-```
+---
 
-Optional news/disclosure enrichment can also be configured in `.env`:
+## Optional Setup
+
+Araon works without these optional keys. Add them only if you want the extra
+features.
 
 ```bash
 NAVER_SEARCH_CLIENT_ID=
@@ -132,21 +118,109 @@ ARAON_TELEGRAM_BOT_TOKEN=
 ARAON_TELEGRAM_CHAT_ID=
 ```
 
-Leave these blank to use the no-key Naver Finance link feed and external
-DART/KIND search links only. To enable them, register a Naver Developers app
-with the Search API enabled and request an OpenDART API key. Araon stores only
-news/disclosure titles, timestamps, provider snippets, and links; it does not
-store article bodies or generate news summaries.
+What they enable:
 
-The Telegram values are optional phone-alert settings. They are not KIS
-brokerage credentials; when they are blank, Araon keeps phone notifications
-disabled while local toast/sound/desktop alerts continue to work.
+- **Naver Search API**: richer stock news search results.
+- **OpenDART API**: recent disclosure feed enrichment.
+- **Telegram Bot**: phone alerts from Araon's local alert engine.
 
-Run the server and client in separate terminals:
+Araon stores news/disclosure titles, timestamps, provider snippets, and links.
+It does not store full article bodies or generate news summaries.
+
+---
+
+## Where Your Data Lives
+
+Araon stores runtime data locally.
+
+CLI data directory priority:
+
+```txt
+1. --data-dir
+2. ARAON_DATA_DIR
+3. OS default user-data directory
+```
+
+Default locations:
+
+```txt
+macOS:   ~/Library/Application Support/Araon
+Windows: %APPDATA%/Araon
+Linux:   ~/.local/share/araon
+```
+
+Source-development data usually lives under `data/`.
+
+Never commit or share:
+
+- `.env`
+- `data/`
+- `credentials.enc`
+- SQLite databases
+- KIS app keys or app secrets
+- access tokens or approval keys
+
+---
+
+## Desktop App
+
+GitHub Releases include macOS desktop artifacts for convenience:
+
+- `Araon-1.1.0-arm64.dmg`
+- `Araon-1.1.0-arm64-mac.zip`
+
+The desktop app is unsigned for public distribution. macOS may show a Gatekeeper
+warning. Windows desktop validation is still manual-pending, so the npm/CLI path
+is the recommended first path for most users.
+
+---
+
+## Common Commands
+
+Run without opening a browser:
+
+```bash
+araon --no-open
+```
+
+Use a specific port:
+
+```bash
+araon --port 3910
+```
+
+Use a specific data directory:
+
+```bash
+araon --data-dir ~/AraonData
+```
+
+Stop Araon:
+
+```txt
+Press Ctrl+C in the terminal running Araon.
+```
+
+---
+
+## Development
+
+Clone and install:
+
+```bash
+git clone https://github.com/StelloJae/Araon.git
+cd Araon
+npm install
+cp .env.example .env
+```
+
+Run the development server:
 
 ```bash
 npm run dev:server
 ```
+
+In a second terminal:
 
 ```bash
 npm run dev:client
@@ -158,101 +232,7 @@ Open:
 http://127.0.0.1:5173
 ```
 
-For a fuller first-run walkthrough, see [INSTALL.md](INSTALL.md).
-
-## CLI Launcher
-
-Araon can run as a single localhost command from npm:
-
-```bash
-npx @stellojae/araon
-```
-
-Or after a production build:
-
-```bash
-npm run build
-node dist/cli/araon.js
-```
-
-When installed globally, the binary name is:
-
-```bash
-npm install -g @stellojae/araon
-araon
-```
-
-The launcher starts Fastify on `127.0.0.1`, serves the built React frontend,
-prints the local URL, and opens the default browser. `Ctrl+C` owns shutdown:
-Araon stops realtime/session resources, persists snapshots, checkpoints SQLite,
-and closes the server.
-
-Useful CLI options:
-
-```bash
-araon --no-open
-araon --port 3910
-araon --data-dir ~/AraonData
-araon --exit-when-browser-closes
-araon --log-level info
-```
-
-CLI runtime data does not default to the repository `data/` directory. The
-priority is `--data-dir`, then `ARAON_DATA_DIR`, then the OS user-data default:
-
-```txt
-macOS:   ~/Library/Application Support/Araon
-Windows: %APPDATA%/Araon
-Linux:   ~/.local/share/araon
-```
-
-Fresh installs have no credentials, so they make no external KIS calls. After
-credentials are configured, managed realtime and daily backfill are enabled by
-default. Araon remains a localhost-only read-only monitoring tool.
-
-## Desktop App
-
-Araon also has an unsigned desktop packaging path for macOS and Windows.
-This channel wraps the same local Fastify server and React UI in Electron.
-
-The desktop app is not Developer ID-signed or notarized yet. macOS artifacts are
-ad-hoc signed for local bundle integrity, but they can still show OS security
-warnings:
-
-- macOS may show a Gatekeeper warning.
-- Windows may show a SmartScreen warning.
-
-Desktop runtime data is stored under the OS app user-data directory rather than
-inside the app bundle. Credentials, settings, and SQLite state must never be
-committed. Fresh installs have no credentials and make no external KIS calls;
-after credentials are configured, managed realtime and guarded daily backfill
-are enabled by default.
-
-Useful desktop build commands:
-
-```bash
-npm run build:desktop
-npm run dist:mac
-npm run dist:win
-```
-
-`dist:mac` should be run on macOS and `dist:win` should be run on Windows,
-especially because Araon uses the native `better-sqlite3` dependency.
-
-## First Run
-
-1. Run `npx @stellojae/araon` or the installed `araon` command.
-2. Open the printed localhost URL if the browser did not open automatically.
-3. Enter your live KIS OpenAPI credentials in the local setup screen.
-4. Confirm the read-only setup copy, then let Araon start the KIS runtime.
-5. Add or favorite stocks from the dashboard.
-6. Use Settings to inspect managed realtime, daily backfill, alerts, and data health.
-
-The CLI prints the selected data directory at startup. Araon stores encrypted
-credentials, settings, SQLite state, and local baseline history there. Do not
-commit `data/`, `.env`, or any brokerage credential material.
-
-## Development Commands
+Verify changes:
 
 ```bash
 npm test
@@ -260,109 +240,21 @@ npm run typecheck
 npm run build
 ```
 
-Useful local commands:
+---
 
-```bash
-npm run dev:server
-npm run dev:client
-```
+## Important Limitations
 
-## Project Layout
-
-```txt
-src/server/      Fastify server, KIS runtime, polling, realtime, SQLite
-src/client/      React UI, stores, SSE handling, operator controls
-src/cli/         `araon` browser launcher
-src/shared/      Shared types, constants, logger, volume baseline helpers
-docs/runbooks/   Operational runbooks
-docs/research/   Validation reports and implementation notes
-public/          Static assets including the Araon favicon
-```
-
-Key runtime files:
-
-- `src/server/bootstrap-kis.ts` wires the KIS runtime.
-- `src/server/kis/` contains REST, auth, approval-key, WebSocket, and parser code.
-- `src/server/realtime/` contains tiering, operator status, and apply-path guards.
-- `src/server/polling/` contains REST polling fallback.
-- `src/server/sse/` emits live UI events.
-- `src/client/components/SettingsModal.tsx` contains realtime operator controls.
-
-## Data And Security Model
-
-Araon is a local personal tool. Its security model assumes your machine is the
-trust boundary.
-
-- Credentials are encrypted locally in `data/credentials.enc`.
-- The encryption seed comes from `KIS_CRED_KEY` when provided.
-- Runtime settings and SQLite data live under `data/`.
-- `data/` is ignored by git.
-- Raw `appKey`, `appSecret`, access tokens, account identifiers, and approval
-  keys should never appear in logs, docs, fixtures, or commits.
-
-Before publishing changes, run:
-
-```bash
-npm test
-npm run typecheck
-npm run build
-git diff --check
-```
-
-## Volume Surge Ratio Policy
-
-Araon does not invent a `거래량 5.2x` style multiplier from current volume alone.
-
-The approved baseline is:
-
-```txt
-current cumulative volume
-/
-recent 20 trading days average cumulative volume for the same KST session and HH:mm bucket
-```
-
-Until enough baseline samples exist, the UI shows `기준선 수집 중` instead of a
-ratio. See
-[docs/research/volume-surge-baseline-v1.md](docs/research/volume-surge-baseline-v1.md)
-for the implementation contract.
-
-## Troubleshooting
-
-### Port 3000 or 5173 is already in use
-
-Stop the existing local dev server, or change the port before starting Araon.
-The default setup expects:
-
-```txt
-Fastify API: http://127.0.0.1:3000
-Vite client: http://127.0.0.1:5173
-```
-
-### KIS credentials are rejected
-
-Check that you entered a live KIS app key/app secret pair. Araon's public
-first-run setup no longer exposes paper mode because KIS paper credentials are
-materially more rate-limited and can differ by endpoint.
-
-### Realtime is enabled but no ticks arrive
-
-Some tickers have little or no activity outside liquid market windows. REST
-polling should continue to keep the dashboard usable.
-
-### Volume ratio does not show yet
-
-This is expected on a fresh install. Araon waits for enough same-session,
-same-time-bucket baseline samples before showing a volume-surge ratio.
-
-## Known Limitations
-
-- Clean installs make no external KIS calls until credentials exist; after
-  credentials, managed realtime/backfill are enabled by default.
+- Araon is optimized for one person on one local machine.
+- Araon is not a hosted SaaS service.
+- Araon does not trade for you.
+- Full-watchlist historical minute backfill is intentionally not automatic.
+- Daily candle backfill is guarded and does not run during the KRX/NXT trading
+  window.
 - Volume-surge ratios appear only after enough local baseline samples exist.
-- Desktop artifacts are unsigned and may trigger OS security warnings.
-- Docker Compose packaging is planned after v1.0.0.
-- Windows service / task scheduler packaging is planned after v1.0.0.
-- Araon is currently optimized for a single-user localhost workflow.
+- External providers such as KIS, Naver, OpenDART, and Telegram can have their
+  own quotas, outages, or policy limits.
+
+---
 
 ## License
 
