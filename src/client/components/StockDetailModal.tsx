@@ -52,6 +52,7 @@ import { StockNewsDisclosurePanel } from './StockNewsDisclosurePanel';
 import { StockNotesPanel } from './StockNotesPanel';
 import { StockObservationPlanPanel } from './StockObservationPlanPanel';
 import { StockObservationTimeline } from './StockObservationTimeline';
+import { StockDataQualityPanel } from './StockDataQualityPanel';
 
 const PENDING_LABEL = '연동 예정';
 const UNAVAILABLE_LABEL = '미제공';
@@ -238,6 +239,8 @@ export function StockDetailModal({
           ) : (
             <StockCandleChart ticker={stock.code} />
           )}
+
+          <StockDataQualityPanel stock={stock} />
 
           <div
             style={{
