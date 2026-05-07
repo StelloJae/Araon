@@ -1,10 +1,10 @@
 /**
- * NXT6c — cap5 favorites runtime apply smoke for H0UNCNT0.
+ * NXT6b — favorites runtime apply smoke for H0UNCNT0.
  *
- * Selects the current tier-manager realtime favorites with a temporary cap of
- * 5, then briefly routes live KIS WebSocket frames through the guarded runtime
- * path: RealtimeBridge -> real PriceStore -> real SseManager. It uses only
- * in-memory gates and never changes persisted settings, favorites, UI, or
+ * Selects the current tier-manager realtime favorites (oldest favorites, capped
+ * at 3), then briefly routes live KIS WebSocket frames through the guarded
+ * runtime path: RealtimeBridge -> real PriceStore -> real SseManager. It uses
+ * only in-memory gates and never changes persisted settings, favorites, UI, or
  * credentials.
  */
 
@@ -49,13 +49,11 @@ import {
 import { createSseManager } from '../src/server/sse/sse-manager.js';
 
 const TR_ID = 'H0UNCNT0';
-const MAX_SUBSCRIBE_TICKERS = 5;
-const MIN_LIVE_FRAMES = 8;
-const MAX_LIVE_FRAMES = 15;
-const MIN_APPLY_EVENTS = 3;
-const MAX_OBSERVATION_MS = 90_000;
-const REPORT_PATH = 'docs/research/nxt6c-runtime-cap5-smoke.md';
-const NXT6B_REPORT_PATH = 'docs/research/nxt6b-runtime-favorites-smoke.md';
+const MAX_SUBSCRIBE_TICKERS = 3;
+const MAX_LIVE_FRAMES = 9;
+const NO_TICK_TIMEOUT_MS = 60_000;
+const REPORT_PATH = 'docs/archive/research/nxt6b-runtime-favorites-smoke.md';
+const NXT6A_REPORT_PATH = 'docs/archive/research/nxt6a-runtime-one-ticker-smoke.md';
 const SETTINGS_PATH = 'data/settings.json';
 const WEBSOCKET_ENABLED_KEY = 'websocketEnabled';
 
@@ -124,8 +122,8 @@ interface ProbeReport {
   outcome: ProbeOutcome;
   preflight: {
     gitHead: string;
-    nxt6bReportPresent: boolean;
-    nxt6bRuntimeApplyEvidence: boolean;
+    nxt6aReportPresent: boolean;
+    nxt6aRuntimeApplyEvidence: boolean;
     runbookPresent: boolean;
     defaultWebsocketEnabled: boolean;
     defaultApplyTicksToPriceStore: boolean;
@@ -149,14 +147,12 @@ interface ProbeReport {
     attemptedCount: number;
     sentCount: number;
     ackStatus: 'success' | 'failure' | 'partial' | 'unknown' | 'not_attempted';
-    ackStatusByTicker: Record<string, 'success' | 'missing'>;
     ackedTickers: string[];
     controlFrames: ControlFrameSummary[];
   };
   liveFrameCount: number;
   parsedTickCount: number;
   liveFrameCountByTicker: Record<string, number>;
-  noTickByTicker: string[];
   bridgeStats: {
     parsedTickCount: number;
     appliedTickCount: number;
@@ -314,7 +310,7 @@ function readFavorites(): Favorite[] {
 
 function selectTargets(): TargetSelection {
   const favorites = readFavorites();
-  const realtimeCandidates = computeTiers(favorites, [], MAX_SUBSCRIBE_TICKERS)
+  const realtimeCandidates = computeTiers(favorites)
     .realtimeTickers.slice(0, MAX_SUBSCRIBE_TICKERS);
   return {
     favoritesCount: favorites.length,
@@ -529,7 +525,7 @@ function ackStatusFor(
 
 function renderMarkdown(report: ProbeReport): string {
   const lines: string[] = [];
-  lines.push('# NXT6c — cap5 runtime apply smoke');
+  lines.push('# NXT6b — favorites runtime apply smoke');
   lines.push('');
   lines.push(`**실행 일시 (UTC)**: ${report.probeRunAt}`);
   lines.push(`**완료 일시 (UTC)**: ${report.completedAt}`);
@@ -540,8 +536,8 @@ function renderMarkdown(report: ProbeReport): string {
   lines.push('## Preflight');
   lines.push('');
   lines.push(`- git HEAD at probe: \`${report.preflight.gitHead}\``);
-  lines.push(`- NXT6b report present: ${report.preflight.nxt6bReportPresent}`);
-  lines.push(`- NXT6b runtime apply evidence: ${report.preflight.nxt6bRuntimeApplyEvidence}`);
+  lines.push(`- NXT6a report present: ${report.preflight.nxt6aReportPresent}`);
+  lines.push(`- NXT6a runtime apply evidence: ${report.preflight.nxt6aRuntimeApplyEvidence}`);
   lines.push(`- runbook present: ${report.preflight.runbookPresent}`);
   lines.push(`- default websocketEnabled: ${report.preflight.defaultWebsocketEnabled}`);
   lines.push(`- default applyTicksToPriceStore: ${report.preflight.defaultApplyTicksToPriceStore}`);
@@ -568,11 +564,9 @@ function renderMarkdown(report: ProbeReport): string {
   lines.push(`- subscribe sent count: ${report.subscribe.sentCount}`);
   lines.push(`- subscribe ACK status: ${report.subscribe.ackStatus}`);
   lines.push(`- ACKed tickers: ${report.subscribe.ackedTickers.join(', ') || '(none)'}`);
-  lines.push(`- ACK status by ticker: ${JSON.stringify(report.subscribe.ackStatusByTicker)}`);
   lines.push(`- live frame count: ${report.liveFrameCount}`);
   lines.push(`- parsed tick count: ${report.parsedTickCount}`);
   lines.push(`- live frame count by ticker: ${JSON.stringify(report.liveFrameCountByTicker)}`);
-  lines.push(`- no_tick_by_ticker: ${report.noTickByTicker.join(', ') || '(none)'}`);
   lines.push(`- priceStore.setPrice count: ${report.priceStoreSetPriceCount}`);
   lines.push(`- priceStore.setPrice count by ticker: ${JSON.stringify(report.priceStoreSetPriceCountByTicker)}`);
   lines.push(`- SSE price-update count: ${report.ssePriceUpdateCount}`);
@@ -637,7 +631,7 @@ function renderMarkdown(report: ProbeReport): string {
   lines.push('- [x] persisted settings 영구 변경 0회');
   lines.push('- [x] credentials.enc 수정 0회');
   lines.push('- [x] reconnect loop 0회');
-  lines.push('- [x] 6개 이상 종목 구독 0회');
+  lines.push('- [x] 4개 이상 종목 구독 0회');
   lines.push('- [x] non-favorite 임의 편입 0회');
   lines.push('- [x] approval_key/appKey/appSecret/access token 원문 저장 0회');
   lines.push('');
@@ -664,15 +658,14 @@ async function main(): Promise<void> {
     rateLimiterMode: 'paper',
     [WEBSOCKET_ENABLED_KEY]: !DEFAULT_SETTINGS.websocketEnabled,
   });
-  const nxt6bReport = readTextIfPresent(NXT6B_REPORT_PATH);
+  const nxt6aReport = readTextIfPresent(NXT6A_REPORT_PATH);
   const preflight = {
     gitHead: getGitHead(),
-    nxt6bReportPresent: nxt6bReport.length > 0,
-    nxt6bRuntimeApplyEvidence:
-      /subscribe ACK status: success/.test(nxt6bReport) &&
-      /priceStore\.setPrice count: 3/.test(nxt6bReport) &&
-      /SSE price-update count: 3/.test(nxt6bReport) &&
-      /source metadata ok: true/.test(nxt6bReport),
+    nxt6aReportPresent: nxt6aReport.length > 0,
+    nxt6aRuntimeApplyEvidence:
+      /priceStore\.setPrice count: 3/.test(nxt6aReport) &&
+      /SSE price-update count: 3/.test(nxt6aReport) &&
+      /source metadata ok: true/.test(nxt6aReport),
     runbookPresent: existsSync(resolve(process.cwd(), 'docs/runbooks/nxt-ws-rollout.md')),
     defaultWebsocketEnabled: DEFAULT_SETTINGS.websocketEnabled,
     defaultApplyTicksToPriceStore: DEFAULT_SETTINGS.applyTicksToPriceStore,
@@ -685,6 +678,7 @@ async function main(): Promise<void> {
   const selection = selectTargets();
   const targetTickers = selection.targetTickers.slice(0, MAX_SUBSCRIBE_TICKERS);
   const targetTickerSet = new Set(targetTickers);
+  const targetPriceUpdateCount = Math.max(1, Math.min(MAX_LIVE_FRAMES, targetTickers.length * 3));
 
   let runtimeGates: RuntimeWsGates = {
     websocketEnabled: false,
@@ -734,7 +728,7 @@ async function main(): Promise<void> {
     priceStore,
     getInitialSnapshot: () => priceStore.getAllPrices(),
     getMarketStatus: () => 'open',
-    heartbeatIntervalMs: MAX_OBSERVATION_MS + 10_000,
+    heartbeatIntervalMs: NO_TICK_TIMEOUT_MS + 10_000,
     throttleMs: 0,
   });
   preflight.sseClientCountBefore = sseManager.getClientCount();
@@ -800,18 +794,10 @@ async function main(): Promise<void> {
       .filter((ev) => ev?.type === 'price-update' && targetTickerSet.has(ev.price.ticker))
       .length;
     if (
-      setPriceCount >= MIN_APPLY_EVENTS &&
-      priceUpdateCount >= MIN_APPLY_EVENTS &&
-      liveFrameCount >= MIN_LIVE_FRAMES
+      priceUpdateCount >= targetPriceUpdateCount ||
+      (priceUpdateCount >= 1 && liveFrameCount >= MAX_LIVE_FRAMES)
     ) {
       finishOnce({ reason, outcome: nextOutcome });
-    }
-    if (
-      setPriceCount >= MIN_APPLY_EVENTS &&
-      priceUpdateCount >= MIN_APPLY_EVENTS &&
-      liveFrameCount >= MAX_LIVE_FRAMES
-    ) {
-      finishOnce({ reason: 'max_live_frames_reached', outcome: nextOutcome });
     }
   }
 
@@ -828,10 +814,10 @@ async function main(): Promise<void> {
   );
 
   try {
-    if (!preflight.runbookPresent || !preflight.nxt6bRuntimeApplyEvidence) {
+    if (!preflight.runbookPresent || !preflight.nxt6aRuntimeApplyEvidence) {
       safeError = {
         code: 'preflight_failed',
-        message: 'NXT6b runtime evidence or rollout runbook is missing',
+        message: 'NXT6a runtime evidence or rollout runbook is missing',
       };
       outcome = 'preflight_failed';
       collectionReason = 'preflight_failed';
@@ -875,18 +861,10 @@ async function main(): Promise<void> {
       );
       const timeout = setTimeout(() => {
         finishOnce({
-          reason:
-            liveFrameCount === 0
-              ? 'no_live_tick_observed'
-              : 'max_observation_reached',
-          outcome:
-            liveFrameCount === 0
-              ? 'no_live_tick_observed'
-              : setPriceCount >= MIN_APPLY_EVENTS
-                ? 'ok'
-                : 'apply_failed',
+          reason: 'no_live_tick_observed',
+          outcome: 'no_live_tick_observed',
         });
-      }, MAX_OBSERVATION_MS);
+      }, NO_TICK_TIMEOUT_MS);
 
       priceStore.on('price-update', (price) => {
         if (!targetTickerSet.has(price.ticker)) return;
@@ -925,7 +903,7 @@ async function main(): Promise<void> {
         maxReconnectAttempts: 0,
         reconnectDelaysMs: [],
         jitterRatio: 0,
-        stableResetMs: MAX_OBSERVATION_MS + 10_000,
+        stableResetMs: NO_TICK_TIMEOUT_MS + 10_000,
       });
 
       wsClient.onMessage((raw) => {
@@ -1038,15 +1016,6 @@ async function main(): Promise<void> {
       (ev): ev is SSEEvent & { type: 'price-update' } =>
         ev?.type === 'price-update' && targetTickerSet.has(ev.price.ticker),
     );
-  const ackStatusByTicker: Record<string, 'success' | 'missing'> = Object.fromEntries(
-    targetTickers.map((ticker) => [
-      ticker,
-      ackedTickers.has(ticker) ? 'success' : 'missing',
-    ]),
-  );
-  const noTickByTicker = targetTickers.filter(
-    (ticker) => (liveFrameCountByTicker[ticker] ?? 0) === 0,
-  );
   const completedAtMs = Date.now();
   const report: ProbeReport = {
     probeRunAt: startedAt,
@@ -1072,14 +1041,12 @@ async function main(): Promise<void> {
       attemptedCount: targetTickers.length,
       sentCount: subscribeSentCount,
       ackStatus: ackStatusFor(targetTickers, ackedTickers, subscribeFailure),
-      ackStatusByTicker,
       ackedTickers: Array.from(ackedTickers).sort(),
       controlFrames,
     },
     liveFrameCount,
     parsedTickCount,
     liveFrameCountByTicker,
-    noTickByTicker,
     bridgeStats: finalStats,
     priceStoreSetPriceCount: setPriceCount,
     priceStoreSetPriceCountByTicker: setPriceCountByTicker,

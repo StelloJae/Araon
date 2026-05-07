@@ -33,7 +33,7 @@ const MAX_LIVE_TICK_FRAMES = 3;
 const NO_TICK_TIMEOUT_MS = 60_000;
 const FIRST_TICK_GRACE_MS = 1_500;
 
-const REPORT_PATH = 'docs/research/nxt3-live-ws-smoke.md';
+const REPORT_PATH = 'docs/archive/research/nxt3-live-ws-smoke.md';
 const FIXTURE_PATH =
   'src/server/kis/__fixtures__/ws-tick-h0uncnt0-005930-live.redacted.json';
 

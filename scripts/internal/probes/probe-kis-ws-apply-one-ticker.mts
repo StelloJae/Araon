@@ -42,7 +42,7 @@ const MAX_APPLY_EVENTS = 3;
 const NO_TICK_TIMEOUT_MS = 60_000;
 const FIRST_APPLY_GRACE_MS = 1_500;
 
-const REPORT_PATH = 'docs/research/nxt4b-live-apply-smoke.md';
+const REPORT_PATH = 'docs/archive/research/nxt4b-live-apply-smoke.md';
 
 type ProbeOutcome =
   | 'ok'

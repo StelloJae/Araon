@@ -46,9 +46,9 @@ const FALLBACK_TICKER = '005930';
 const MAX_SUBSCRIBE_TICKERS = 3;
 const TARGET_APPLY_EVENTS = 3;
 const NO_TICK_TIMEOUT_MS = 60_000;
-const REPORT_PATH = 'docs/research/nxt5b-limited-live-smoke.md';
-const NXT4B_REPORT_PATH = 'docs/research/nxt4b-live-apply-smoke.md';
-const NXT5A_REPORT_PATH = 'docs/research/nxt5a-mock-tier-bridge.md';
+const REPORT_PATH = 'docs/archive/research/nxt5b-limited-live-smoke.md';
+const NXT4B_REPORT_PATH = 'docs/archive/research/nxt4b-live-apply-smoke.md';
+const NXT5A_REPORT_PATH = 'docs/archive/research/nxt5a-mock-tier-bridge.md';
 
 type ProbeOutcome =
   | 'ok'

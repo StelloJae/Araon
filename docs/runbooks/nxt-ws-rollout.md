@@ -98,7 +98,7 @@ minutes during the 2026-04-29 KRX continuous session:
   was fixed by throttling visible update timestamps and batching client-side
   price update store writes.
 
-Acceptance report: `docs/research/araon-runtime-acceptance.md`.
+Acceptance report: `docs/archive/research/araon-runtime-acceptance.md`.
 
 ## Preflight Checklist
 
@@ -693,7 +693,7 @@ Run before commit:
 
 ```bash
 rg -n "approval_key\\s*[:=]\\s*[\"']?[A-Za-z0-9_-]{20,}|approvalkey\\s*[:=]\\s*[\"']?[A-Za-z0-9_-]{20,}|appkey\\s*[:=]\\s*[\"']?[A-Za-z0-9_-]{20,}|appsecret\\s*[:=]\\s*[\"']?[A-Za-z0-9_-]{20,}|secretkey\\s*[:=]\\s*[\"']?[A-Za-z0-9_-]{20,}|access[_-]?token\\s*[:=]\\s*[\"']?[A-Za-z0-9_-]{20,}|Bearer\\s+[A-Za-z0-9_-]{20,}" AGENTS.md docs src scripts
-rg -n "[A-Za-z0-9_-]{40,}" docs/research docs/runbooks src/server/kis/__fixtures__
+rg -n "[A-Za-z0-9_-]{40,}" docs/archive/research docs/runbooks src/server/kis/__fixtures__
 ```
 
 Allowed findings must be reviewed manually. Documentation that names sensitive

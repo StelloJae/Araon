@@ -1,8 +1,8 @@
 /**
  * NXT2b — leak guards for the approval-key probe artifact.
  *
- * The probe (`scripts/probe-kis-approval.mts`) writes a markdown report to
- * `docs/research/nxt2b-approval-probe.md` after a single live KIS call. The
+ * The probe (`scripts/internal/probes/probe-kis-approval.mts`) writes a markdown report to
+ * `docs/archive/research/nxt2b-approval-probe.md` after a single live KIS call. The
  * report is supposed to contain only sanitized metadata (length + sha256 prefix
  * + extra-field types) and never the raw `approval_key`, `appkey`, `appsecret`,
  * or `access_token` value.
@@ -23,15 +23,15 @@ import { resolve } from 'node:path';
 
 const REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt2b-approval-probe.md',
+  'docs/archive/research/nxt2b-approval-probe.md',
 );
 const SCRIPT_PATH = resolve(
   process.cwd(),
-  'scripts/probe-kis-approval.mts',
+  'scripts/internal/probes/probe-kis-approval.mts',
 );
 const NXT3_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt3-live-ws-smoke.md',
+  'docs/archive/research/nxt3-live-ws-smoke.md',
 );
 const NXT3_FIXTURE_PATH = resolve(
   process.cwd(),
@@ -39,23 +39,23 @@ const NXT3_FIXTURE_PATH = resolve(
 );
 const NXT3_SCRIPT_PATH = resolve(
   process.cwd(),
-  'scripts/probe-kis-ws-one-ticker.mts',
+  'scripts/internal/probes/probe-kis-ws-one-ticker.mts',
 );
 const NXT4B_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt4b-live-apply-smoke.md',
+  'docs/archive/research/nxt4b-live-apply-smoke.md',
 );
 const NXT4B_SCRIPT_PATH = resolve(
   process.cwd(),
-  'scripts/probe-kis-ws-apply-one-ticker.mts',
+  'scripts/internal/probes/probe-kis-ws-apply-one-ticker.mts',
 );
 const NXT5B_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt5b-limited-live-smoke.md',
+  'docs/archive/research/nxt5b-limited-live-smoke.md',
 );
 const NXT5B_SCRIPT_PATH = resolve(
   process.cwd(),
-  'scripts/probe-kis-ws-favorites-smoke.mts',
+  'scripts/internal/probes/probe-kis-ws-favorites-smoke.mts',
 );
 const NXT5C_RUNBOOK_PATH = resolve(
   process.cwd(),
@@ -63,75 +63,75 @@ const NXT5C_RUNBOOK_PATH = resolve(
 );
 const NXT6A_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt6a-runtime-one-ticker-smoke.md',
+  'docs/archive/research/nxt6a-runtime-one-ticker-smoke.md',
 );
 const NXT6A_SCRIPT_PATH = resolve(
   process.cwd(),
-  'scripts/probe-kis-ws-runtime-one-ticker.mts',
+  'scripts/internal/probes/probe-kis-ws-runtime-one-ticker.mts',
 );
 const NXT6B_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt6b-runtime-favorites-smoke.md',
+  'docs/archive/research/nxt6b-runtime-favorites-smoke.md',
 );
 const NXT6B_SCRIPT_PATH = resolve(
   process.cwd(),
-  'scripts/probe-kis-ws-runtime-favorites.mts',
+  'scripts/internal/probes/probe-kis-ws-runtime-favorites.mts',
 );
 const NXT6C_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt6c-runtime-cap5-smoke.md',
+  'docs/archive/research/nxt6c-runtime-cap5-smoke.md',
 );
 const NXT6C_SCRIPT_PATH = resolve(
   process.cwd(),
-  'scripts/probe-kis-ws-runtime-cap5.mts',
+  'scripts/internal/probes/probe-kis-ws-runtime-cap5.mts',
 );
 const NXT6D_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt6d-runtime-cap10-smoke.md',
+  'docs/archive/research/nxt6d-runtime-cap10-smoke.md',
 );
 const NXT6D_SCRIPT_PATH = resolve(
   process.cwd(),
-  'scripts/probe-kis-ws-runtime-cap10.mts',
+  'scripts/internal/probes/probe-kis-ws-runtime-cap10.mts',
 );
 const NXT7B_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt7b-ui-session-live-smoke.md',
+  'docs/archive/research/nxt7b-ui-session-live-smoke.md',
 );
 const NXT7C_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt7c-session-safeguards.md',
+  'docs/archive/research/nxt7c-session-safeguards.md',
 );
 const NXT7D_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt7d-ui-session-limit-live-smoke.md',
+  'docs/archive/research/nxt7d-ui-session-limit-live-smoke.md',
 );
 const NXT8A_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt8a-cap10-hard-limit-live-smoke.md',
+  'docs/archive/research/nxt8a-cap10-hard-limit-live-smoke.md',
 );
 const NXT8B_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt8b-cap10-ui-button-live-smoke.md',
+  'docs/archive/research/nxt8b-cap10-ui-button-live-smoke.md',
 );
 const NXT8C_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt8c-cap10-ui-hard-limit-retry.md',
+  'docs/archive/research/nxt8c-cap10-ui-hard-limit-retry.md',
 );
 const NXT8D_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt8d-rollout-readiness-summary.md',
+  'docs/archive/research/nxt8d-rollout-readiness-summary.md',
 );
 const NXT8E_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt8e-cap10-ui-hard-limit-live-smoke.md',
+  'docs/archive/research/nxt8e-cap10-ui-hard-limit-live-smoke.md',
 );
 const NXT9A_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt9a-cap20-readiness.md',
+  'docs/archive/research/nxt9a-cap20-readiness.md',
 );
 const NXT9_REPORT_PATH = resolve(
   process.cwd(),
-  'docs/research/nxt9-cap20-cap40-live-smoke.md',
+  'docs/archive/research/nxt9-cap20-cap40-live-smoke.md',
 );
 
 describe('NXT2b probe artifact — markdown report leak guard', () => {

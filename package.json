@@ -52,7 +52,7 @@
     "dist:win": "npm run build && npm run build:electron && node scripts/run-electron-builder.mjs --win",
     "electron:dev": "npm run build && npm run build:electron && electron .",
     "start:cli": "npm run build && node dist/cli/araon.js",
-    "soak:no-live": "tsx scripts/soak-araon.mts",
+    "soak:no-live": "tsx scripts/internal/soak/soak-araon.mts",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.cli.json --noEmit",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "typecheck:client": "tsc -p tsconfig.client.json --noEmit",

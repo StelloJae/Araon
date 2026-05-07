@@ -29,7 +29,7 @@ describe('parseKisTickFrame — NXT3 live H0UNCNT0 fixture', () => {
   it('parses the redacted 005930 live smoke frame without secrets', () => {
     expect(
       existsSync(fixturePath),
-      'run scripts/probe-kis-ws-one-ticker.mts to capture the NXT3 live fixture',
+      'run scripts/internal/probes/probe-kis-ws-one-ticker.mts to capture the NXT3 live fixture',
     ).toBe(true);
 
     const text = readFileSync(fixturePath, 'utf8');

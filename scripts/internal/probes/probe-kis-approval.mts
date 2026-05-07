@@ -8,10 +8,10 @@
  * 정책 (NXT2b spec):
  *   - WS 연결 / subscribe / priceStore 반영 0회
  *   - credentials.enc는 read-only로만 접근
- *   - 출력: stdout JSON + docs/research/nxt2b-approval-probe.md (둘 다 metadata only)
+ *   - 출력: stdout JSON + docs/archive/research/nxt2b-approval-probe.md (둘 다 metadata only)
  *   - 실패해도 REST polling은 영향 없음 (probe는 standalone, server 미실행)
  *
- * 실행: `npx tsx scripts/probe-kis-approval.mts` (프로젝트 루트에서)
+ * 실행: `npx tsx scripts/internal/probes/probe-kis-approval.mts` (프로젝트 루트에서)
  */
 
 import { createHash } from 'node:crypto';
@@ -47,7 +47,7 @@ interface SanitizedCapture {
   rawApprovalKey: string;
 }
 
-const REPORT_PATH = 'docs/research/nxt2b-approval-probe.md';
+const REPORT_PATH = 'docs/archive/research/nxt2b-approval-probe.md';
 
 function sanitizeResponse(raw: unknown): SanitizedCapture | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;

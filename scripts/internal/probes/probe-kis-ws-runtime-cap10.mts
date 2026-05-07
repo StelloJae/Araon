@@ -1,11 +1,16 @@
 /**
- * NXT6b — favorites runtime apply smoke for H0UNCNT0.
+ * NXT6d - cap10 favorites runtime apply smoke for H0UNCNT0.
  *
- * Selects the current tier-manager realtime favorites (oldest favorites, capped
- * at 3), then briefly routes live KIS WebSocket frames through the guarded
- * runtime path: RealtimeBridge -> real PriceStore -> real SseManager. It uses
- * only in-memory gates and never changes persisted settings, favorites, UI, or
- * credentials.
+ * Builds a smoke-only favorite overlay from already-tracked stocks when the
+ * persisted favorite set has fewer than 10 entries. The overlay exists only
+ * during this probe and is restored to the exact preflight favorite snapshot
+ * before the process exits.
+ *
+ * The live path is intentionally narrow:
+ *   KIS WS -> RealtimeBridge -> real PriceStore -> real SseManager
+ *
+ * Raw credentials, approval keys, access tokens, and live frames are never
+ * printed or written.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -49,13 +54,16 @@ import {
 import { createSseManager } from '../src/server/sse/sse-manager.js';
 
 const TR_ID = 'H0UNCNT0';
-const MAX_SUBSCRIBE_TICKERS = 3;
-const MAX_LIVE_FRAMES = 9;
-const NO_TICK_TIMEOUT_MS = 60_000;
-const REPORT_PATH = 'docs/research/nxt6b-runtime-favorites-smoke.md';
-const NXT6A_REPORT_PATH = 'docs/research/nxt6a-runtime-one-ticker-smoke.md';
+const MAX_SUBSCRIBE_TICKERS = 10;
+const MIN_LIVE_FRAMES = 15;
+const MAX_LIVE_FRAMES = 30;
+const MIN_APPLY_EVENTS = 5;
+const MAX_OBSERVATION_MS = 120_000;
+const REPORT_PATH = 'docs/archive/research/nxt6d-runtime-cap10-smoke.md';
+const NXT6C_REPORT_PATH = 'docs/archive/research/nxt6c-runtime-cap5-smoke.md';
 const SETTINGS_PATH = 'data/settings.json';
 const WEBSOCKET_ENABLED_KEY = 'websocketEnabled';
+const APPLY_TICKS_KEY = 'applyTicksToPriceStore';
 
 type ProbeOutcome =
   | 'ok'
@@ -108,8 +116,25 @@ interface TickSummary {
   isSnapshot: false;
 }
 
+interface TrackedStock {
+  ticker: string;
+  name: string;
+}
+
+interface TemporaryOverlay {
+  used: boolean;
+  addedTickers: string[];
+  trackedStockCount: number;
+  trackedCandidateCount: number;
+  targetFavoriteCount: number;
+  reason: string | null;
+}
+
 interface TargetSelection {
-  favoritesCount: number;
+  preflightFavorites: Favorite[];
+  overlayFavorites: Favorite[];
+  trackedStocks: TrackedStock[];
+  temporaryOverlay: TemporaryOverlay;
   realtimeCandidates: string[];
   targetTickers: string[];
 }
@@ -122,8 +147,8 @@ interface ProbeReport {
   outcome: ProbeOutcome;
   preflight: {
     gitHead: string;
-    nxt6aReportPresent: boolean;
-    nxt6aRuntimeApplyEvidence: boolean;
+    nxt6cReportPresent: boolean;
+    nxt6cRuntimeApplyEvidence: boolean;
     runbookPresent: boolean;
     defaultWebsocketEnabled: boolean;
     defaultApplyTicksToPriceStore: boolean;
@@ -132,10 +157,14 @@ interface ProbeReport {
     persistedSettingsUnchanged: boolean;
     restPollingTouched: boolean;
     sseClientCountBefore: number;
+    favoriteSnapshotTickers: string[];
+    trackedStockCount: number;
   };
   target: {
     trId: typeof TR_ID;
-    favoritesCount: number;
+    preflightFavoritesCount: number;
+    overlayFavoritesCount: number;
+    temporaryOverlay: TemporaryOverlay;
     realtimeCandidates: string[];
     tickers: string[];
     maxSubscribeTickers: typeof MAX_SUBSCRIBE_TICKERS;
@@ -147,12 +176,14 @@ interface ProbeReport {
     attemptedCount: number;
     sentCount: number;
     ackStatus: 'success' | 'failure' | 'partial' | 'unknown' | 'not_attempted';
+    ackStatusByTicker: Record<string, 'success' | 'missing'>;
     ackedTickers: string[];
     controlFrames: ControlFrameSummary[];
   };
   liveFrameCount: number;
   parsedTickCount: number;
   liveFrameCountByTicker: Record<string, number>;
+  noTickByTicker: string[];
   bridgeStats: {
     parsedTickCount: number;
     appliedTickCount: number;
@@ -181,6 +212,9 @@ interface ProbeReport {
     gatesFalseAfter: boolean;
     persistedSettingsChanged: boolean;
     sseClientCountAfter: number;
+    restoredFavoritesCount: number;
+    restoredFavoritesTickers: string[];
+    favoritesRestored: boolean;
   };
   integrationGuard: {
     realPriceStoreUsed: true;
@@ -192,6 +226,7 @@ interface ProbeReport {
     reconnectLoop: false;
     subscriptionCapExceeded: boolean;
     nonFavoriteIncluded: boolean;
+    masterOnlyIncluded: boolean;
     pollingStopCalled: false;
   };
   finalWsStatus: unknown;
@@ -295,7 +330,7 @@ function readFavorites(): Favorite[] {
   try {
     const rows = db
       .prepare<[], { ticker: string; tier: Favorite['tier']; addedAt: string }>(
-        `SELECT ticker, tier, added_at AS addedAt FROM favorites ORDER BY added_at`,
+        `SELECT ticker, tier, added_at AS addedAt FROM favorites ORDER BY added_at, ticker`,
       )
       .all();
     return rows.map((row) => ({
@@ -308,14 +343,118 @@ function readFavorites(): Favorite[] {
   }
 }
 
-function selectTargets(): TargetSelection {
-  const favorites = readFavorites();
-  const realtimeCandidates = computeTiers(favorites)
-    .realtimeTickers.slice(0, MAX_SUBSCRIBE_TICKERS);
+function readTrackedStocks(): TrackedStock[] {
+  if (!existsSync(resolve(process.cwd(), DB_PATH))) return [];
+  const db = new Database(DB_PATH, { readonly: true, fileMustExist: true });
+  try {
+    return db
+      .prepare<[], TrackedStock>(
+        `SELECT ticker, name FROM stocks ORDER BY ticker`,
+      )
+      .all();
+  } finally {
+    db.close();
+  }
+}
+
+function sortFavoritesForCompare(favorites: readonly Favorite[]): Favorite[] {
+  return [...favorites].sort((a, b) =>
+    a.ticker < b.ticker ? -1 : a.ticker > b.ticker ? 1 : 0,
+  );
+}
+
+function favoritesEqual(a: readonly Favorite[], b: readonly Favorite[]): boolean {
+  const left = sortFavoritesForCompare(a);
+  const right = sortFavoritesForCompare(b);
+  if (left.length !== right.length) return false;
+  return left.every((fav, index) => {
+    const other = right[index];
+    if (other === undefined) return false;
+    return (
+      fav.ticker === other.ticker &&
+      fav.tier === other.tier &&
+      fav.addedAt === other.addedAt
+    );
+  });
+}
+
+function insertTemporaryFavorites(favorites: readonly Favorite[]): void {
+  if (favorites.length === 0) return;
+  const db = new Database(DB_PATH);
+  try {
+    const insert = db.prepare<[string, Favorite['tier'], string]>(
+      `INSERT INTO favorites (ticker, tier, added_at) VALUES (?, ?, ?)`,
+    );
+    const tx = db.transaction((rows: readonly Favorite[]) => {
+      for (const fav of rows) {
+        insert.run(fav.ticker, fav.tier, fav.addedAt);
+      }
+    });
+    tx(favorites);
+  } finally {
+    db.close();
+  }
+}
+
+function restoreFavoritesSnapshot(snapshot: readonly Favorite[]): boolean {
+  const db = new Database(DB_PATH);
+  try {
+    const insert = db.prepare<[string, Favorite['tier'], string]>(
+      `INSERT INTO favorites (ticker, tier, added_at) VALUES (?, ?, ?)`,
+    );
+    const tx = db.transaction((rows: readonly Favorite[]) => {
+      db.prepare('DELETE FROM favorites').run();
+      for (const fav of rows) {
+        insert.run(fav.ticker, fav.tier, fav.addedAt);
+      }
+    });
+    tx(snapshot);
+  } finally {
+    db.close();
+  }
+  return favoritesEqual(readFavorites(), snapshot);
+}
+
+function buildTargetSelection(): TargetSelection {
+  const preflightFavorites = readFavorites();
+  const trackedStocks = readTrackedStocks();
+  const favoriteTickers = new Set(preflightFavorites.map((fav) => fav.ticker));
+  const temporaryCandidates = trackedStocks.filter(
+    (stock) => !favoriteTickers.has(stock.ticker),
+  );
+  const needed = Math.max(0, MAX_SUBSCRIBE_TICKERS - preflightFavorites.length);
+  const nowMs = Date.now();
+  const temporaryFavorites: Favorite[] = temporaryCandidates
+    .slice(0, needed)
+    .map((stock, index) => ({
+      ticker: stock.ticker,
+      tier: 'realtime',
+      addedAt: new Date(nowMs + index + 1).toISOString(),
+    }));
+  const overlayFavorites = [...preflightFavorites, ...temporaryFavorites];
+  const tierAssignment = computeTiers(overlayFavorites, [], MAX_SUBSCRIBE_TICKERS);
+  const targetTickers = tierAssignment.realtimeTickers.slice(0, MAX_SUBSCRIBE_TICKERS);
+  const reason =
+    needed === 0
+      ? null
+      : temporaryFavorites.length < needed
+        ? 'tracked_stock_shortage'
+        : 'favorites_below_cap10';
+
   return {
-    favoritesCount: favorites.length,
-    realtimeCandidates,
-    targetTickers: realtimeCandidates,
+    preflightFavorites,
+    overlayFavorites,
+    trackedStocks,
+    temporaryOverlay: {
+      used: temporaryFavorites.length > 0,
+      addedTickers: temporaryFavorites.map((fav) => fav.ticker),
+      trackedStockCount: trackedStocks.length,
+      trackedCandidateCount: temporaryCandidates.length,
+      targetFavoriteCount: Math.min(MAX_SUBSCRIBE_TICKERS, trackedStocks.length),
+      reason,
+    },
+    realtimeCandidates: [...tierAssignment.realtimeTickers],
+    targetTickers,
   };
 }
 
@@ -525,7 +664,7 @@ function ackStatusFor(
 
 function renderMarkdown(report: ProbeReport): string {
   const lines: string[] = [];
-  lines.push('# NXT6b — favorites runtime apply smoke');
+  lines.push('# NXT6d - cap10 runtime apply smoke');
   lines.push('');
   lines.push(`**실행 일시 (UTC)**: ${report.probeRunAt}`);
   lines.push(`**완료 일시 (UTC)**: ${report.completedAt}`);
@@ -536,8 +675,8 @@ function renderMarkdown(report: ProbeReport): string {
   lines.push('## Preflight');
   lines.push('');
   lines.push(`- git HEAD at probe: \`${report.preflight.gitHead}\``);
-  lines.push(`- NXT6a report present: ${report.preflight.nxt6aReportPresent}`);
-  lines.push(`- NXT6a runtime apply evidence: ${report.preflight.nxt6aRuntimeApplyEvidence}`);
+  lines.push(`- NXT6c report present: ${report.preflight.nxt6cReportPresent}`);
+  lines.push(`- NXT6c runtime apply evidence: ${report.preflight.nxt6cRuntimeApplyEvidence}`);
   lines.push(`- runbook present: ${report.preflight.runbookPresent}`);
   lines.push(`- default websocketEnabled: ${report.preflight.defaultWebsocketEnabled}`);
   lines.push(`- default applyTicksToPriceStore: ${report.preflight.defaultApplyTicksToPriceStore}`);
@@ -546,11 +685,17 @@ function renderMarkdown(report: ProbeReport): string {
   lines.push(`- persisted settings unchanged: ${report.preflight.persistedSettingsUnchanged}`);
   lines.push(`- REST polling touched by probe: ${report.preflight.restPollingTouched}`);
   lines.push(`- SSE client count before: ${report.preflight.sseClientCountBefore}`);
+  lines.push(`- preflight favorites count: ${report.target.preflightFavoritesCount}`);
+  lines.push(`- preflight favorite tickers: ${report.preflight.favoriteSnapshotTickers.join(', ') || '(none)'}`);
+  lines.push(`- tracked stocks count: ${report.preflight.trackedStockCount}`);
   lines.push('');
   lines.push('## Target');
   lines.push('');
   lines.push(`- TR_ID: \`${report.target.trId}\``);
-  lines.push(`- favorites count: ${report.target.favoritesCount}`);
+  lines.push(`- overlay favorites count: ${report.target.overlayFavoritesCount}`);
+  lines.push(`- temporary favorite overlay used: ${report.target.temporaryOverlay.used}`);
+  lines.push(`- temporary favorite tickers: ${report.target.temporaryOverlay.addedTickers.join(', ') || '(none)'}`);
+  lines.push(`- temporary overlay reason: ${report.target.temporaryOverlay.reason ?? '(none)'}`);
   lines.push(`- realtime candidates: ${report.target.realtimeCandidates.join(', ') || '(none)'}`);
   lines.push(`- subscribed tickers: ${report.target.tickers.join(', ') || '(none)'}`);
   lines.push(`- max subscribe tickers: ${report.target.maxSubscribeTickers}`);
@@ -564,9 +709,11 @@ function renderMarkdown(report: ProbeReport): string {
   lines.push(`- subscribe sent count: ${report.subscribe.sentCount}`);
   lines.push(`- subscribe ACK status: ${report.subscribe.ackStatus}`);
   lines.push(`- ACKed tickers: ${report.subscribe.ackedTickers.join(', ') || '(none)'}`);
+  lines.push(`- ACK status by ticker: ${JSON.stringify(report.subscribe.ackStatusByTicker)}`);
   lines.push(`- live frame count: ${report.liveFrameCount}`);
   lines.push(`- parsed tick count: ${report.parsedTickCount}`);
   lines.push(`- live frame count by ticker: ${JSON.stringify(report.liveFrameCountByTicker)}`);
+  lines.push(`- no_tick_by_ticker: ${report.noTickByTicker.join(', ') || '(none)'}`);
   lines.push(`- priceStore.setPrice count: ${report.priceStoreSetPriceCount}`);
   lines.push(`- priceStore.setPrice count by ticker: ${JSON.stringify(report.priceStoreSetPriceCountByTicker)}`);
   lines.push(`- SSE price-update count: ${report.ssePriceUpdateCount}`);
@@ -621,6 +768,9 @@ function renderMarkdown(report: ProbeReport): string {
   lines.push(`- gates false after cleanup: ${report.cleanup.gatesFalseAfter}`);
   lines.push(`- persisted settings changed: ${report.cleanup.persistedSettingsChanged}`);
   lines.push(`- SSE client count after cleanup: ${report.cleanup.sseClientCountAfter}`);
+  lines.push(`- restored favorites count: ${report.cleanup.restoredFavoritesCount}`);
+  lines.push(`- restored favorites tickers: ${report.cleanup.restoredFavoritesTickers.join(', ') || '(none)'}`);
+  lines.push(`- favoritesRestored: ${report.cleanup.favoritesRestored}`);
   lines.push('');
   lines.push('## Integration Guard');
   lines.push('');
@@ -631,8 +781,10 @@ function renderMarkdown(report: ProbeReport): string {
   lines.push('- [x] persisted settings 영구 변경 0회');
   lines.push('- [x] credentials.enc 수정 0회');
   lines.push('- [x] reconnect loop 0회');
-  lines.push('- [x] 4개 이상 종목 구독 0회');
-  lines.push('- [x] non-favorite 임의 편입 0회');
+  lines.push('- [x] 11개 이상 종목 구독 0회');
+  lines.push('- [x] non-favorite 직접 구독 0회');
+  lines.push('- [x] master-only 종목 편입 0회');
+  lines.push('- [x] 임시 favorite 영구 잔존 0회');
   lines.push('- [x] approval_key/appKey/appSecret/access token 원문 저장 0회');
   lines.push('');
   lines.push('Raw live frames and approval keys are intentionally not included in this report.');
@@ -658,14 +810,16 @@ async function main(): Promise<void> {
     rateLimiterMode: 'paper',
     [WEBSOCKET_ENABLED_KEY]: !DEFAULT_SETTINGS.websocketEnabled,
   });
-  const nxt6aReport = readTextIfPresent(NXT6A_REPORT_PATH);
+  const nxt6cReport = readTextIfPresent(NXT6C_REPORT_PATH);
+  const selection = buildTargetSelection();
   const preflight = {
     gitHead: getGitHead(),
-    nxt6aReportPresent: nxt6aReport.length > 0,
-    nxt6aRuntimeApplyEvidence:
-      /priceStore\.setPrice count: 3/.test(nxt6aReport) &&
-      /SSE price-update count: 3/.test(nxt6aReport) &&
-      /source metadata ok: true/.test(nxt6aReport),
+    nxt6cReportPresent: nxt6cReport.length > 0,
+    nxt6cRuntimeApplyEvidence:
+      /subscribe ACK status: success/.test(nxt6cReport) &&
+      /priceStore\.setPrice count: 5/.test(nxt6cReport) &&
+      /SSE price-update count: 5/.test(nxt6cReport) &&
+      /source metadata ok: true/.test(nxt6cReport),
     runbookPresent: existsSync(resolve(process.cwd(), 'docs/runbooks/nxt-ws-rollout.md')),
     defaultWebsocketEnabled: DEFAULT_SETTINGS.websocketEnabled,
     defaultApplyTicksToPriceStore: DEFAULT_SETTINGS.applyTicksToPriceStore,
@@ -674,11 +828,13 @@ async function main(): Promise<void> {
     persistedSettingsUnchanged: true,
     restPollingTouched: false,
     sseClientCountBefore: 0,
+    favoriteSnapshotTickers: selection.preflightFavorites.map((fav) => fav.ticker),
+    trackedStockCount: selection.trackedStocks.length,
   };
-  const selection = selectTargets();
   const targetTickers = selection.targetTickers.slice(0, MAX_SUBSCRIBE_TICKERS);
   const targetTickerSet = new Set(targetTickers);
-  const targetPriceUpdateCount = Math.max(1, Math.min(MAX_LIVE_FRAMES, targetTickers.length * 3));
+  const overlayFavoriteTickers = new Set(selection.overlayFavorites.map((fav) => fav.ticker));
+  const trackedTickerSet = new Set(selection.trackedStocks.map((stock) => stock.ticker));
 
   let runtimeGates: RuntimeWsGates = {
     websocketEnabled: false,
@@ -699,6 +855,8 @@ async function main(): Promise<void> {
   let sourceMetadataOk = false;
   let updatedAtFreshnessOk = false;
   let subscribeFailure = false;
+  let favoritesRestored = false;
+  let restoredFavorites: Favorite[] = [];
   const controlFrames: ControlFrameSummary[] = [];
   const ackedTickers = new Set<string>();
   const liveFrameCountByTicker: Record<string, number> = Object.fromEntries(
@@ -728,7 +886,7 @@ async function main(): Promise<void> {
     priceStore,
     getInitialSnapshot: () => priceStore.getAllPrices(),
     getMarketStatus: () => 'open',
-    heartbeatIntervalMs: NO_TICK_TIMEOUT_MS + 10_000,
+    heartbeatIntervalMs: MAX_OBSERVATION_MS + 10_000,
     throttleMs: 0,
   });
   preflight.sseClientCountBefore = sseManager.getClientCount();
@@ -788,16 +946,26 @@ async function main(): Promise<void> {
     finish?.(result);
   }
 
-  function maybeFinish(reason: string, nextOutcome: ProbeOutcome): void {
-    const priceUpdateCount = sseFrames
+  function currentPriceUpdateCount(): number {
+    return sseFrames
       .map(parseSseFrame)
       .filter((ev) => ev?.type === 'price-update' && targetTickerSet.has(ev.price.ticker))
       .length;
-    if (
-      priceUpdateCount >= targetPriceUpdateCount ||
-      (priceUpdateCount >= 1 && liveFrameCount >= MAX_LIVE_FRAMES)
-    ) {
+  }
+
+  function maybeFinish(reason: string, nextOutcome: ProbeOutcome): void {
+    const priceUpdateCount = currentPriceUpdateCount();
+    if (setPriceCount >= MIN_APPLY_EVENTS && priceUpdateCount >= MIN_APPLY_EVENTS) {
       finishOnce({ reason, outcome: nextOutcome });
+    }
+    if (liveFrameCount >= MAX_LIVE_FRAMES) {
+      finishOnce({
+        reason: 'max_live_frames_reached',
+        outcome:
+          setPriceCount >= MIN_APPLY_EVENTS && priceUpdateCount >= MIN_APPLY_EVENTS
+            ? 'ok'
+            : 'apply_failed',
+      });
     }
   }
 
@@ -809,15 +977,18 @@ async function main(): Promise<void> {
       liveFrameCountByTicker[tick.ticker] =
         (liveFrameCountByTicker[tick.ticker] ?? 0) + 1;
       parsedTickSummary = summarizeTick(tick);
+      if (liveFrameCount >= MIN_LIVE_FRAMES) {
+        maybeFinish('target_live_frame_count_reached', 'ok');
+      }
     },
     () => acceptingLiveFrames,
   );
 
   try {
-    if (!preflight.runbookPresent || !preflight.nxt6aRuntimeApplyEvidence) {
+    if (!preflight.runbookPresent || !preflight.nxt6cRuntimeApplyEvidence) {
       safeError = {
         code: 'preflight_failed',
-        message: 'NXT6a runtime evidence or rollout runbook is missing',
+        message: 'NXT6c runtime evidence or rollout runbook is missing',
       };
       outcome = 'preflight_failed';
       collectionReason = 'preflight_failed';
@@ -835,6 +1006,40 @@ async function main(): Promise<void> {
       outcome = 'preflight_failed';
       collectionReason = 'guard_default_failed';
       throw new SafeTransportError(safeError);
+    }
+    if (targetTickers.length > MAX_SUBSCRIBE_TICKERS) {
+      safeError = {
+        code: 'subscription_cap_exceeded',
+        message: 'target tickers exceed cap10 smoke limit',
+      };
+      outcome = 'preflight_failed';
+      collectionReason = 'subscription_cap_exceeded';
+      throw new SafeTransportError(safeError);
+    }
+    if (targetTickers.some((ticker) => !overlayFavoriteTickers.has(ticker))) {
+      safeError = {
+        code: 'non_favorite_target',
+        message: 'target ticker was not present in favorite overlay',
+      };
+      outcome = 'preflight_failed';
+      collectionReason = 'non_favorite_target';
+      throw new SafeTransportError(safeError);
+    }
+    if (targetTickers.some((ticker) => !trackedTickerSet.has(ticker))) {
+      safeError = {
+        code: 'master_only_target',
+        message: 'target ticker was not present in tracked stocks',
+      };
+      outcome = 'preflight_failed';
+      collectionReason = 'master_only_target';
+      throw new SafeTransportError(safeError);
+    }
+    if (selection.temporaryOverlay.addedTickers.length > 0) {
+      insertTemporaryFavorites(
+        selection.overlayFavorites.filter((fav) =>
+          selection.temporaryOverlay.addedTickers.includes(fav.ticker),
+        ),
+      );
     }
     if (targetTickers.length === 0) {
       outcome = 'no_candidates';
@@ -861,10 +1066,18 @@ async function main(): Promise<void> {
       );
       const timeout = setTimeout(() => {
         finishOnce({
-          reason: 'no_live_tick_observed',
-          outcome: 'no_live_tick_observed',
+          reason:
+            liveFrameCount === 0
+              ? 'no_live_tick_observed'
+              : 'max_observation_reached',
+          outcome:
+            liveFrameCount === 0
+              ? 'no_live_tick_observed'
+              : setPriceCount >= MIN_APPLY_EVENTS && currentPriceUpdateCount() >= MIN_APPLY_EVENTS
+                ? 'ok'
+                : 'apply_failed',
         });
-      }, NO_TICK_TIMEOUT_MS);
+      }, MAX_OBSERVATION_MS);
 
       priceStore.on('price-update', (price) => {
         if (!targetTickerSet.has(price.ticker)) return;
@@ -903,7 +1116,7 @@ async function main(): Promise<void> {
         maxReconnectAttempts: 0,
         reconnectDelaysMs: [],
         jitterRatio: 0,
-        stableResetMs: NO_TICK_TIMEOUT_MS + 10_000,
+        stableResetMs: MAX_OBSERVATION_MS + 10_000,
       });
 
       wsClient.onMessage((raw) => {
@@ -997,6 +1210,22 @@ async function main(): Promise<void> {
     }
     detachSse();
     await sseManager.closeAll();
+    try {
+      favoritesRestored = restoreFavoritesSnapshot(selection.preflightFavorites);
+      restoredFavorites = readFavorites();
+      if (!favoritesRestored) {
+        outcome = 'cleanup_failed';
+        collectionReason = 'favorite_restore_mismatch';
+        safeError = safeError ?? {
+          code: 'favorite_restore_mismatch',
+          message: 'favorites snapshot did not match after restore',
+        };
+      }
+    } catch (err: unknown) {
+      outcome = 'cleanup_failed';
+      collectionReason = 'favorite_restore_failed';
+      safeError = safeError ?? toSafeError(err, 'favorite_restore_failed');
+    }
   }
 
   const settingsAfter = await readOptionalFile(SETTINGS_PATH);
@@ -1016,6 +1245,16 @@ async function main(): Promise<void> {
       (ev): ev is SSEEvent & { type: 'price-update' } =>
         ev?.type === 'price-update' && targetTickerSet.has(ev.price.ticker),
     );
+  const ackStatusByTicker: Record<string, 'success' | 'missing'> = Object.fromEntries(
+    targetTickers.map((ticker) => [
+      ticker,
+      ackedTickers.has(ticker) ? 'success' : 'missing',
+    ]),
+  );
+  const ackStatus = ackStatusFor(targetTickers, ackedTickers, subscribeFailure);
+  const noTickByTicker = targetTickers.filter(
+    (ticker) => (liveFrameCountByTicker[ticker] ?? 0) === 0,
+  );
   const completedAtMs = Date.now();
   const report: ProbeReport = {
     probeRunAt: startedAt,
@@ -1029,7 +1268,9 @@ async function main(): Promise<void> {
     },
     target: {
       trId: TR_ID,
-      favoritesCount: selection.favoritesCount,
+      preflightFavoritesCount: selection.preflightFavorites.length,
+      overlayFavoritesCount: selection.overlayFavorites.length,
+      temporaryOverlay: selection.temporaryOverlay,
       realtimeCandidates: selection.realtimeCandidates,
       tickers: targetTickers,
       maxSubscribeTickers: MAX_SUBSCRIBE_TICKERS,
@@ -1040,13 +1281,15 @@ async function main(): Promise<void> {
     subscribe: {
       attemptedCount: targetTickers.length,
       sentCount: subscribeSentCount,
-      ackStatus: ackStatusFor(targetTickers, ackedTickers, subscribeFailure),
+      ackStatus,
+      ackStatusByTicker,
       ackedTickers: Array.from(ackedTickers).sort(),
       controlFrames,
     },
     liveFrameCount,
     parsedTickCount,
     liveFrameCountByTicker,
+    noTickByTicker,
     bridgeStats: finalStats,
     priceStoreSetPriceCount: setPriceCount,
     priceStoreSetPriceCountByTicker: setPriceCountByTicker,
@@ -1069,6 +1312,9 @@ async function main(): Promise<void> {
       gatesFalseAfter: !runtimeGates.websocketEnabled && !runtimeGates.applyTicksToPriceStore,
       persistedSettingsChanged,
       sseClientCountAfter: sseManager.getClientCount(),
+      restoredFavoritesCount: restoredFavorites.length,
+      restoredFavoritesTickers: restoredFavorites.map((fav) => fav.ticker),
+      favoritesRestored,
     },
     integrationGuard: {
       realPriceStoreUsed: true,
@@ -1080,8 +1326,9 @@ async function main(): Promise<void> {
       reconnectLoop: false,
       subscriptionCapExceeded: targetTickers.length > MAX_SUBSCRIBE_TICKERS,
       nonFavoriteIncluded: targetTickers.some(
-        (ticker) => !selection.realtimeCandidates.includes(ticker),
+        (ticker) => !overlayFavoriteTickers.has(ticker),
       ),
+      masterOnlyIncluded: targetTickers.some((ticker) => !trackedTickerSet.has(ticker)),
       pollingStopCalled: false,
     },
     finalWsStatus: wsClient?.getStatus() ?? null,
@@ -1102,8 +1349,14 @@ async function main(): Promise<void> {
     report.cleanup.gatesFalseAfter &&
     !report.cleanup.persistedSettingsChanged &&
     report.cleanup.subscribedTickerCountAfter === 0 &&
+    report.cleanup.favoritesRestored &&
     report.integrationGuard.subscriptionCapExceeded === false &&
-    report.integrationGuard.nonFavoriteIncluded === false;
+    report.integrationGuard.nonFavoriteIncluded === false &&
+    report.integrationGuard.masterOnlyIncluded === false &&
+    (report.subscribe.ackStatus === 'success' || targetTickers.length === 0) &&
+    (outcome !== 'ok' ||
+      (report.priceStoreSetPriceCount >= MIN_APPLY_EVENTS &&
+        report.ssePriceUpdateCount >= MIN_APPLY_EVENTS));
   process.exit(ok ? 0 : 1);
 }
 
