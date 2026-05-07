@@ -137,6 +137,11 @@ async function build(
     priceStore?: { getAllPrices(): Array<{ ticker: string; price: number; changeRate: number; volume: number; updatedAt: string; isSnapshot: boolean; volumeBaselineStatus?: 'ready' | 'collecting' | 'unavailable' }> };
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
     backgroundBackfill?: { snapshot(): { running: boolean; lastRunAt: string | null; lastFinishedAt: string | null; lastAttempted: number; lastSucceeded: number; lastFailed: number; lastSkippedReason: 'disabled' | 'market_not_allowed' | 'no_tickers' | 'no_stale_tickers' | 'already_running' | 'cooldown' | null } };
+    phoneNotifier?: {
+      status(): { configured: boolean; provider: 'telegram'; mode: 'env' };
+      sendAlert(input: { title: string; detail: string; ticker: string; name: string }): Promise<{ sent: boolean; reason?: string }>;
+      sendTest(): Promise<{ sent: boolean; reason?: string }>;
+    };
   },
 ) {
   const app = Fastify({ logger: false });
@@ -153,9 +158,86 @@ async function build(
     priceStore: opts.priceStore,
     backfillStateStore: opts.backfillStateStore,
     backgroundBackfill: opts.backgroundBackfill,
+    phoneNotifier: opts.phoneNotifier,
   });
   return app;
 }
+
+describe('runtime phone notification routes', () => {
+  it('reports unconfigured Telegram bridge without sending anything', async () => {
+    const sendAlert = vi.fn();
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      phoneNotifier: {
+        status: () => ({ configured: false, provider: 'telegram', mode: 'env' }),
+        sendAlert,
+        sendTest: vi.fn(),
+      },
+    });
+
+    const status = await app.inject({
+      method: 'GET',
+      url: '/runtime/notifications/telegram/status',
+    });
+    const alert = await app.inject({
+      method: 'POST',
+      url: '/runtime/notifications/telegram/alert',
+      payload: {
+        ticker: '005930',
+        name: '삼성전자',
+        title: '삼성전자 · 룰 발동',
+        detail: '005930 · 등락률 ≥ 5%',
+        kind: 'rule',
+        direction: 'up',
+        changePct: 5.2,
+      },
+    });
+
+    expect(status.statusCode).toBe(200);
+    expect(status.json().data.configured).toBe(false);
+    expect(alert.statusCode).toBe(409);
+    expect(alert.json().error.code).toBe('PHONE_NOTIFICATION_NOT_CONFIGURED');
+    expect(sendAlert).not.toHaveBeenCalled();
+  });
+
+  it('sends a sanitized Telegram alert payload when configured', async () => {
+    const sendAlert = vi.fn(async () => ({ sent: true }));
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      phoneNotifier: {
+        status: () => ({ configured: true, provider: 'telegram', mode: 'env' }),
+        sendAlert,
+        sendTest: vi.fn(),
+      },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/notifications/telegram/alert',
+      payload: {
+        ticker: '005930',
+        name: '삼성전자',
+        title: '삼성전자 · 룰 발동',
+        detail: '005930 · 거래량 배수 ≥ 2.5배',
+        kind: 'rule',
+        direction: 'up',
+        changePct: 5.2,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.sent).toBe(true);
+    expect(sendAlert).toHaveBeenCalledWith({
+      ticker: '005930',
+      name: '삼성전자',
+      title: '삼성전자 · 룰 발동',
+      detail: '005930 · 거래량 배수 ≥ 2.5배',
+      kind: 'rule',
+      direction: 'up',
+      changePct: 5.2,
+    });
+  });
+});
 
 describe('GET /runtime/data-health', () => {
   it('summarizes tracking, candle coverage, backfill calls, and volume baselines safely', async () => {

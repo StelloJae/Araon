@@ -22,6 +22,7 @@
 import { useEffect, useRef } from 'react';
 import type { Price } from '@shared/types';
 import { evaluateAlerts } from '../lib/alert-evaluator';
+import { sendPhoneNotificationAlert } from '../lib/api-client';
 import { showDesktopNotification } from '../lib/desktop-notification';
 import { isMarketLive } from '../lib/market-status';
 import { playBleep } from '../lib/sound';
@@ -82,6 +83,17 @@ export function useAlertEvaluator({ onPickStock }: UseAlertEvaluatorOptions): vo
           body: spec.detail,
           onClick: () => pickStockRef.current(spec.ticker),
         });
+      }
+      if (settings.phoneNotifEnabled) {
+        void sendPhoneNotificationAlert({
+          ticker: spec.ticker,
+          name: spec.name,
+          title: spec.title,
+          detail: spec.detail,
+          kind: spec.kind,
+          direction: spec.direction,
+          changePct: spec.changePct,
+        }).catch(() => undefined);
       }
     }
 

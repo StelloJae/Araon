@@ -21,6 +21,7 @@ function stock(overrides: Partial<StockViewModel> = {}): StockViewModel {
     sectorId: null,
     effectiveSector: { name: '반도체', source: 'manual' },
     volumeBaselineStatus: 'ready',
+    source: 'ws-integrated',
     ...overrides,
   };
 }
@@ -43,7 +44,7 @@ describe('StockDataQualityPanel', () => {
     );
 
     expect(html).toContain('데이터 품질 100점');
-    expect(html).toContain('실시간 LIVE');
+    expect(html).toContain('통합 실시간');
     expect(html).toContain('1분봉 12개');
     expect(html).toContain('일봉 20개');
     expect(html).toContain('거래량 기준선 준비');
@@ -58,5 +59,16 @@ describe('StockDataQualityPanel', () => {
     expect(quality.score).toBe(0);
     expect(quality.reasons).toContain('1분봉 수집 중');
     expect(quality.reasons).toContain('일봉 보강 대기');
+  });
+
+  it('labels REST fallback separately from integrated realtime', () => {
+    const quality = buildStockDataQuality(stock({ source: 'rest' }), {
+      minuteCount: 1,
+      minuteNewestAt: '2026-05-06T01:00:00.000Z',
+      dailyCount: 1,
+      dailyNewestAt: '2026-05-05T15:00:00.000Z',
+    });
+
+    expect(quality.reasons).toContain('REST fallback');
   });
 });

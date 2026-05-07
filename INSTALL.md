@@ -65,10 +65,13 @@ Optional news/disclosure providers can be configured in `.env`:
 NAVER_SEARCH_CLIENT_ID=
 NAVER_SEARCH_CLIENT_SECRET=
 DART_API_KEY=
+ARAON_TELEGRAM_BOT_TOKEN=
+ARAON_TELEGRAM_CHAT_ID=
 ```
 
 These are not brokerage credentials. Leave them blank if you only want the
-default no-key Naver Finance feed and external disclosure search links.
+default no-key Naver Finance feed, external disclosure search links, and local
+browser alerts.
 
 To get the optional keys:
 
@@ -76,6 +79,9 @@ To get the optional keys:
   Araon uses the News Search API.
 - DART: create an OpenDART API key. Araon uses the corp-code catalog and
   disclosure-list APIs to map tickers to recent filings.
+- Telegram: create a Telegram bot and set `ARAON_TELEGRAM_BOT_TOKEN` plus the
+  target `ARAON_TELEGRAM_CHAT_ID`. This enables optional phone alerts from
+  Araon's local alert engine.
 
 ## Verify The Checkout
 

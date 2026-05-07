@@ -249,6 +249,7 @@ export function buildStockVM(
       q?.volumeBaselineStatus ?? (q !== undefined && q.volume > 0 ? 'collecting' : 'unavailable'),
     updatedAt: q?.updatedAt ?? '',
     isSnapshot: q?.isSnapshot ?? true,
+    source: q?.source ?? null,
     sectorId: meta.sectorId,
     effectiveSector: getEffectiveSector(
       meta.manualSectorName,

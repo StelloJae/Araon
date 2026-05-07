@@ -28,6 +28,8 @@ export interface ClientSettings {
   // Alerts ---------------------------------------------------------------
   /** Threshold for "큰 변동" generic toast (favorites). |%|. */
   notifPctThreshold: number;
+  /** Send server-side phone notifications through the configured Telegram bridge. */
+  phoneNotifEnabled: boolean;
   /** Beep on threshold/rule firing. Default OFF — user must opt in. */
   soundOn: boolean;
   /** 0..1; multiplied with the oscillator gain. */
@@ -51,6 +53,7 @@ const DEFAULTS: ClientSettings = {
   devModeEnabled: false,
 
   notifPctThreshold: 5,
+  phoneNotifEnabled: false,
   soundOn: false,
   soundVolume: 0.4,
   desktopNotif: false,
@@ -118,6 +121,9 @@ function loadSettings(): ClientSettings {
       30,
       DEFAULTS.notifPctThreshold,
     );
+    if (typeof obj.phoneNotifEnabled === 'boolean') {
+      merged.phoneNotifEnabled = obj.phoneNotifEnabled;
+    }
     if (typeof obj.soundOn === 'boolean') merged.soundOn = obj.soundOn;
     merged.soundVolume = clampNumber(
       obj.soundVolume,

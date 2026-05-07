@@ -9,7 +9,7 @@
  */
 
 import type { EffectiveSector } from './effective-sector';
-import type { MarketCapSize } from '@shared/types';
+import type { MarketCapSize, PriceSource } from '@shared/types';
 
 export type SortKey = 'changeDesc' | 'changeAsc' | 'volume' | 'name';
 
@@ -49,6 +49,8 @@ export interface StockViewModel {
   updatedAt: string;
   /** True when the underlying price is from the warm snapshot, not a live tick. */
   isSnapshot: boolean;
+  /** Backend quote source, used for user-facing reliability diagnostics. */
+  source?: PriceSource | null;
   /**
    * Manual theme id this ticker belongs to (from the theme catalog).
    * Null when the ticker isn't part of any theme — SectionStack groups those

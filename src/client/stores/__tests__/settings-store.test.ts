@@ -131,6 +131,7 @@ describe('useSettingsStore', () => {
     const { useSettingsStore } = await import('../settings-store');
     const s = useSettingsStore.getState().settings;
     expect(s.notifPctThreshold).toBe(5);
+    expect(s.phoneNotifEnabled).toBe(false);
     expect(s.soundOn).toBe(false);
     expect(s.soundVolume).toBeCloseTo(0.4);
     expect(s.desktopNotif).toBe(false);
@@ -179,6 +180,7 @@ describe('useSettingsStore', () => {
     const mod = await import('../settings-store');
     mod.useSettingsStore.getState().update({
       notifPctThreshold: 7,
+      phoneNotifEnabled: true,
       surgeThreshold: 4.5,
       soundOn: true,
     });
@@ -186,6 +188,7 @@ describe('useSettingsStore', () => {
     const reloaded = await import('../settings-store');
     const s = reloaded.useSettingsStore.getState().settings;
     expect(s.notifPctThreshold).toBe(7);
+    expect(s.phoneNotifEnabled).toBe(true);
     expect(s.surgeThreshold).toBe(4.5);
     expect(s.soundOn).toBe(true);
   });

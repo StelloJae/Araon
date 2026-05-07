@@ -10,19 +10,22 @@
  *   - priceAbove / priceBelow         (Price.price)
  *   - changePctAbove / changePctBelow (Price.changeRate)
  *   - volumeAbove                     (Price.volume — raw 주)
+ *   - volumeSurgeRatioAbove           (Price.volumeSurgeRatio, ready baseline only)
  *
- * Volume *multiples*, market-cap tiers, PER/PBR-based rules are NOT allowed
- * yet because the backend doesn't surface those fields.
+ * PER/PBR-based rules are NOT allowed yet because the backend doesn't surface
+ * enough stable realtime fields for crossing semantics.
  */
 
 import { create } from 'zustand';
+import type { SurgeMarketCapFilter } from './settings-store';
 
 export type AlertRuleKind =
   | 'priceAbove'
   | 'priceBelow'
   | 'changePctAbove'
   | 'changePctBelow'
-  | 'volumeAbove';
+  | 'volumeAbove'
+  | 'volumeSurgeRatioAbove';
 
 export const ALERT_RULE_KINDS: ReadonlyArray<AlertRuleKind> = [
   'priceAbove',
@@ -30,6 +33,7 @@ export const ALERT_RULE_KINDS: ReadonlyArray<AlertRuleKind> = [
   'changePctAbove',
   'changePctBelow',
   'volumeAbove',
+  'volumeSurgeRatioAbove',
 ];
 
 export const ALERT_RULE_KIND_LABEL: Record<AlertRuleKind, string> = {
@@ -38,6 +42,7 @@ export const ALERT_RULE_KIND_LABEL: Record<AlertRuleKind, string> = {
   changePctAbove: '등락률 ≥',
   changePctBelow: '등락률 ≤',
   volumeAbove: '거래량 ≥',
+  volumeSurgeRatioAbove: '거래량 배수 ≥',
 };
 
 export const ALERT_RULE_KIND_SUFFIX: Record<AlertRuleKind, string> = {
@@ -46,6 +51,7 @@ export const ALERT_RULE_KIND_SUFFIX: Record<AlertRuleKind, string> = {
   changePctAbove: '%',
   changePctBelow: '%',
   volumeAbove: '주',
+  volumeSurgeRatioAbove: '배',
 };
 
 export interface AlertRule {
@@ -53,6 +59,8 @@ export interface AlertRule {
   ticker: string;
   kind: AlertRuleKind;
   threshold: number;
+  /** Optional market-cap bucket scope. `all` keeps older rules unchanged. */
+  marketCapFilter?: SurgeMarketCapFilter;
   enabled: boolean;
   cooldownMs: number;
   createdAt: number;
@@ -64,6 +72,12 @@ export const DEFAULT_RULE_COOLDOWN_MS = 5 * 60_000;
 
 const STORAGE_KEY = 'araon-rules-v1';
 const VALID_KINDS: ReadonlySet<string> = new Set(ALERT_RULE_KINDS);
+const VALID_MARKET_CAP_FILTERS: ReadonlySet<string> = new Set([
+  'all',
+  'large',
+  'mid',
+  'small',
+]);
 
 function isValidRule(raw: unknown): raw is AlertRule {
   if (raw === null || typeof raw !== 'object') return false;
@@ -71,6 +85,13 @@ function isValidRule(raw: unknown): raw is AlertRule {
   if (typeof r.id !== 'string' || r.id.length === 0) return false;
   if (typeof r.ticker !== 'string' || r.ticker.length === 0) return false;
   if (typeof r.kind !== 'string' || !VALID_KINDS.has(r.kind)) return false;
+  if (
+    r.marketCapFilter !== undefined &&
+    (typeof r.marketCapFilter !== 'string' ||
+      !VALID_MARKET_CAP_FILTERS.has(r.marketCapFilter))
+  ) {
+    return false;
+  }
   if (typeof r.threshold !== 'number' || !Number.isFinite(r.threshold)) {
     return false;
   }
@@ -105,9 +126,14 @@ function loadRules(): AlertRule[] {
     const out: AlertRule[] = [];
     for (const item of parsed) {
       if (isValidRule(item)) {
-        const r = item as AlertRule & { updatedAt?: number };
+        const r = item as AlertRule & {
+          marketCapFilter?: SurgeMarketCapFilter;
+          updatedAt?: number;
+        };
         out.push({
           ...r,
+          marketCapFilter:
+            r.marketCapFilter === undefined ? 'all' : r.marketCapFilter,
           updatedAt:
             typeof r.updatedAt === 'number' ? r.updatedAt : r.createdAt,
         });
@@ -142,6 +168,7 @@ export interface NewAlertRuleInput {
   ticker: string;
   kind: AlertRuleKind;
   threshold: number;
+  marketCapFilter?: SurgeMarketCapFilter;
   enabled?: boolean;
   cooldownMs?: number;
 }
@@ -165,6 +192,7 @@ export const useAlertRulesStore = create<AlertRulesState>((set, get) => ({
       ticker: input.ticker,
       kind: input.kind,
       threshold: input.threshold,
+      marketCapFilter: input.marketCapFilter ?? 'all',
       enabled: input.enabled ?? true,
       cooldownMs: input.cooldownMs ?? DEFAULT_RULE_COOLDOWN_MS,
       createdAt: t,

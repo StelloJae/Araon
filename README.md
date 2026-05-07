@@ -128,6 +128,8 @@ Optional news/disclosure enrichment can also be configured in `.env`:
 NAVER_SEARCH_CLIENT_ID=
 NAVER_SEARCH_CLIENT_SECRET=
 DART_API_KEY=
+ARAON_TELEGRAM_BOT_TOKEN=
+ARAON_TELEGRAM_CHAT_ID=
 ```
 
 Leave these blank to use the no-key Naver Finance link feed and external
@@ -135,6 +137,10 @@ DART/KIND search links only. To enable them, register a Naver Developers app
 with the Search API enabled and request an OpenDART API key. Araon stores only
 news/disclosure titles, timestamps, provider snippets, and links; it does not
 store article bodies or generate news summaries.
+
+The Telegram values are optional phone-alert settings. They are not KIS
+brokerage credentials; when they are blank, Araon keeps phone notifications
+disabled while local toast/sound/desktop alerts continue to work.
 
 Run the server and client in separate terminals:
 

@@ -187,6 +187,13 @@ export function evaluateAlerts(input: AlertEvaluatorInput): AlertEvaluatorOutput
     const tickerRules = rulesByTicker.get(ticker);
     if (tickerRules !== undefined) {
       for (const rule of tickerRules) {
+        const marketCapFilter = rule.marketCapFilter ?? 'all';
+        if (
+          marketCapFilter !== 'all' &&
+          catalog[ticker]?.marketCapSize !== marketCapFilter
+        ) {
+          continue;
+        }
         let crossed = false;
         switch (rule.kind) {
           case 'priceAbove':
@@ -208,6 +215,15 @@ export function evaluateAlerts(input: AlertEvaluatorInput): AlertEvaluatorOutput
           case 'volumeAbove':
             crossed =
               prev.volume < rule.threshold && curr.volume >= rule.threshold;
+            break;
+          case 'volumeSurgeRatioAbove':
+            crossed =
+              prev.volumeBaselineStatus === 'ready' &&
+              curr.volumeBaselineStatus === 'ready' &&
+              typeof prev.volumeSurgeRatio === 'number' &&
+              typeof curr.volumeSurgeRatio === 'number' &&
+              prev.volumeSurgeRatio < rule.threshold &&
+              curr.volumeSurgeRatio >= rule.threshold;
             break;
         }
         if (!crossed) continue;
@@ -251,5 +267,7 @@ function ruleLabel(rule: AlertRule): string {
       return `등락률 ≤ ${rule.threshold}%`;
     case 'volumeAbove':
       return `거래량 ≥ ${rule.threshold.toLocaleString('ko-KR')}`;
+    case 'volumeSurgeRatioAbove':
+      return `거래량 배수 ≥ ${rule.threshold.toLocaleString('ko-KR')}배`;
   }
 }

@@ -52,6 +52,11 @@ import {
   previewRealtimeCandidates,
   type RealtimeCandidatePreview,
 } from '../realtime/tier-manager.js';
+import {
+  createDisabledPhoneNotifier,
+  type PhoneAlertInput,
+  type PhoneNotifier,
+} from '../notifications/phone-notifier.js';
 
 export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
@@ -76,6 +81,7 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   };
   newsRepo?: { summarizeGrowth(now?: Date, staleAfterMs?: number): StockNewsGrowthSummary };
   dataRetention?: { snapshot(): DataRetentionSnapshot };
+  phoneNotifier?: PhoneNotifier;
 }
 
 export interface RuntimeRealtimeStatusPayload {
@@ -157,6 +163,16 @@ const sessionEnableBodySchema = z.object({
   maxSessionMs: z.number().int().optional(),
 });
 
+const phoneAlertBodySchema = z.object({
+  ticker: z.string().min(1).max(16),
+  name: z.string().min(1).max(100),
+  title: z.string().min(1).max(200),
+  detail: z.string().min(1).max(500),
+  kind: z.enum(['fav-pct', 'rule']),
+  direction: z.enum(['up', 'down']),
+  changePct: z.number().finite(),
+});
+
 const backupStockSchema = z.object({
   ticker: z.string().min(1).max(16),
   name: z.string().min(1).max(100),
@@ -184,6 +200,71 @@ export async function runtimeRoutes(
   app: FastifyInstance,
   opts: RuntimeRoutesOptions,
 ): Promise<void> {
+  const phoneNotifier = opts.phoneNotifier ?? createDisabledPhoneNotifier();
+
+  app.get('/runtime/notifications/telegram/status', async (_request, reply) => {
+    return reply.send({
+      success: true,
+      data: phoneNotifier.status(),
+    });
+  });
+
+  app.post('/runtime/notifications/telegram/test', async (_request, reply) => {
+    if (!phoneNotifier.status().configured) {
+      return reply.status(409).send({
+        success: false,
+        error: {
+          code: 'PHONE_NOTIFICATION_NOT_CONFIGURED',
+          message: 'Telegram 폰 알림 환경 변수가 설정되지 않았습니다.',
+        },
+      });
+    }
+    const result = await phoneNotifier.sendTest();
+    if (!result.sent) {
+      return reply.status(502).send({
+        success: false,
+        error: {
+          code: 'PHONE_NOTIFICATION_SEND_FAILED',
+          message: sanitizeRealtimeStatusText(result.reason ?? 'send_failed'),
+        },
+      });
+    }
+    return reply.send({ success: true, data: result });
+  });
+
+  app.post<{ Body: z.infer<typeof phoneAlertBodySchema> }>(
+    '/runtime/notifications/telegram/alert',
+    async (request, reply) => {
+      if (!phoneNotifier.status().configured) {
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'PHONE_NOTIFICATION_NOT_CONFIGURED',
+            message: 'Telegram 폰 알림 환경 변수가 설정되지 않았습니다.',
+          },
+        });
+      }
+      const parsed = phoneAlertBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'INVALID_PHONE_NOTIFICATION_PAYLOAD' },
+        });
+      }
+      const result = await phoneNotifier.sendAlert(parsed.data as PhoneAlertInput);
+      if (!result.sent) {
+        return reply.status(502).send({
+          success: false,
+          error: {
+            code: 'PHONE_NOTIFICATION_SEND_FAILED',
+            message: sanitizeRealtimeStatusText(result.reason ?? 'send_failed'),
+          },
+        });
+      }
+      return reply.send({ success: true, data: result });
+    },
+  );
+
   app.get('/runtime/signals/outcomes', async (_request, reply) => {
     const signals = opts.signalEventRepo?.listRecent?.(100) ?? [];
     return reply.send({

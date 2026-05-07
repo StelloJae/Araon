@@ -1,8 +1,8 @@
 /**
  * MarketBadge — pill rendering one of three KIS runtime states.
- *   - LIVE              → red tint + pulsing dot
- *   - SNAPSHOT (마감 기준)→ neutral grey
- *   - PRE-OPEN          → yellow tint
+ *   - LIVE · 장중       → red tint + pulsing dot
+ *   - SNAPSHOT · 장후   → neutral grey
+ *   - PRE · 장전        → yellow tint
  *
  * Maps to the shared `MarketStatus` discriminator: 'open' → LIVE,
  * 'snapshot' / 'closed' → SNAPSHOT, 'pre-open' → PRE-OPEN.
@@ -25,21 +25,21 @@ const CONFIG_BY_VARIANT: Record<Variant, BadgeConfig> = {
     bg: 'var(--up-tint-1)',
     fg: 'var(--kr-up)',
     dot: 'var(--kr-up)',
-    text: 'LIVE',
+    text: 'LIVE · 장중',
     pulse: true,
   },
   SNAPSHOT: {
     bg: 'var(--bg-tint)',
     fg: 'var(--text-secondary)',
     dot: 'var(--text-muted)',
-    text: 'SNAPSHOT (마감 기준)',
+    text: 'SNAPSHOT · 장후',
     pulse: false,
   },
   'PRE-OPEN': {
     bg: 'var(--gold-soft)',
     fg: 'var(--gold-text)',
     dot: 'var(--gold)',
-    text: 'PRE-OPEN',
+    text: 'PRE · 장전',
     pulse: false,
   },
 };

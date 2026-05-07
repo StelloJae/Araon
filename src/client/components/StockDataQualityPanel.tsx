@@ -109,7 +109,7 @@ export function buildStockDataQuality(
 
   if (!stock.isSnapshot && stock.updatedAt !== '') {
     score += 30;
-    reasons.push('실시간 LIVE');
+    reasons.push(priceSourceReason(stock.source));
   } else {
     reasons.push('가격 snapshot');
   }
@@ -147,4 +147,19 @@ export function buildStockDataQuality(
         : 'var(--text-muted)',
     reasons,
   };
+}
+
+function priceSourceReason(source: StockViewModel['source']): string {
+  switch (source) {
+    case 'ws-integrated':
+      return '통합 실시간';
+    case 'ws-krx':
+      return 'KRX 실시간';
+    case 'ws-nxt':
+      return 'NXT 실시간';
+    case 'rest':
+      return 'REST fallback';
+    default:
+      return '실시간 LIVE';
+  }
 }

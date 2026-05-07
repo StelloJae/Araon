@@ -34,6 +34,7 @@ import {
 import {
   useSettingsStore,
   type ClientSettings,
+  type SurgeMarketCapFilter,
 } from '../stores/settings-store';
 import { useStocksStore } from '../stores/stocks-store';
 import { Field, Slider, Toggle } from './ui/SettingsControls';
@@ -45,6 +46,7 @@ import {
   enableRealtimeSession,
   exportLocalBackup,
   getFavorites,
+  getPhoneNotificationStatus,
   getRealtimeStatus,
   getRuntimeDataHealth,
   getServerSettings,
@@ -52,11 +54,13 @@ import {
   getThemesWithStocks,
   importKisWatchlist,
   restoreLocalBackup,
+  sendPhoneNotificationTest,
   updateServerSettings,
   type KisWatchlistImportResult,
   type RealtimeStatusPayload,
   type RuntimeDataHealthPayload,
   type ServerRuntimeSettings,
+  type PhoneNotificationStatusPayload,
 } from '../lib/api-client';
 import {
   REALTIME_ADVANCED_RECHECK_LABEL,
@@ -1312,7 +1316,7 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor="var(--text-muted)"
             />
             <Row
-              k="신호 성과"
+              k="자동 복기"
               v={`${health.signalOutcomes.evaluatedSignals}/${health.signalOutcomes.totalSignals} 평가`}
               chipColor={health.signalOutcomes.evaluatedSignals > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
             />
@@ -1351,7 +1355,7 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
             {health.signalOutcomes.totalSignals > 0 && (
               <>
                 <br />
-                신호 성과: {formatSignalOutcomeSummary(health.signalOutcomes)}
+                자동 복기: {formatSignalOutcomeSummary(health.signalOutcomes)}
               </>
             )}
           </div>
@@ -1758,6 +1762,27 @@ function NotifTab() {
     typeof window !== 'undefined' && 'Notification' in window;
   const [permissionMsg, setPermissionMsg] = useState<string | null>(null);
   const [soundMsg, setSoundMsg] = useState<string | null>(null);
+  const [phoneStatus, setPhoneStatus] =
+    useState<PhoneNotificationStatusPayload | null>(null);
+  const [phoneMsg, setPhoneMsg] = useState<string | null>(null);
+  const [phoneLoading, setPhoneLoading] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void getPhoneNotificationStatus()
+      .then((status) => {
+        if (alive) setPhoneStatus(status);
+      })
+      .catch(() => {
+        if (alive) {
+          setPhoneStatus(null);
+          setPhoneMsg('폰 알림 상태를 확인하지 못했습니다.');
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Toggling sound ON inside this user-gesture handler unlocks the
   // AudioContext so later toast-driven beeps actually play.
@@ -1820,6 +1845,25 @@ function NotifTab() {
     } catch {
       set({ desktopNotif: false });
       setPermissionMsg('권한 요청 중 오류가 발생했습니다.');
+    }
+  }
+
+  async function handlePhoneTest() {
+    setPhoneLoading(true);
+    setPhoneMsg(null);
+    try {
+      await sendPhoneNotificationTest();
+      setPhoneMsg('Telegram 테스트 알림을 보냈습니다.');
+      const status = await getPhoneNotificationStatus();
+      setPhoneStatus(status);
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 409) {
+        setPhoneMsg('서버 env에 Telegram bot token/chat id가 설정되지 않았습니다.');
+      } else {
+        setPhoneMsg('Telegram 테스트 알림 전송에 실패했습니다.');
+      }
+    } finally {
+      setPhoneLoading(false);
     }
   }
 
@@ -1931,6 +1975,56 @@ function NotifTab() {
           </div>
         )}
 
+        <Field label="">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Toggle
+              value={settings.phoneNotifEnabled}
+              onChange={(v) => set({ phoneNotifEnabled: v })}
+              label="폰 Telegram 알림"
+            />
+            <button
+              type="button"
+              onClick={() => void handlePhoneTest()}
+              disabled={phoneLoading || phoneStatus?.configured !== true}
+              style={{
+                padding: '5px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                background:
+                  phoneStatus?.configured === true
+                    ? 'var(--bg-tint)'
+                    : 'transparent',
+                color:
+                  phoneStatus?.configured === true
+                    ? 'var(--text-secondary)'
+                    : 'var(--text-inactive)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                cursor:
+                  phoneLoading || phoneStatus?.configured !== true
+                    ? 'not-allowed'
+                    : 'pointer',
+              }}
+            >
+              {phoneLoading ? '전송 중' : '테스트'}
+            </button>
+          </div>
+        </Field>
+        <div
+          style={{
+            marginTop: -6,
+            marginBottom: 14,
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            lineHeight: 1.5,
+          }}
+        >
+          {phoneStatus?.configured === true
+            ? 'Telegram 브릿지가 설정되어 있습니다. 룰/즐겨찾기 crossing 알림이 폰으로 전달됩니다.'
+            : '서버 env에 ARAON_TELEGRAM_BOT_TOKEN과 ARAON_TELEGRAM_CHAT_ID를 설정하면 폰 알림을 사용할 수 있습니다.'}
+          {phoneMsg !== null && <div style={{ marginTop: 4 }}>{phoneMsg}</div>}
+        </div>
+
         <Field
           label={`토스트 표시 시간 (${(settings.toastDurationMs / 1_000).toFixed(1)}초)`}
         >
@@ -2026,6 +2120,7 @@ interface DraftRule {
   ticker: string;
   kind: AlertRuleKind;
   threshold: string;
+  marketCapFilter: SurgeMarketCapFilter;
   cooldownMinutes: string;
 }
 
@@ -2033,8 +2128,23 @@ const EMPTY_DRAFT: DraftRule = {
   ticker: '',
   kind: 'changePctAbove',
   threshold: '5',
+  marketCapFilter: 'all',
   cooldownMinutes: String(DEFAULT_RULE_COOLDOWN_MS / 60_000),
 };
+
+const MARKET_CAP_RULE_OPTIONS: ReadonlyArray<{
+  value: SurgeMarketCapFilter;
+  label: string;
+}> = [
+  { value: 'all', label: '시총 전체' },
+  { value: 'large', label: '대형' },
+  { value: 'mid', label: '중형' },
+  { value: 'small', label: '소형' },
+];
+
+function marketCapRuleLabel(value: SurgeMarketCapFilter): string {
+  return MARKET_CAP_RULE_OPTIONS.find((item) => item.value === value)?.label ?? '시총 전체';
+}
 
 function RulesTab() {
   const rules = useAlertRulesStore((s) => s.rules);
@@ -2080,6 +2190,7 @@ function RulesTab() {
       kind: draft.kind,
       threshold,
       cooldownMs,
+      marketCapFilter: draft.marketCapFilter,
     });
     reset();
   }
@@ -2099,7 +2210,8 @@ function RulesTab() {
         }}
       >
         룰은 이 브라우저의 localStorage에만 저장됩니다. 서버 동기화는 아직
-        지원하지 않습니다. 알림 발동은 다음 단계에서 활성화됩니다.
+        지원하지 않습니다. 실시간 장중 crossing 시 토스트·데스크톱·폰 알림으로
+        발동됩니다.
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
@@ -2197,6 +2309,27 @@ function RulesTab() {
                 style={inputStyle}
               />
             </DraftField>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <DraftField label="시총 범위">
+              <select
+                value={draft.marketCapFilter}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    marketCapFilter: e.target.value as SurgeMarketCapFilter,
+                  })
+                }
+                style={selectStyle}
+              >
+                {MARKET_CAP_RULE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </DraftField>
+            <div />
           </div>
           {error !== null && (
             <div style={{ fontSize: 11, color: 'var(--kr-up)' }}>{error}</div>
@@ -2326,6 +2459,9 @@ function RulesTab() {
                     {Number(r.threshold).toLocaleString('ko-KR')}
                     {ALERT_RULE_KIND_SUFFIX[r.kind]} · cooldown{' '}
                     {(r.cooldownMs / 60_000).toFixed(1)}분
+                    {(r.marketCapFilter ?? 'all') !== 'all'
+                      ? ` · ${marketCapRuleLabel(r.marketCapFilter ?? 'all')}`
+                      : ''}
                   </div>
                 </div>
                 <button

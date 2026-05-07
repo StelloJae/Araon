@@ -56,6 +56,7 @@ import { registerRoutes as importRoutes } from './routes/import.js';
 import { eventsRoutes } from './routes/events.js';
 import { masterRoutes } from './routes/master.js';
 import { runtimeRoutes } from './routes/runtime.js';
+import { createTelegramPhoneNotifier } from './notifications/phone-notifier.js';
 import { launcherRoutes, type LauncherRoutesOptions } from './routes/launcher.js';
 import { registerGracefulShutdown, type GracefulShutdownHandle } from './lifecycle/graceful-shutdown.js';
 import { configureDataDir } from './runtime-paths.js';
@@ -275,6 +276,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     signalEventRepo,
     newsRepo,
     dataRetention,
+    phoneNotifier: createTelegramPhoneNotifier(),
   });
   await app.register(launcherRoutes, options.launcher ?? {});
 

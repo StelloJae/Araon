@@ -519,6 +519,45 @@ export async function emergencyDisableRealtime(): Promise<RealtimeEmergencyDisab
   return unwrap<RealtimeEmergencyDisablePayload>(res);
 }
 
+export interface PhoneNotificationStatusPayload {
+  configured: boolean;
+  provider: 'telegram';
+  mode: 'env';
+}
+
+export interface PhoneAlertPayload {
+  ticker: string;
+  name: string;
+  title: string;
+  detail: string;
+  kind: 'fav-pct' | 'rule';
+  direction: 'up' | 'down';
+  changePct: number;
+}
+
+export async function getPhoneNotificationStatus(): Promise<PhoneNotificationStatusPayload> {
+  const res = await fetch('/runtime/notifications/telegram/status');
+  return unwrap<PhoneNotificationStatusPayload>(res);
+}
+
+export async function sendPhoneNotificationAlert(
+  payload: PhoneAlertPayload,
+): Promise<{ sent: boolean; reason?: string }> {
+  const res = await fetch('/runtime/notifications/telegram/alert', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return unwrap<{ sent: boolean; reason?: string }>(res);
+}
+
+export async function sendPhoneNotificationTest(): Promise<{ sent: boolean; reason?: string }> {
+  const res = await fetch('/runtime/notifications/telegram/test', {
+    method: 'POST',
+  });
+  return unwrap<{ sent: boolean; reason?: string }>(res);
+}
+
 export interface RuntimeDataHealthPayload {
   tracking: {
     trackedCount: number;

@@ -32,7 +32,10 @@ function quote(
 const BASE_SETTINGS: ClientSettings = {
   notifGlobalEnabled: true,
   surgeFilter: 'live',
+  surgeMarketCapFilter: 'all',
+  devModeEnabled: false,
   notifPctThreshold: 5,
+  phoneNotifEnabled: false,
   soundOn: false,
   soundVolume: 0.4,
   desktopNotif: false,
@@ -42,8 +45,24 @@ const BASE_SETTINGS: ClientSettings = {
 };
 
 const CATALOG: Record<string, CatalogEntry> = {
-  '005930': { name: '삼성전자', market: 'KOSPI', sectorId: 'semi' },
-  '000660': { name: 'SK하이닉스', market: 'KOSPI', sectorId: 'semi' },
+  '005930': {
+    name: '삼성전자',
+    market: 'KOSPI',
+    sectorId: 'semi',
+    manualSectorName: '반도체',
+    autoSector: null,
+    instrumentType: 'equity',
+    marketCapSize: 'large',
+  },
+  '000660': {
+    name: 'SK하이닉스',
+    market: 'KOSPI',
+    sectorId: 'semi',
+    manualSectorName: '반도체',
+    autoSector: null,
+    instrumentType: 'equity',
+    marketCapSize: 'mid',
+  },
 };
 
 const STATUS_OPEN: MarketStatus = 'open';
@@ -206,6 +225,7 @@ describe('evaluateAlerts — rule crossing', () => {
       ticker: partial.ticker ?? '005930',
       kind: partial.kind,
       threshold: partial.threshold,
+      marketCapFilter: partial.marketCapFilter,
       enabled: partial.enabled ?? true,
       cooldownMs: partial.cooldownMs ?? 60_000,
       createdAt: 1,
@@ -260,6 +280,54 @@ describe('evaluateAlerts — rule crossing', () => {
       now: NOW,
     });
     expect(out.specs).toHaveLength(1);
+  });
+
+  it('volumeSurgeRatioAbove fires only when the baseline ratio crosses upward', () => {
+    const r = rule({ kind: 'volumeSurgeRatioAbove', threshold: 2.5 });
+    const out = evaluateAlerts({
+      quotes: {
+        '005930': quote('005930', 78_000, 1, {
+          volumeSurgeRatio: 2.7,
+          volumeBaselineStatus: 'ready',
+        }),
+      },
+      previousQuotes: {
+        '005930': quote('005930', 78_000, 1, {
+          volumeSurgeRatio: 1.8,
+          volumeBaselineStatus: 'ready',
+        }),
+      },
+      favorites: new Set(),
+      catalog: CATALOG,
+      rules: [r],
+      settings: BASE_SETTINGS,
+      cooldowns: new Map(),
+      marketStatus: STATUS_OPEN,
+      now: NOW,
+    });
+    expect(out.specs).toHaveLength(1);
+    expect(out.specs[0]?.detail).toContain('거래량 배수');
+  });
+
+  it('does not fire market-cap scoped rules for a different size bucket', () => {
+    const r = rule({
+      kind: 'changePctAbove',
+      threshold: 5,
+      ticker: '000660',
+      marketCapFilter: 'large',
+    });
+    const out = evaluateAlerts({
+      quotes: { '000660': quote('000660', 180_000, 5.2) },
+      previousQuotes: { '000660': quote('000660', 179_000, 4.8) },
+      favorites: new Set(),
+      catalog: CATALOG,
+      rules: [r],
+      settings: BASE_SETTINGS,
+      cooldowns: new Map(),
+      marketStatus: STATUS_OPEN,
+      now: NOW,
+    });
+    expect(out.specs).toEqual([]);
   });
 
   it('disabled rules do not fire', () => {

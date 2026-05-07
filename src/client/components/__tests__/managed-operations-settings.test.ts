@@ -218,7 +218,7 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('거래량 기준선');
     expect(html).toContain('7/12 준비');
     expect(html).toContain('신호 기록');
-    expect(html).toContain('신호 성과');
+    expect(html).toContain('자동 복기');
     expect(html).toContain('6/9 평가');
     expect(html).toContain('5m 평균 +0.80%');
     expect(html).toContain('15m 평균 +0.60%');

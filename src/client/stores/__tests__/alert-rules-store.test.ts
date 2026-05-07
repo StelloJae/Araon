@@ -55,6 +55,7 @@ describe('useAlertRulesStore', () => {
     expect(rule.id).toMatch(/.+/);
     expect(rule.createdAt).toBeTypeOf('number');
     expect(rule.enabled).toBe(true);
+    expect(rule.marketCapFilter).toBe('all');
     expect(rule.cooldownMs).toBe(mod.DEFAULT_RULE_COOLDOWN_MS);
     expect(mod.useAlertRulesStore.getState().rules).toHaveLength(1);
   });
@@ -97,6 +98,26 @@ describe('useAlertRulesStore', () => {
     expect(reloaded.useAlertRulesStore.getState().rules[0]?.ticker).toBe(
       '000660',
     );
+    expect(reloaded.useAlertRulesStore.getState().rules[0]?.marketCapFilter).toBe('all');
+  });
+
+  it('persists market-cap scoped volume surge ratio rules', async () => {
+    const mod = await import('../alert-rules-store');
+    mod.useAlertRulesStore.getState().add({
+      ticker: '005930',
+      kind: 'volumeSurgeRatioAbove',
+      threshold: 2.5,
+      marketCapFilter: 'large',
+    });
+
+    vi.resetModules();
+    const reloaded = await import('../alert-rules-store');
+    expect(reloaded.useAlertRulesStore.getState().rules[0]).toMatchObject({
+      ticker: '005930',
+      kind: 'volumeSurgeRatioAbove',
+      threshold: 2.5,
+      marketCapFilter: 'large',
+    });
   });
 
   it('skips invalid items when reloading', async () => {
