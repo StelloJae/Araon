@@ -443,6 +443,14 @@ export class RealtimeBridge extends EventEmitter {
     for (const tick of ticks) {
       this.parsedTickCount += 1;
       this.recordLastTickAt(tick.updatedAt);
+      if (!isCoherentRealtimeTick(tick)) {
+        log.debug(
+          { ticker: tick.ticker },
+          'ws tick ignored because price/change fields are inconsistent',
+        );
+        this.ignoredStaleTickCount += 1;
+        continue;
+      }
       this.applyPrice(mapRealtimeTickToPrice(tick));
     }
   }
@@ -559,6 +567,24 @@ function mapTickSource(source: RealtimeTick['source']): PriceSource {
     case 'nxt':
       return 'ws-nxt';
   }
+}
+
+function isCoherentRealtimeTick(tick: RealtimeTick): boolean {
+  if (!Number.isFinite(tick.price) || tick.price <= 0) return false;
+  if (!Number.isFinite(tick.volume) || tick.volume < 0) return false;
+
+  const abs = tick.changeAbs;
+  const rate = tick.changeRate;
+  if (!Number.isFinite(abs) || !Number.isFinite(rate)) return false;
+  if (Math.abs(abs) < 1 || Math.abs(rate) < 0.1) return true;
+  if (Math.sign(abs) !== Math.sign(rate)) return false;
+
+  const previousClose = abs / (rate / 100);
+  const expectedPrice = previousClose + abs;
+  if (!Number.isFinite(expectedPrice) || expectedPrice <= 0) return false;
+
+  const tolerance = Math.max(1_000, Math.abs(tick.price) * 0.005);
+  return Math.abs(tick.price - expectedPrice) <= tolerance;
 }
 
 function isNewerPrice(next: Price, current: Price): boolean {

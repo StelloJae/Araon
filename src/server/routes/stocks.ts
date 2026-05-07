@@ -61,6 +61,9 @@ import {
 
 const log = createChildLogger('routes/stocks');
 const MAX_DISPLAY_MINUTE_TRADE_VALUE_KRW = 5_000_000_000_000;
+const MAX_LEGACY_REALTIME_NEEDLE_TRADE_VALUE_KRW = 50_000_000_000;
+const MAX_LEGACY_REALTIME_NEEDLE_RANGE_PCT = 3.5;
+const MIN_LEGACY_REALTIME_NEEDLE_SAMPLE_COUNT = 20;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const FRESH_TODAY_MINUTE_COVERAGE_MS = 5 * 60 * 1000;
 
@@ -1282,6 +1285,7 @@ function kstStartOfDayIso(date: Date): string {
 }
 
 function isDisplayableIntradayCandle(candle: PriceCandle): boolean {
+  if (!isKnownCandleSource(candle.source)) return false;
   if (candle.source === null || candle.source === 'rest') return false;
   if (isSuspiciousRealtimeMinuteCandle(candle)) return false;
   if (
@@ -1296,6 +1300,22 @@ function isDisplayableIntradayCandle(candle: PriceCandle): boolean {
   return true;
 }
 
+function isKnownCandleSource(
+  source: PriceCandle['source'],
+): source is PriceCandleSource | null {
+  return (
+    source === null ||
+    source === 'rest' ||
+    source === 'ws-krx' ||
+    source === 'ws-integrated' ||
+    source === 'ws-nxt' ||
+    source === 'kis-daily' ||
+    source === 'kis-time-today' ||
+    source === 'kis-time-daily' ||
+    source === 'mixed'
+  );
+}
+
 function isSuspiciousRealtimeMinuteCandle(candle: PriceCandle): boolean {
   if (
     candle.source !== 'ws-krx' &&
@@ -1305,8 +1325,26 @@ function isSuspiciousRealtimeMinuteCandle(candle: PriceCandle): boolean {
     return false;
   }
   if (candle.interval !== '1m') return false;
-  if (candle.volume <= 0 || candle.close <= 0) return false;
-  return candle.volume * candle.close > MAX_DISPLAY_MINUTE_TRADE_VALUE_KRW;
+  if (candle.volume < 0 || candle.close <= 0) return false;
+  const tradeValue = candle.volume * candle.close;
+  if (tradeValue > MAX_DISPLAY_MINUTE_TRADE_VALUE_KRW) return true;
+
+  const rangePct = ((candle.high - candle.low) / candle.close) * 100;
+  if (
+    candle.isPartial &&
+    candle.volume === 0 &&
+    candle.sampleCount >= 2 &&
+    rangePct > MAX_LEGACY_REALTIME_NEEDLE_RANGE_PCT &&
+    (candle.close === candle.low || candle.open === candle.low)
+  ) {
+    return true;
+  }
+  return (
+    candle.isPartial &&
+    candle.sampleCount >= MIN_LEGACY_REALTIME_NEEDLE_SAMPLE_COUNT &&
+    tradeValue > MAX_LEGACY_REALTIME_NEEDLE_TRADE_VALUE_KRW &&
+    rangePct > MAX_LEGACY_REALTIME_NEEDLE_RANGE_PCT
+  );
 }
 
 function buildCoverage(

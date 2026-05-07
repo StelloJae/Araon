@@ -281,7 +281,11 @@ describe('RealtimeBridge NXT4a — guarded tick apply', () => {
     const { ws, writes } = bridgeWith(
       ticksFrame(
         liveTick('005930', '2026-04-27T08:14:05.000Z', 223500),
-        liveTick('000660', '2026-04-27T08:14:06.000Z', 310000),
+        {
+          ...liveTick('000660', '2026-04-27T08:14:06.000Z', 310000),
+          changeAbs: 5_000,
+          changeRate: 1.64,
+        },
       ),
       { applyTicksToPriceStore: true },
     );
@@ -322,6 +326,24 @@ describe('RealtimeBridge NXT4a — guarded tick apply', () => {
       price: 224100,
       updatedAt: '2026-04-27T08:14:07.000Z',
     });
+  });
+
+  it('drops realtime ticks whose price conflicts with change fields', () => {
+    const { ws, writes, bridge } = bridgeWith(
+      ticksFrame({
+        ...liveTick('375500', '2026-05-07T06:00:00.000Z', 93_100),
+        changeAbs: 7_900,
+        changeRate: 8.49,
+        volume: 4_225_000,
+        tradeTime: '150000',
+      }),
+      { applyTicksToPriceStore: true },
+    );
+
+    ws.emitMessage('PREVIOUS-CLOSE-NEEDLE');
+
+    expect(writes).toHaveLength(0);
+    expect(bridge.getStats().ignoredStaleTickCount).toBe(1);
   });
 
   it('does not propagate WS apply failures to pollingScheduler.stop', () => {
@@ -430,12 +452,12 @@ describe('RealtimeBridge NXT4a — guarded tick apply', () => {
     };
     const { ws, writes, bridge } = bridgeWith(
       ticksFrame(
-        liveTick('005930', '2026-04-28T02:00:01.000Z', 100),
-        liveTick('005930', '2026-04-28T02:00:02.000Z', 101),
-        liveTick('005930', '2026-04-28T02:00:03.000Z', 102),
-        liveTick('005930', '2026-04-28T02:00:04.000Z', 103),
-        liveTick('005930', '2026-04-28T02:00:05.000Z', 104),
-        liveTick('005930', '2026-04-28T02:00:06.000Z', 105),
+        liveTick('005930', '2026-04-28T02:00:01.000Z', 223_500),
+        liveTick('005930', '2026-04-28T02:00:02.000Z', 223_500),
+        liveTick('005930', '2026-04-28T02:00:03.000Z', 223_500),
+        liveTick('005930', '2026-04-28T02:00:04.000Z', 223_500),
+        liveTick('005930', '2026-04-28T02:00:05.000Z', 223_500),
+        liveTick('005930', '2026-04-28T02:00:06.000Z', 223_500),
       ),
       {
         getApplyDisabledReason: (ticker, stats) => {
@@ -454,7 +476,13 @@ describe('RealtimeBridge NXT4a — guarded tick apply', () => {
     ws.emitMessage('MULTI-TICK-BURST');
 
     expect(writes).toHaveLength(5);
-    expect(writes.map((price) => price.price)).toEqual([100, 101, 102, 103, 104]);
+    expect(writes.map((price) => price.price)).toEqual([
+      223_500,
+      223_500,
+      223_500,
+      223_500,
+      223_500,
+    ]);
     expect(sessionGate.snapshot()).toMatchObject({
       sessionRealtimeEnabled: false,
       sessionEndReason: 'applied_tick_limit_reached',
@@ -465,8 +493,8 @@ describe('RealtimeBridge NXT4a — guarded tick apply', () => {
   it('blocks applies immediately when parsed or time session limits have already closed the gate', () => {
     const parsedLimited = bridgeWith(
       ticksFrame(
-        liveTick('005930', '2026-04-28T02:00:01.000Z', 100),
-        liveTick('005930', '2026-04-28T02:00:02.000Z', 101),
+        liveTick('005930', '2026-04-28T02:00:01.000Z', 223_500),
+        liveTick('005930', '2026-04-28T02:00:02.000Z', 223_500),
       ),
       {
         getApplyDisabledReason: (_ticker, stats) =>
@@ -480,7 +508,7 @@ describe('RealtimeBridge NXT4a — guarded tick apply', () => {
     expect(parsedLimited.bridge.getStats().sessionLimitIgnoredCount).toBe(1);
 
     const timeLimited = bridgeWith(
-      ticksFrame(liveTick('005930', '2026-04-28T02:01:01.000Z', 102)),
+      ticksFrame(liveTick('005930', '2026-04-28T02:01:01.000Z', 223_500)),
       {
         getApplyDisabledReason: () => 'session_limit_reached',
       },

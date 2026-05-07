@@ -224,13 +224,14 @@ describe('GET /stocks/:ticker/candles', () => {
     const repo = new PriceCandleRepository(db);
     await repo.bulkUpsertCandles([
       candle('2026-05-05T00:00:00.000Z', {
-        open: 269_500,
-        high: 269_500,
-        low: 266_000,
-        close: 269_500,
-        volume: 195_294_719,
-        sampleCount: 270,
+        open: 98_400,
+        high: 98_700,
+        low: 93_100,
+        close: 98_300,
+        volume: 3_390_891,
+        sampleCount: 94,
         source: 'ws-integrated',
+        isPartial: true,
       }),
       candle('2026-05-05T00:01:00.000Z', {
         open: 70_000,
@@ -241,6 +242,35 @@ describe('GET /stocks/:ticker/candles', () => {
         sampleCount: 10,
         source: 'ws-integrated',
       }),
+      candle('2026-05-05T00:02:00.000Z', {
+        open: 70_000,
+        high: 70_100,
+        low: 69_900,
+        close: 70_050,
+        volume: 1_000_000,
+        sampleCount: 200,
+        source: 'ws-integrated',
+        isPartial: true,
+      }),
+      candle('2026-05-05T00:03:00.000Z', {
+        open: 99_200,
+        high: 99_200,
+        low: 93_100,
+        close: 93_100,
+        volume: 0,
+        sampleCount: 5,
+        source: 'ws-integrated',
+        isPartial: true,
+      }),
+      candle('2026-05-05T00:04:00.000Z', {
+        open: 93_100,
+        high: 93_100,
+        low: 93_100,
+        close: 93_100,
+        volume: 0,
+        sampleCount: 4,
+        source: '' as PriceCandle['source'],
+      }),
     ]);
     const app = Fastify({ logger: false });
     await app.register(stockRoutes, {
@@ -250,16 +280,21 @@ describe('GET /stocks/:ticker/candles', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/stocks/005930/candles?interval=1m&from=2026-05-05T00:00:00.000Z&to=2026-05-05T00:02:00.000Z',
+      url: '/stocks/005930/candles?interval=1m&from=2026-05-05T00:00:00.000Z&to=2026-05-05T00:05:00.000Z',
     });
 
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body.data.items).toHaveLength(1);
-    expect(body.data.items[0]).toMatchObject({
-      bucketAt: '2026-05-05T00:01:00.000Z',
-      volume: 1_000,
-    });
+    expect(body.data.items).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-05T00:01:00.000Z',
+        volume: 1_000,
+      }),
+      expect.objectContaining({
+        bucketAt: '2026-05-05T00:02:00.000Z',
+        volume: 1_000_000,
+      }),
+    ]);
   });
 
   it('returns weekly candles from stored 1d historical candles', async () => {
