@@ -16,5 +16,10 @@ account identifiers.
 - [Short MP4 demo](demo/araon-flow.mp4)
 - [Short GIF demo](demo/araon-flow.gif)
 
+## Scheduled Live Captures
+
+For pre-open, regular-session, recent-surge, and after-market capture planning,
+see [live-capture-schedule.ko.md](live-capture-schedule.ko.md).
+
 Before sharing new captures, check that no credentials, tokens, account numbers,
 Telegram tokens, Naver keys, or OpenDART keys are visible.
