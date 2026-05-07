@@ -253,6 +253,25 @@ describe('volume visibility', () => {
     expect(html).toContain('차트');
   });
 
+  it('offers stock-scoped quick alert rule presets in the detail modal', () => {
+    const html = renderToStaticMarkup(
+      createElement(StockDetailModal, {
+        stock: stock(),
+        allStocks: [stock()],
+        isFavorite: false,
+        onClose: () => undefined,
+        onNavigate: () => undefined,
+        onToggleFav: () => undefined,
+        onUntrack: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('알림 빠른 추가');
+    expect(html).toContain('등락률 +5%');
+    expect(html).toContain('거래량 2.5x');
+    expect(html).toContain('현재가 +3%');
+  });
+
   it('renders the realtime/chart tabs before the metrics heading in the stock detail modal', () => {
     const html = renderToStaticMarkup(
       createElement(StockDetailModal, {

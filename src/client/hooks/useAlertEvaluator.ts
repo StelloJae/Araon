@@ -27,6 +27,7 @@ import { showDesktopNotification } from '../lib/desktop-notification';
 import { isMarketLive } from '../lib/market-status';
 import { playBleep } from '../lib/sound';
 import { useAlertRulesStore } from '../stores/alert-rules-store';
+import { useAlertDeliveryStore } from '../stores/alert-delivery-store';
 import { useMarketStore } from '../stores/market-store';
 import { useSettingsStore } from '../stores/settings-store';
 import { useStocksStore } from '../stores/stocks-store';
@@ -73,8 +74,30 @@ export function useAlertEvaluator({ onPickStock }: UseAlertEvaluatorOptions): vo
 
     for (const spec of result.specs) {
       pushToast(spec);
+      useAlertDeliveryStore.getState().record({
+        ts: now,
+        ticker: spec.ticker,
+        name: spec.name,
+        title: spec.title,
+        detail: spec.detail,
+        kind: spec.kind,
+        direction: spec.direction,
+        channel: 'toast',
+        status: 'sent',
+      });
       if (settings.soundOn && isMarketLive(marketStatus)) {
         playBleep(settings.soundVolume, spec.direction);
+        useAlertDeliveryStore.getState().record({
+          ts: now,
+          ticker: spec.ticker,
+          name: spec.name,
+          title: spec.title,
+          detail: spec.detail,
+          kind: spec.kind,
+          direction: spec.direction,
+          channel: 'sound',
+          status: 'sent',
+        });
       }
       if (settings.desktopNotif) {
         showDesktopNotification({
@@ -82,6 +105,17 @@ export function useAlertEvaluator({ onPickStock }: UseAlertEvaluatorOptions): vo
           title: spec.title,
           body: spec.detail,
           onClick: () => pickStockRef.current(spec.ticker),
+        });
+        useAlertDeliveryStore.getState().record({
+          ts: now,
+          ticker: spec.ticker,
+          name: spec.name,
+          title: spec.title,
+          detail: spec.detail,
+          kind: spec.kind,
+          direction: spec.direction,
+          channel: 'desktop',
+          status: 'sent',
         });
       }
       if (settings.phoneNotifEnabled) {
@@ -93,7 +127,40 @@ export function useAlertEvaluator({ onPickStock }: UseAlertEvaluatorOptions): vo
           kind: spec.kind,
           direction: spec.direction,
           changePct: spec.changePct,
-        }).catch(() => undefined);
+        })
+          .then((result) => {
+            const entry = {
+              ts: Date.now(),
+              ticker: spec.ticker,
+              name: spec.name,
+              title: spec.title,
+              detail: spec.detail,
+              kind: spec.kind,
+              direction: spec.direction,
+              channel: 'phone',
+              status: result.sent ? 'sent' : 'skipped',
+            } as const;
+            useAlertDeliveryStore.getState().record(
+              result.reason === undefined
+                ? entry
+                : { ...entry, reason: result.reason },
+            );
+          })
+          .catch((err: unknown) => {
+            useAlertDeliveryStore.getState().record({
+              ts: Date.now(),
+              ticker: spec.ticker,
+              name: spec.name,
+              title: spec.title,
+              detail: spec.detail,
+              kind: spec.kind,
+              direction: spec.direction,
+              channel: 'phone',
+              status: 'failed',
+              reason:
+                err instanceof Error ? err.message : 'UNKNOWN_PHONE_ALERT_ERROR',
+            });
+          });
       }
     }
 

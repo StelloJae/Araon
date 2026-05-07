@@ -80,6 +80,8 @@ import {
 } from '../lib/realtime-session-control';
 import { useMasterStore } from '../stores/master-store';
 import { useWatchlistStore } from '../stores/watchlist-store';
+import { useAlertDeliveryStore } from '../stores/alert-delivery-store';
+import { AlertDeliveryLogPanel } from './AlertDeliveryLogPanel';
 
 const IS_DEV_BUILD =
   (import.meta as ImportMeta & { env: { DEV?: boolean } }).env.DEV === true;
@@ -1755,6 +1757,8 @@ function formatSignedPct(value: number): string {
 function NotifTab() {
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
+  const alertDeliveryEntries = useAlertDeliveryStore((s) => s.entries);
+  const clearAlertDeliveryEntries = useAlertDeliveryStore((s) => s.clear);
 
   const set = (patch: Partial<ClientSettings>) => update(patch);
 
@@ -2052,6 +2056,10 @@ function NotifTab() {
           />
         </Field>
       </div>
+      <AlertDeliveryLogPanel
+        entries={alertDeliveryEntries}
+        onClear={clearAlertDeliveryEntries}
+      />
     </div>
   );
 }

@@ -44,6 +44,12 @@ import { StockCandleChart } from './StockCandleChart';
 import { StockNewsDisclosurePanel } from './StockNewsDisclosurePanel';
 import { StockDataQualityPanel } from './StockDataQualityPanel';
 import { usePersistedPriceHistory } from '../hooks/usePersistedPriceHistory';
+import { useAlertRulesStore, type NewAlertRuleInput } from '../stores/alert-rules-store';
+import {
+  buildQuickAlertRulePresets,
+  findMatchingAlertRule,
+  type QuickAlertRulePreset,
+} from '../lib/alert-rule-presets';
 
 const PENDING_LABEL = '연동 예정';
 const UNAVAILABLE_LABEL = '미제공';
@@ -69,8 +75,15 @@ export function StockDetailModal({
   onUntrack,
 }: StockDetailModalProps) {
   const [activeTab, setActiveTab] = useState<'realtime' | 'chart'>('realtime');
+  const [quickRuleMessage, setQuickRuleMessage] = useState<string | null>(null);
   const history = usePriceHistoryStore((s) => selectHistory(s, stock.code));
+  const alertRules = useAlertRulesStore((s) => s.rules);
+  const addAlertRule = useAlertRulesStore((s) => s.add);
   usePersistedPriceHistory(stock.code, true);
+  const quickAlertPresets = useMemo(
+    () => buildQuickAlertRulePresets({ code: stock.code, price: stock.price }),
+    [stock.code, stock.price],
+  );
 
   // ESC close + ←/→ navigate. Single registration tied to the focused
   // stock's code so the closure always sees the current ticker index.
@@ -197,6 +210,20 @@ export function StockDetailModal({
             </span>
           </div>
 
+          <QuickAlertRulePanel
+            presets={quickAlertPresets}
+            message={quickRuleMessage}
+            onAdd={(input, label) => {
+              const duplicate = findMatchingAlertRule(alertRules, input);
+              if (duplicate !== null) {
+                setQuickRuleMessage(`이미 등록된 룰입니다 · ${label}`);
+                return;
+              }
+              addAlertRule(input);
+              setQuickRuleMessage(`알림 룰 추가됨 · ${label}`);
+            }}
+          />
+
           {activeTab === 'realtime' ? (
             <ChartArea history={history} positive={stock.changePct >= 0} />
           ) : (
@@ -230,6 +257,68 @@ export function StockDetailModal({
           <StockNewsDisclosurePanel ticker={stock.code} name={stock.name} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function QuickAlertRulePanel({
+  presets,
+  message,
+  onAdd,
+}: {
+  presets: ReadonlyArray<QuickAlertRulePreset>;
+  message: string | null;
+  onAdd: (input: NewAlertRuleInput, label: string) => void;
+}) {
+  if (presets.length === 0) return null;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+        padding: '9px 10px',
+        marginBottom: 12,
+        border: '1px solid var(--border-soft)',
+        borderRadius: 8,
+        background: 'var(--bg-tint)',
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: 'var(--text-primary)',
+        }}
+      >
+        알림 빠른 추가
+      </span>
+      {presets.map((preset) => (
+        <button
+          key={preset.id}
+          type="button"
+          onClick={() => onAdd(preset.input, preset.label)}
+          title={preset.hint}
+          style={{
+            padding: '5px 8px',
+            borderRadius: 7,
+            border: '1px solid var(--border)',
+            background: 'var(--bg-card)',
+            color: 'var(--text-secondary)',
+            fontSize: 11,
+            fontWeight: 800,
+            cursor: 'pointer',
+          }}
+        >
+          {preset.label}
+        </button>
+      ))}
+      {message !== null && (
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {message}
+        </span>
+      )}
     </div>
   );
 }
