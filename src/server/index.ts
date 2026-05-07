@@ -1,6 +1,9 @@
+import { loadLocalEnvFile } from './env.js';
 import { createChildLogger } from '@shared/logger.js';
 import { SERVER_PORT } from '@shared/constants.js';
 import { startAraonServer } from './app.js';
+
+loadLocalEnvFile();
 
 async function main(): Promise<void> {
   await startAraonServer({
