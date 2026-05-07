@@ -23,6 +23,7 @@ import type {
 } from '../chart/background-backfill-scheduler.js';
 import type {
   PriceCandleCoverageSummary,
+  StockDisclosureGrowthSummary,
   StockNewsGrowthSummary,
   StockSignalGrowthSummary,
 } from '../db/repositories.js';
@@ -57,6 +58,10 @@ import {
   type PhoneAlertInput,
   type PhoneNotifier,
 } from '../notifications/phone-notifier.js';
+import {
+  createPhoneDeliveryLog,
+  type PhoneDeliveryLog,
+} from '../notifications/phone-delivery-log.js';
 
 export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
@@ -80,8 +85,12 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
     listRecent?(limit?: number): StockSignalEvent[];
   };
   newsRepo?: { summarizeGrowth(now?: Date, staleAfterMs?: number): StockNewsGrowthSummary };
+  disclosureRepo?: {
+    summarizeGrowth(now?: Date, staleAfterMs?: number): StockDisclosureGrowthSummary;
+  };
   dataRetention?: { snapshot(): DataRetentionSnapshot };
   phoneNotifier?: PhoneNotifier;
+  phoneDeliveryLog?: PhoneDeliveryLog;
 }
 
 export interface RuntimeRealtimeStatusPayload {
@@ -173,6 +182,10 @@ const phoneAlertBodySchema = z.object({
   changePct: z.number().finite(),
 });
 
+const deliveryLogQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
 const backupStockSchema = z.object({
   ticker: z.string().min(1).max(16),
   name: z.string().min(1).max(100),
@@ -201,6 +214,7 @@ export async function runtimeRoutes(
   opts: RuntimeRoutesOptions,
 ): Promise<void> {
   const phoneNotifier = opts.phoneNotifier ?? createDisabledPhoneNotifier();
+  const phoneDeliveryLog = opts.phoneDeliveryLog ?? createPhoneDeliveryLog();
 
   app.get('/runtime/notifications/telegram/status', async (_request, reply) => {
     return reply.send({
@@ -211,6 +225,15 @@ export async function runtimeRoutes(
 
   app.post('/runtime/notifications/telegram/test', async (_request, reply) => {
     if (!phoneNotifier.status().configured) {
+      phoneDeliveryLog.record({
+        type: 'test',
+        status: 'skipped',
+        ticker: null,
+        name: null,
+        title: 'Telegram 테스트 알림',
+        detail: null,
+        errorCode: 'NOT_CONFIGURED',
+      });
       return reply.status(409).send({
         success: false,
         error: {
@@ -221,6 +244,15 @@ export async function runtimeRoutes(
     }
     const result = await phoneNotifier.sendTest();
     if (!result.sent) {
+      phoneDeliveryLog.record({
+        type: 'test',
+        status: 'failed',
+        ticker: null,
+        name: null,
+        title: 'Telegram 테스트 알림',
+        detail: null,
+        errorCode: sanitizeRealtimeStatusText(result.reason ?? 'send_failed').toUpperCase(),
+      });
       return reply.status(502).send({
         success: false,
         error: {
@@ -229,6 +261,15 @@ export async function runtimeRoutes(
         },
       });
     }
+    phoneDeliveryLog.record({
+      type: 'test',
+      status: 'sent',
+      ticker: null,
+      name: null,
+      title: 'Telegram 테스트 알림',
+      detail: null,
+      errorCode: null,
+    });
     return reply.send({ success: true, data: result });
   });
 
@@ -236,6 +277,16 @@ export async function runtimeRoutes(
     '/runtime/notifications/telegram/alert',
     async (request, reply) => {
       if (!phoneNotifier.status().configured) {
+        const maybeAlert = phoneAlertBodySchema.safeParse(request.body);
+        phoneDeliveryLog.record({
+          type: 'alert',
+          status: 'skipped',
+          ticker: maybeAlert.success ? maybeAlert.data.ticker : null,
+          name: maybeAlert.success ? maybeAlert.data.name : null,
+          title: maybeAlert.success ? maybeAlert.data.title : 'Telegram 알림',
+          detail: maybeAlert.success ? maybeAlert.data.detail : null,
+          errorCode: 'NOT_CONFIGURED',
+        });
         return reply.status(409).send({
           success: false,
           error: {
@@ -253,6 +304,15 @@ export async function runtimeRoutes(
       }
       const result = await phoneNotifier.sendAlert(parsed.data as PhoneAlertInput);
       if (!result.sent) {
+        phoneDeliveryLog.record({
+          type: 'alert',
+          status: 'failed',
+          ticker: parsed.data.ticker,
+          name: parsed.data.name,
+          title: parsed.data.title,
+          detail: parsed.data.detail,
+          errorCode: sanitizeRealtimeStatusText(result.reason ?? 'send_failed').toUpperCase(),
+        });
         return reply.status(502).send({
           success: false,
           error: {
@@ -261,9 +321,30 @@ export async function runtimeRoutes(
           },
         });
       }
+      phoneDeliveryLog.record({
+        type: 'alert',
+        status: 'sent',
+        ticker: parsed.data.ticker,
+        name: parsed.data.name,
+        title: parsed.data.title,
+        detail: parsed.data.detail,
+        errorCode: null,
+      });
       return reply.send({ success: true, data: result });
     },
   );
+
+  app.get('/runtime/notifications/telegram/deliveries', async (request, reply) => {
+    const parsed = deliveryLogQuerySchema.safeParse(request.query);
+    const limit = parsed.success ? parsed.data.limit : undefined;
+    return reply.send({
+      success: true,
+      data: {
+        summary: phoneDeliveryLog.summarize(),
+        items: phoneDeliveryLog.list(limit),
+      },
+    });
+  });
 
   app.get('/runtime/signals/outcomes', async (_request, reply) => {
     const signals = opts.signalEventRepo?.listRecent?.(100) ?? [];
@@ -316,8 +397,11 @@ export async function runtimeRoutes(
     const signalGrowth = opts.signalEventRepo?.summarizeGrowth() ?? emptySignalGrowth();
     const newsGrowth = opts.newsRepo?.summarizeGrowth(now, NEWS_STALE_AFTER_MS)
       ?? emptyNewsGrowth();
+    const disclosureGrowth = opts.disclosureRepo?.summarizeGrowth(now, NEWS_STALE_AFTER_MS)
+      ?? emptyDisclosureGrowth();
     const maintenance = opts.dataRetention?.snapshot() ?? emptyMaintenance();
     const backgroundBackfill = opts.backgroundBackfill?.snapshot() ?? emptyBackgroundBackfill();
+    const phoneSummary = phoneDeliveryLog.summarize();
 
     return reply.send({
       success: true,
@@ -347,6 +431,8 @@ export async function runtimeRoutes(
             ? new Date(backfillState.cooldownUntilMs).toISOString()
             : null,
           cooldownActive: backfillState.cooldownUntilMs > Date.now(),
+          noWorkCooldownCount: backgroundBackfill.noWorkCooldownCount,
+          nextNoWorkRetryAt: backgroundBackfill.nextNoWorkRetryAt,
           recent: backgroundBackfill.recent,
         },
         volumeBaseline: baselineCounts,
@@ -360,6 +446,20 @@ export async function runtimeRoutes(
             ttlHours: Math.round(NEWS_STALE_AFTER_MS / (60 * 60 * 1000)),
             pruneAfterDays: NEWS_PRUNE_AFTER_DAYS,
           },
+          disclosures: {
+            ...disclosureGrowth,
+            ttlHours: Math.round(NEWS_STALE_AFTER_MS / (60 * 60 * 1000)),
+          },
+        },
+        notifications: {
+          phoneConfigured: phoneNotifier.status().configured,
+          phoneDeliveryCount: phoneSummary.total,
+          phoneSentCount: phoneSummary.sent,
+          phoneFailedCount: phoneSummary.failed,
+          phoneSkippedCount: phoneSummary.skipped,
+          phoneLastStatus: phoneSummary.lastStatus,
+          phoneLastAt: phoneSummary.lastAt,
+          phoneLastErrorCode: phoneSummary.lastErrorCode,
         },
         signalOutcomes: summarizeSignalOutcomeDashboard(
           opts.signalEventRepo?.listRecent?.(100) ?? [],
@@ -685,6 +785,8 @@ function emptyBackgroundBackfill(): BackgroundBackfillSchedulerSnapshot {
     lastSucceeded: 0,
     lastFailed: 0,
     lastSkippedReason: null,
+    noWorkCooldownCount: 0,
+    nextNoWorkRetryAt: null,
     recent: [],
   };
 }
@@ -797,6 +899,15 @@ function emptyNewsGrowth(): StockNewsGrowthSummary {
     lastFetchStatus: null,
     lastFetchErrorCode: null,
     lastFetchedAt: null,
+  };
+}
+
+function emptyDisclosureGrowth(): StockDisclosureGrowthSummary {
+  return {
+    itemCount: 0,
+    staleItemCount: 0,
+    oldestFetchedAt: null,
+    newestFetchedAt: null,
   };
 }
 

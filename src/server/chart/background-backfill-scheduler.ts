@@ -16,6 +16,7 @@ const DEFAULT_MAX_TICKERS_PER_RUN = 5;
 const DEFAULT_REQUEST_GAP_MS = 2_500;
 const DEFAULT_5XX_COOLDOWN_MS = 5 * 60 * 1000;
 const DEFAULT_429_COOLDOWN_MS = 10 * 60 * 1000;
+const DEFAULT_NO_WORK_TICKER_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const RECENT_ATTEMPT_LIMIT = 20;
 
 export type BackgroundBackfillSkippedReason =
@@ -50,12 +51,14 @@ export interface BackgroundBackfillSchedulerSnapshot {
   lastSucceeded: number;
   lastFailed: number;
   lastSkippedReason: BackgroundBackfillSkippedReason;
+  noWorkCooldownCount: number;
+  nextNoWorkRetryAt: string | null;
   recent: BackgroundBackfillAttemptSummary[];
 }
 
 export interface BackgroundBackfillAttemptSummary {
   ticker: string;
-  status: 'success' | 'failed';
+  status: 'success' | 'no_change' | 'failed';
   requested: number;
   inserted: number;
   updated: number;
@@ -91,6 +94,7 @@ export interface CreateBackgroundDailyBackfillSchedulerOptions {
   intervalMs?: number;
   maxTickersPerRun?: number;
   requestGapMs?: number;
+  noWorkTickerCooldownMs?: number;
   stateStore?: BackgroundBackfillStateStore;
 }
 
@@ -101,6 +105,8 @@ export function createBackgroundDailyBackfillScheduler(
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const maxTickersPerRun = options.maxTickersPerRun ?? DEFAULT_MAX_TICKERS_PER_RUN;
   const requestGapMs = options.requestGapMs ?? DEFAULT_REQUEST_GAP_MS;
+  const noWorkTickerCooldownMs =
+    options.noWorkTickerCooldownMs ?? DEFAULT_NO_WORK_TICKER_COOLDOWN_MS;
 
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlight: Promise<BackgroundBackfillRunResult> | null = null;
@@ -116,6 +122,7 @@ export function createBackgroundDailyBackfillScheduler(
   let lastFailed = 0;
   let lastSkippedReason: BackgroundBackfillSkippedReason = null;
   const recentAttempts: BackgroundBackfillAttemptSummary[] = [];
+  const noWorkCooldowns = new Map<string, number>();
 
   async function runOnce(nowOverride?: Date): Promise<BackgroundBackfillRunResult> {
     if (inFlight !== null) {
@@ -145,6 +152,7 @@ export function createBackgroundDailyBackfillScheduler(
 
     const settings = options.settingsStore.snapshot();
     const range = settings.backgroundDailyBackfillRange as DailyBackfillRange;
+    pruneExpiredNoWorkCooldowns(runAt);
     if (!settings.backgroundDailyBackfillEnabled) {
       return finish(emptyResult('disabled'));
     }
@@ -180,10 +188,16 @@ export function createBackgroundDailyBackfillScheduler(
           range,
           now: runAt,
         });
-        results.push(result);
+        const changed = result.requested > 0 && (result.inserted > 0 || result.updated > 0);
+        if (changed) {
+          results.push(result);
+          noWorkCooldowns.delete(ticker);
+        } else {
+          noWorkCooldowns.set(ticker, runAt.getTime() + noWorkTickerCooldownMs);
+        }
         pushRecentAttempt({
           ticker,
-          status: 'success',
+          status: changed ? 'success' : 'no_change',
           requested: result.requested,
           inserted: result.inserted,
           updated: result.updated,
@@ -271,6 +285,8 @@ export function createBackgroundDailyBackfillScheduler(
       lastSucceeded,
       lastFailed,
       lastSkippedReason,
+      noWorkCooldownCount: noWorkCooldowns.size,
+      nextNoWorkRetryAt: nextNoWorkRetryAt(),
       recent: [...recentAttempts],
     };
   }
@@ -285,6 +301,10 @@ export function createBackgroundDailyBackfillScheduler(
     const selected: string[] = [];
     for (const ticker of candidates) {
       if (selected.length >= maxTickersPerRun) break;
+      const noWorkRetryAtMs = noWorkCooldowns.get(ticker);
+      if (noWorkRetryAtMs !== undefined && noWorkRetryAtMs > runAt.getTime()) {
+        continue;
+      }
       const shouldBackfill =
         options.shouldBackfillTicker === undefined
           ? true
@@ -335,6 +355,21 @@ export function createBackgroundDailyBackfillScheduler(
     if (recentAttempts.length > RECENT_ATTEMPT_LIMIT) {
       recentAttempts.splice(0, recentAttempts.length - RECENT_ATTEMPT_LIMIT);
     }
+  }
+
+  function pruneExpiredNoWorkCooldowns(runAt: Date): void {
+    const runAtMs = runAt.getTime();
+    for (const [ticker, retryAtMs] of noWorkCooldowns.entries()) {
+      if (retryAtMs <= runAtMs) noWorkCooldowns.delete(ticker);
+    }
+  }
+
+  function nextNoWorkRetryAt(): string | null {
+    let next: number | null = null;
+    for (const retryAtMs of noWorkCooldowns.values()) {
+      if (next === null || retryAtMs < next) next = retryAtMs;
+    }
+    return next === null ? null : new Date(next).toISOString();
   }
 }
 

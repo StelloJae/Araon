@@ -260,6 +260,42 @@ describe('stock news routes', () => {
     ]);
   });
 
+  it('summarizes disclosure cache growth for data-health diagnostics', () => {
+    const disclosureRepo = new StockDisclosureRepository(db);
+    disclosureRepo.upsertMany([
+      {
+        ticker: '005930',
+        source: 'dart',
+        kind: 'filing',
+        title: 'old filing',
+        url: 'https://dart.fss.or.kr/old',
+        publishedAt: null,
+        fetchedAt: '2026-05-04T00:00:00.000Z',
+      },
+      {
+        ticker: '005930',
+        source: 'kind',
+        kind: 'filing',
+        title: 'fresh filing',
+        url: 'https://kind.krx.co.kr/fresh',
+        publishedAt: null,
+        fetchedAt: '2026-05-05T13:00:00.000Z',
+      },
+    ]);
+
+    expect(
+      disclosureRepo.summarizeGrowth(
+        new Date('2026-05-06T00:00:00.000Z'),
+        24 * 60 * 60_000,
+      ),
+    ).toEqual({
+      itemCount: 2,
+      staleItemCount: 1,
+      oldestFetchedAt: '2026-05-04T00:00:00.000Z',
+      newestFetchedAt: '2026-05-05T13:00:00.000Z',
+    });
+  });
+
   it('uses DART disclosure service when it is configured', async () => {
     const stockRepo = new StockRepository(db);
     const sectorRepo = new SectorRepository(db);

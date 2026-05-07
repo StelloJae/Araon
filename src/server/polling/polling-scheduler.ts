@@ -5,7 +5,8 @@
  * injected KIS REST client at a rate gated by the `RateLimiter`. Tier-agnostic
  * by design — the scheduler does NOT filter on `favorites.tier`, so a Phase 5a
  * rollback that leaves `tier='realtime'` rows behind still receives updates
- * via polling (plan §5a R3 "rollback patch").
+ * via polling unless the composition root injects a runtime-only skip predicate
+ * for tickers currently covered by a connected WebSocket session.
  *
  * The `priceStore` dependency is a minimal write-only shape so this file can
  * be authored before Phase 4b exists; the real store will be injected at
@@ -65,6 +66,8 @@ export interface PollingSchedulerDeps {
   setTimeoutFn?: (cb: () => void, ms: number) => unknown;
   /** Injected clock for benchmarks. Defaults to `Date.now`. */
   now?: () => number;
+  /** Optional runtime fallback gate. Defaults to polling every tracked ticker. */
+  shouldPollTicker?: (stock: Stock) => boolean;
 }
 
 export function createPollingScheduler(
@@ -166,7 +169,9 @@ export function createPollingScheduler(
   async function runCycle(): Promise<void> {
     cycleInFlight = true;
     const cycleStartedAt = now();
-    const stocks = deps.stockRepo.findAll();
+    const stocks = deps.shouldPollTicker === undefined
+      ? deps.stockRepo.findAll()
+      : deps.stockRepo.findAll().filter(deps.shouldPollTicker);
     tickersInCycle = stocks.length;
     if (stocks.length === 0) {
       lastCycleMs = now() - cycleStartedAt;

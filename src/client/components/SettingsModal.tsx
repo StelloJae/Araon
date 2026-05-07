@@ -1308,6 +1308,11 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor={health.backfill.cooldownActive ? 'var(--gold-text)' : 'var(--text-muted)'}
             />
             <Row
+              k="보강 대기 제외"
+              v={`${health.backfill.noWorkCooldownCount}종목`}
+              chipColor={health.backfill.noWorkCooldownCount > 0 ? 'var(--gold-text)' : 'var(--text-muted)'}
+            />
+            <Row
               k="거래량 기준선"
               v={`${health.volumeBaseline.ready}/${health.volumeBaseline.total} 준비`}
               chipColor={health.volumeBaseline.ready > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
@@ -1328,6 +1333,26 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor={health.growth.news.staleItemCount > 0 ? 'var(--kr-down)' : 'var(--text-muted)'}
             />
             <Row
+              k="공시 캐시"
+              v={`${health.growth.disclosures.itemCount}개 · stale ${health.growth.disclosures.staleItemCount}개`}
+              chipColor={health.growth.disclosures.staleItemCount > 0 ? 'var(--gold-text)' : 'var(--text-muted)'}
+            />
+            <Row
+              k="폰 알림"
+              v={
+                health.notifications.phoneConfigured
+                  ? `${health.notifications.phoneSentCount}/${health.notifications.phoneDeliveryCount} 전송`
+                  : '미설정'
+              }
+              chipColor={
+                health.notifications.phoneFailedCount > 0
+                  ? 'var(--kr-down)'
+                  : health.notifications.phoneConfigured
+                    ? 'var(--kr-up)'
+                    : 'var(--text-muted)'
+              }
+            />
+            <Row
               k="candle 정리"
               v={health.maintenance.candlePruneLastError ?? formatMaybeLocal(health.maintenance.candlePruneLastRunAt)}
               chipColor={health.maintenance.candlePruneLastError === null ? 'var(--text-muted)' : 'var(--kr-down)'}
@@ -1346,6 +1371,13 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               <>
                 <br />
                 백필 쿨다운: {formatLocal(health.backfill.cooldownUntil)}까지
+              </>
+            )}
+            {health.backfill.noWorkCooldownCount > 0 && health.backfill.nextNoWorkRetryAt !== null && (
+              <>
+                <br />
+                새 데이터 없음 대기: {health.backfill.noWorkCooldownCount}종목 · 다음 재확인{' '}
+                {formatLocal(health.backfill.nextNoWorkRetryAt)}
               </>
             )}
             {health.backfill.recent.length > 0 && (

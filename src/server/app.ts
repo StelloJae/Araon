@@ -275,6 +275,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     backgroundBackfill,
     signalEventRepo,
     newsRepo,
+    disclosureRepo,
     dataRetention,
     phoneNotifier: createTelegramPhoneNotifier(),
   });

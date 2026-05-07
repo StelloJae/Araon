@@ -133,6 +133,7 @@ async function build(
       listRecent?(limit?: number): any[];
     };
     newsRepo?: { summarizeGrowth(now: Date, staleAfterMs: number): { itemCount: number; staleItemCount: number; oldestFetchedAt: string | null; newestFetchedAt: string | null; failedFetchCount: number; lastFetchStatus: 'success' | 'failed' | null; lastFetchErrorCode: string | null; lastFetchedAt: string | null } };
+    disclosureRepo?: { summarizeGrowth(now: Date, staleAfterMs: number): { itemCount: number; staleItemCount: number; oldestFetchedAt: string | null; newestFetchedAt: string | null } };
     dataRetention?: { snapshot(): { lastRunAt: string | null; candlePruneLastRunAt: string | null; candlePruneLastError: string | null } };
     priceStore?: { getAllPrices(): Array<{ ticker: string; price: number; changeRate: number; volume: number; updatedAt: string; isSnapshot: boolean; volumeBaselineStatus?: 'ready' | 'collecting' | 'unavailable' }> };
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
@@ -141,6 +142,19 @@ async function build(
       status(): { configured: boolean; provider: 'telegram'; mode: 'env' };
       sendAlert(input: { title: string; detail: string; ticker: string; name: string }): Promise<{ sent: boolean; reason?: string }>;
       sendTest(): Promise<{ sent: boolean; reason?: string }>;
+    };
+    phoneDeliveryLog?: {
+      record(entry: any): void;
+      list(limit?: number): any[];
+      summarize(): {
+        total: number;
+        sent: number;
+        failed: number;
+        skipped: number;
+        lastStatus: 'sent' | 'failed' | 'skipped' | null;
+        lastAt: string | null;
+        lastErrorCode: string | null;
+      };
     };
   },
 ) {
@@ -154,11 +168,13 @@ async function build(
     candleRepo: opts.candleRepo,
     signalEventRepo: opts.signalEventRepo,
     newsRepo: opts.newsRepo,
+    disclosureRepo: opts.disclosureRepo,
     dataRetention: opts.dataRetention,
     priceStore: opts.priceStore,
     backfillStateStore: opts.backfillStateStore,
     backgroundBackfill: opts.backgroundBackfill,
     phoneNotifier: opts.phoneNotifier,
+    phoneDeliveryLog: opts.phoneDeliveryLog,
   });
   return app;
 }
@@ -237,6 +253,60 @@ describe('runtime phone notification routes', () => {
       changePct: 5.2,
     });
   });
+
+  it('keeps a bounded sanitized server-side Telegram delivery log', async () => {
+    const sendAlert = vi.fn(async () => ({ sent: true }));
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      phoneNotifier: {
+        status: () => ({ configured: true, provider: 'telegram', mode: 'env' }),
+        sendAlert,
+        sendTest: vi.fn(),
+      },
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/runtime/notifications/telegram/alert',
+      payload: {
+        ticker: '005930',
+        name: '삼성전자',
+        title: '삼성전자 · 룰 발동',
+        detail: '005930 · 등락률 ≥ 5%',
+        kind: 'rule',
+        direction: 'up',
+        changePct: 5.2,
+      },
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/runtime/notifications/telegram/deliveries?limit=5',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      summary: {
+        total: 1,
+        sent: 1,
+        failed: 0,
+        skipped: 0,
+        lastStatus: 'sent',
+        lastErrorCode: null,
+      },
+      items: [
+        {
+          type: 'alert',
+          status: 'sent',
+          provider: 'telegram',
+          ticker: '005930',
+          name: '삼성전자',
+          errorCode: null,
+        },
+      ],
+    });
+    expect(JSON.stringify(res.json())).not.toContain('token');
+    expect(JSON.stringify(res.json())).not.toContain('chat_id');
+  });
 });
 
 describe('GET /runtime/data-health', () => {
@@ -283,6 +353,14 @@ describe('GET /runtime/data-health', () => {
           lastFetchedAt: '2026-05-06T06:00:00.000Z',
         })),
       },
+      disclosureRepo: {
+        summarizeGrowth: vi.fn(() => ({
+          itemCount: 5,
+          staleItemCount: 2,
+          oldestFetchedAt: '2026-05-02T00:00:00.000Z',
+          newestFetchedAt: '2026-05-06T05:00:00.000Z',
+        })),
+      },
       dataRetention: {
         snapshot: vi.fn(() => ({
           lastRunAt: '2026-05-06T06:00:00.000Z',
@@ -314,6 +392,8 @@ describe('GET /runtime/data-health', () => {
           lastSucceeded: 1,
           lastFailed: 0,
           lastSkippedReason: null,
+          noWorkCooldownCount: 1,
+          nextNoWorkRetryAt: '2026-05-06T17:05:10.000Z',
           recent: [
             {
               ticker: '005930',
@@ -356,6 +436,8 @@ describe('GET /runtime/data-health', () => {
           dailyCallBudget: null,
           cooldownUntil: null,
           cooldownActive: false,
+          noWorkCooldownCount: 1,
+          nextNoWorkRetryAt: '2026-05-06T17:05:10.000Z',
           recent: [
             {
               ticker: '005930',
@@ -394,6 +476,23 @@ describe('GET /runtime/data-health', () => {
             lastFetchErrorCode: 'HTTP_503',
             lastFetchedAt: '2026-05-06T06:00:00.000Z',
           },
+          disclosures: {
+            itemCount: 5,
+            staleItemCount: 2,
+            oldestFetchedAt: '2026-05-02T00:00:00.000Z',
+            newestFetchedAt: '2026-05-06T05:00:00.000Z',
+            ttlHours: 24,
+          },
+        },
+        notifications: {
+          phoneConfigured: false,
+          phoneDeliveryCount: 0,
+          phoneSentCount: 0,
+          phoneFailedCount: 0,
+          phoneSkippedCount: 0,
+          phoneLastStatus: null,
+          phoneLastAt: null,
+          phoneLastErrorCode: null,
         },
         signalOutcomes: {
           totalSignals: 0,

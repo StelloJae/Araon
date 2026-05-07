@@ -591,9 +591,11 @@ export interface RuntimeDataHealthPayload {
     dailyCallBudget: number | null;
     cooldownUntil: string | null;
     cooldownActive: boolean;
+    noWorkCooldownCount: number;
+    nextNoWorkRetryAt: string | null;
     recent: Array<{
       ticker: string;
-      status: 'success' | 'failed';
+      status: 'success' | 'no_change' | 'failed';
       requested: number;
       inserted: number;
       updated: number;
@@ -627,6 +629,23 @@ export interface RuntimeDataHealthPayload {
       ttlHours: number;
       pruneAfterDays: number;
     };
+    disclosures: {
+      itemCount: number;
+      staleItemCount: number;
+      oldestFetchedAt: string | null;
+      newestFetchedAt: string | null;
+      ttlHours: number;
+    };
+  };
+  notifications: {
+    phoneConfigured: boolean;
+    phoneDeliveryCount: number;
+    phoneSentCount: number;
+    phoneFailedCount: number;
+    phoneSkippedCount: number;
+    phoneLastStatus: 'sent' | 'failed' | 'skipped' | null;
+    phoneLastAt: string | null;
+    phoneLastErrorCode: string | null;
   };
   maintenance: {
     lastRunAt: string | null;

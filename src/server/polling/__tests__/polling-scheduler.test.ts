@@ -289,6 +289,38 @@ describe('polling-scheduler', () => {
     }
   });
 
+  it('4b. skips only explicitly covered realtime tickers when a fallback gate is injected', async () => {
+    const stocks = makeStocks(5);
+    const coveredByRealtime = new Set([stocks[0]!.ticker, stocks[1]!.ticker]);
+    const { client, calls } = makeRestClient();
+    const { store: priceStore, writes } = makePriceStore();
+    const rateLimiter = createRateLimiter({ ratePerSec: 1000, burst: 10 });
+
+    const settingsPath = await uniqueTempPath('realtime-skip');
+    const settings = await makeSettingsStore(settingsPath, {
+      pollingCycleDelayMs: 1000,
+    });
+
+    const scheduler = createPollingScheduler({
+      restClient: client,
+      stockRepo: makeStockRepo(stocks),
+      priceStore,
+      rateLimiter,
+      settings,
+      shouldPollTicker: (stock) => !coveredByRealtime.has(stock.ticker),
+    });
+
+    scheduler.start();
+    await vi.advanceTimersByTimeAsync(100);
+    await scheduler.stop();
+
+    expect(calls).toEqual(stocks.slice(2).map((stock) => stock.ticker));
+    expect(writes.map((price) => price.ticker)).toEqual(
+      stocks.slice(2).map((stock) => stock.ticker),
+    );
+    expect(scheduler.getStatus().tickersInCycle).toBe(3);
+  });
+
   it('5. isolates ticker errors — one failure does not abort the cycle', async () => {
     const stocks = makeStocks(10);
     const failingTicker = stocks[3]!.ticker;

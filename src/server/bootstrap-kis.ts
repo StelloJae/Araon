@@ -396,6 +396,12 @@ export async function defaultActuallyStart(
     priceStore: deps.priceStore,
     rateLimiter,
     settings: deps.settingsStore,
+    shouldPollTicker: (stock) => {
+      const settings = deps.settingsStore.snapshot();
+      if (!settings.websocketEnabled || !settings.applyTicksToPriceStore) return true;
+      if (bridge.wsState() !== 'connected') return true;
+      return !new Set(tierManager.getAssignment().realtimeTickers).has(stock.ticker);
+    },
   });
 
   const marketHoursScheduler = createMarketHoursScheduler({

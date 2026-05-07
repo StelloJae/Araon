@@ -130,6 +130,8 @@ describe('managed operations settings copy', () => {
             dailyCallBudget: null,
             cooldownUntil: null,
             cooldownActive: false,
+            noWorkCooldownCount: 1,
+            nextNoWorkRetryAt: '2026-05-06T17:05:10.000Z',
             recent: [
               {
                 ticker: '005930',
@@ -168,6 +170,23 @@ describe('managed operations settings copy', () => {
               ttlHours: 24,
               pruneAfterDays: 7,
             },
+            disclosures: {
+              itemCount: 4,
+              staleItemCount: 1,
+              oldestFetchedAt: '2026-05-05T09:00:00.000Z',
+              newestFetchedAt: '2026-05-06T09:00:00.000Z',
+              ttlHours: 24,
+            },
+          },
+          notifications: {
+            phoneConfigured: true,
+            phoneDeliveryCount: 3,
+            phoneSentCount: 2,
+            phoneFailedCount: 1,
+            phoneSkippedCount: 0,
+            phoneLastStatus: 'failed',
+            phoneLastAt: '2026-05-06T09:05:00.000Z',
+            phoneLastErrorCode: 'HTTP_502',
           },
           maintenance: {
             lastRunAt: '2026-05-06T06:00:00.000Z',
@@ -224,9 +243,13 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('15m 평균 +0.60%');
     expect(html).toContain('30m 평균 +0.30%');
     expect(html).toContain('뉴스 캐시');
+    expect(html).toContain('공시 캐시');
+    expect(html).toContain('폰 알림');
     expect(html).toContain('candle 정리');
     expect(html).toContain('오늘 백필 호출');
     expect(html).toContain('4회');
+    expect(html).toContain('보강 대기 제외');
+    expect(html).toContain('1종목');
     expect(html).toContain('최근 보강');
     expect(html).toContain('005930');
   });

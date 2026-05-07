@@ -22,9 +22,9 @@
 import { useEffect, useRef } from 'react';
 import type { Price } from '@shared/types';
 import { evaluateAlerts } from '../lib/alert-evaluator';
-import { sendPhoneNotificationAlert } from '../lib/api-client';
 import { showDesktopNotification } from '../lib/desktop-notification';
 import { isMarketLive } from '../lib/market-status';
+import { queuePhoneAlertDelivery } from '../lib/phone-alert-delivery';
 import { playBleep } from '../lib/sound';
 import { useAlertRulesStore } from '../stores/alert-rules-store';
 import { useAlertDeliveryStore } from '../stores/alert-delivery-store';
@@ -119,48 +119,7 @@ export function useAlertEvaluator({ onPickStock }: UseAlertEvaluatorOptions): vo
         });
       }
       if (settings.phoneNotifEnabled) {
-        void sendPhoneNotificationAlert({
-          ticker: spec.ticker,
-          name: spec.name,
-          title: spec.title,
-          detail: spec.detail,
-          kind: spec.kind,
-          direction: spec.direction,
-          changePct: spec.changePct,
-        })
-          .then((result) => {
-            const entry = {
-              ts: Date.now(),
-              ticker: spec.ticker,
-              name: spec.name,
-              title: spec.title,
-              detail: spec.detail,
-              kind: spec.kind,
-              direction: spec.direction,
-              channel: 'phone',
-              status: result.sent ? 'sent' : 'skipped',
-            } as const;
-            useAlertDeliveryStore.getState().record(
-              result.reason === undefined
-                ? entry
-                : { ...entry, reason: result.reason },
-            );
-          })
-          .catch((err: unknown) => {
-            useAlertDeliveryStore.getState().record({
-              ts: Date.now(),
-              ticker: spec.ticker,
-              name: spec.name,
-              title: spec.title,
-              detail: spec.detail,
-              kind: spec.kind,
-              direction: spec.direction,
-              channel: 'phone',
-              status: 'failed',
-              reason:
-                err instanceof Error ? err.message : 'UNKNOWN_PHONE_ALERT_ERROR',
-            });
-          });
+        queuePhoneAlertDelivery(spec, useAlertDeliveryStore.getState().record);
       }
     }
 

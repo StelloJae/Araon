@@ -1773,6 +1773,13 @@ export class StockNewsRepository {
 
 export type StockDisclosureItemInput = Omit<StockDisclosureItem, 'id'>;
 
+export interface StockDisclosureGrowthSummary {
+  itemCount: number;
+  staleItemCount: number;
+  oldestFetchedAt: string | null;
+  newestFetchedAt: string | null;
+}
+
 export class StockDisclosureRepository {
   constructor(private readonly db: Database.Database) {}
 
@@ -1842,6 +1849,33 @@ export class StockDisclosureRepository {
       }
     })();
     return this.listByTicker(items[0]?.ticker ?? '');
+  }
+
+  summarizeGrowth(
+    now = new Date(),
+    staleAfterMs = 24 * 60 * 60 * 1000,
+  ): StockDisclosureGrowthSummary {
+    const staleCutoff = new Date(now.getTime() - staleAfterMs).toISOString();
+    const row = this.db
+      .prepare<Record<string, string>, {
+        item_count: number;
+        stale_item_count: number;
+        oldest_fetched_at: string | null;
+        newest_fetched_at: string | null;
+      }>(
+        `SELECT COUNT(*) AS item_count,
+                SUM(CASE WHEN fetched_at < @staleCutoff THEN 1 ELSE 0 END) AS stale_item_count,
+                MIN(fetched_at) AS oldest_fetched_at,
+                MAX(fetched_at) AS newest_fetched_at
+         FROM stock_disclosure_items`,
+      )
+      .get({ staleCutoff });
+    return {
+      itemCount: row?.item_count ?? 0,
+      staleItemCount: row?.stale_item_count ?? 0,
+      oldestFetchedAt: row?.oldest_fetched_at ?? null,
+      newestFetchedAt: row?.newest_fetched_at ?? null,
+    };
   }
 }
 

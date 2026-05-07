@@ -286,6 +286,69 @@ describe('createBackgroundDailyBackfillScheduler', () => {
     expect(backfillDailyCandles).not.toHaveBeenCalled();
   });
 
+  it('backs off a ticker that returns no daily candle work instead of retrying it every minute', async () => {
+    let nowMs = new Date('2026-05-05T11:05:00.000Z').getTime();
+    const backfillDailyCandles = vi.fn(async (input: { ticker: string }) => ({
+      ticker: input.ticker,
+      requested: input.ticker === '010620' ? 0 : 10,
+      inserted: input.ticker === '010620' ? 0 : 10,
+      updated: 0,
+      from: null,
+      to: null,
+      source: 'kis-daily' as const,
+      coverage: {
+        backfilled: input.ticker !== '010620',
+        localOnly: input.ticker === '010620',
+      },
+    }));
+    const scheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: { findAll: () => [stock('010620'), stock('005930')] },
+      favoriteRepo: { findAll: () => [favorite('010620')] },
+      dailyBackfillService: { backfillDailyCandles },
+      marketPhase: () => 'closed',
+      now: () => new Date(nowMs),
+      maxTickersPerRun: 1,
+      requestGapMs: 0,
+      noWorkTickerCooldownMs: 6 * 60 * 60 * 1000,
+    });
+
+    await expect(scheduler.runOnce()).resolves.toMatchObject({
+      attempted: 1,
+      succeeded: 0,
+      failed: 0,
+      skippedReason: null,
+    });
+    expect(scheduler.snapshot()).toMatchObject({
+      noWorkCooldownCount: 1,
+      recent: [
+        expect.objectContaining({
+          ticker: '010620',
+          status: 'no_change',
+          requested: 0,
+        }),
+      ],
+    });
+
+    nowMs += 60 * 1000;
+    await expect(scheduler.runOnce()).resolves.toMatchObject({
+      attempted: 1,
+      succeeded: 1,
+      failed: 0,
+      skippedReason: null,
+    });
+    expect(backfillDailyCandles).toHaveBeenNthCalledWith(1, {
+      ticker: '010620',
+      range: '3m',
+      now: new Date('2026-05-05T11:05:00.000Z'),
+    });
+    expect(backfillDailyCandles).toHaveBeenNthCalledWith(2, {
+      ticker: '005930',
+      range: '3m',
+      now: new Date('2026-05-05T11:06:00.000Z'),
+    });
+  });
+
   it('persists the daily call counter across scheduler restarts without blocking later work', async () => {
     const stateStore = createMemoryBackfillStateStore();
     const firstBackfill = vi.fn(async (input: { ticker: string }) => ({
