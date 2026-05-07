@@ -53,6 +53,7 @@ import type {
 import type { TodayMinuteBackfillService } from '../chart/today-minute-backfill-service.js';
 import type { HistoricalMinuteBackfillService } from '../chart/historical-minute-backfill-service.js';
 import type { StockNewsFeedService } from '../news/news-feed-service.js';
+import type { DartDisclosureService } from '../disclosures/dart-disclosure-service.js';
 import {
   PRICE_HISTORY_POINT_BUCKET_MS,
   PRICE_HISTORY_RETENTION_HOURS,
@@ -78,6 +79,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   historicalMinuteBackfillService?: HistoricalMinuteBackfillService;
   newsFeedService?: StockNewsFeedService;
   disclosureRepo?: StockDisclosureRepository;
+  dartDisclosureService?: DartDisclosureService;
   now?: () => Date;
 }
 
@@ -478,14 +480,35 @@ export async function stockRoutes(
         error: { code: 'STOCK_DISCLOSURE_REPOSITORY_NOT_WIRED' },
       });
     }
+    const fetchedAt = (opts.now ?? (() => new Date()))();
     const existing = opts.disclosureRepo.listByTicker(ticker);
+    if (
+      opts.dartDisclosureService?.isConfigured() === true
+      && !existing.some((item) => item.source === 'dart' && item.kind === 'filing')
+    ) {
+      try {
+        await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+      } catch (err: unknown) {
+        log.warn(
+          { ticker, err: err instanceof Error ? err.message : String(err) },
+          'DART disclosure refresh failed',
+        );
+      }
+    }
+    const combinedExisting = opts.disclosureRepo.listByTicker(ticker);
+    if (combinedExisting.some((item) => item.kind === 'filing')) {
+      opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt.toISOString()));
+      return reply.send({
+        success: true,
+        data: opts.disclosureRepo.listByTicker(ticker),
+      });
+    }
     if (existing.length > 0) {
       return reply.send({ success: true, data: existing });
     }
-    const fetchedAt = (opts.now ?? (() => new Date()))().toISOString();
     return reply.send({
       success: true,
-      data: opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt)),
+      data: opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt.toISOString())),
     });
   });
 
@@ -506,9 +529,14 @@ export async function stockRoutes(
         });
       }
       try {
-        const data = await opts.newsFeedService.refresh({
+        const stockName = opts.service.list().find((stock) => stock.ticker === ticker)?.name;
+        const refreshInput: { ticker: string; name?: string; now: Date } = {
           ticker,
           now: (opts.now ?? (() => new Date()))(),
+        };
+        if (stockName !== undefined) refreshInput.name = stockName;
+        const data = await opts.newsFeedService.refresh({
+          ...refreshInput,
         });
         return reply.send({ success: true, data });
       } catch (err: unknown) {

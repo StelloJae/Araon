@@ -209,6 +209,7 @@ interface StockNewsItemRow {
   source: string;
   title: string;
   url: string;
+  description: string | null;
   published_at: string | null;
   fetched_at: string;
 }
@@ -230,6 +231,14 @@ interface StockDisclosureItemRow {
   url: string;
   published_at: string | null;
   fetched_at: string;
+}
+
+interface DartCorpCodeRow {
+  ticker: string;
+  corp_code: string;
+  corp_name: string;
+  stock_name: string;
+  updated_at: string;
 }
 
 interface MasterStockRow {
@@ -422,6 +431,7 @@ function rowToStockNewsItem(row: StockNewsItemRow): StockNewsItem {
     source: row.source as StockNewsItem['source'],
     title: row.title,
     url: row.url,
+    description: row.description,
     publishedAt: row.published_at,
     fetchedAt: row.fetched_at,
   };
@@ -1864,7 +1874,7 @@ export class StockNewsRepository {
     const safeLimit = Math.max(1, Math.min(limit, 100));
     const rows = this.db
       .prepare<[string, number], StockNewsItemRow>(
-        `SELECT id, ticker, source, title, url, published_at, fetched_at
+        `SELECT id, ticker, source, title, url, description, published_at, fetched_at
          FROM stock_news_items
          WHERE ticker = ?
          ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC
@@ -1878,14 +1888,15 @@ export class StockNewsRepository {
     if (items.length === 0) return [];
     const stmt = this.db.prepare(
       `INSERT INTO stock_news_items (
-         id, ticker, source, title, url, published_at, fetched_at
+         id, ticker, source, title, url, description, published_at, fetched_at
        )
        VALUES (
-         @id, @ticker, @source, @title, @url, @published_at, @fetched_at
+         @id, @ticker, @source, @title, @url, @description, @published_at, @fetched_at
        )
        ON CONFLICT(ticker, url) DO UPDATE SET
          title = excluded.title,
          source = excluded.source,
+         description = excluded.description,
          published_at = excluded.published_at,
          fetched_at = excluded.fetched_at`,
     );
@@ -1895,6 +1906,7 @@ export class StockNewsRepository {
       source: item.source,
       title: item.title,
       url: item.url,
+      description: item.description,
       published_at: item.publishedAt,
       fetched_at: item.fetchedAt,
     }));
@@ -2046,4 +2058,57 @@ export class StockDisclosureRepository {
     })();
     return this.listByTicker(items[0]?.ticker ?? '');
   }
+}
+
+export interface DartCorpCode {
+  ticker: string;
+  corpCode: string;
+  corpName: string;
+  stockName: string;
+  updatedAt: string;
+}
+
+export class DartCorpCodeRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  findByTicker(ticker: string): DartCorpCode | null {
+    const row = this.db
+      .prepare<[string], DartCorpCodeRow>(
+        `SELECT ticker, corp_code, corp_name, stock_name, updated_at
+         FROM dart_corp_codes
+         WHERE ticker = ?`,
+      )
+      .get(ticker);
+    return row === undefined ? null : rowToDartCorpCode(row);
+  }
+
+  upsertMany(items: readonly DartCorpCode[]): void {
+    if (items.length === 0) return;
+    const stmt = this.db.prepare(
+      `INSERT INTO dart_corp_codes (
+         ticker, corp_code, corp_name, stock_name, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(ticker) DO UPDATE SET
+         corp_code = excluded.corp_code,
+         corp_name = excluded.corp_name,
+         stock_name = excluded.stock_name,
+         updated_at = excluded.updated_at`,
+    );
+    this.db.transaction(() => {
+      for (const item of items) {
+        stmt.run(item.ticker, item.corpCode, item.corpName, item.stockName, item.updatedAt);
+      }
+    })();
+  }
+}
+
+function rowToDartCorpCode(row: DartCorpCodeRow): DartCorpCode {
+  return {
+    ticker: row.ticker,
+    corpCode: row.corp_code,
+    corpName: row.corp_name,
+    stockName: row.stock_name,
+    updatedAt: row.updated_at,
+  };
 }

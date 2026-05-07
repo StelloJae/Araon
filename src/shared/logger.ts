@@ -33,6 +33,8 @@ const REDACT_PATHS = [
   'credentials.appSecret',
   'accessToken',
   'approvalKey',
+  'naverClientSecret',
+  'dartApiKey',
 ];
 
 export const logger: Logger = pino({

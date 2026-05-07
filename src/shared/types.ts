@@ -450,9 +450,10 @@ export type StockTimelineItem = StockTimelineNoteItem | StockTimelineSignalItem;
 export interface StockNewsItem {
   id: string;
   ticker: string;
-  source: 'naver-finance';
+  source: 'naver-finance' | 'naver-search';
   title: string;
   url: string;
+  description: string | null;
   publishedAt: string | null;
   fetchedAt: string;
   isNew?: boolean;

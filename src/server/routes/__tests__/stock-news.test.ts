@@ -74,6 +74,7 @@ describe('stock news routes', () => {
         ticker: '005930',
         title: '새 뉴스',
         source: 'naver-finance',
+        description: null,
         publishedAt: null,
       }),
     ]);
@@ -125,6 +126,7 @@ describe('stock news routes', () => {
         source: 'naver-finance',
         title: 'old',
         url: 'https://finance.naver.com/item/news_read.naver?article_id=1&office_id=001&code=005930',
+        description: null,
         publishedAt: null,
         fetchedAt: '2026-04-20T00:00:00.000Z',
       },
@@ -133,6 +135,7 @@ describe('stock news routes', () => {
         source: 'naver-finance',
         title: 'recent',
         url: 'https://finance.naver.com/item/news_read.naver?article_id=2&office_id=001&code=005930',
+        description: null,
         publishedAt: null,
         fetchedAt: '2026-05-05T00:00:00.000Z',
       },
@@ -152,6 +155,7 @@ describe('stock news routes', () => {
         source: 'naver-finance',
         title: 'stale',
         url: 'https://finance.naver.com/item/news_read.naver?article_id=3&office_id=001&code=005930',
+        description: null,
         publishedAt: null,
         fetchedAt: '2026-05-04T00:00:00.000Z',
       },
@@ -160,6 +164,7 @@ describe('stock news routes', () => {
         source: 'naver-finance',
         title: 'fresh',
         url: 'https://finance.naver.com/item/news_read.naver?article_id=4&office_id=001&code=005930',
+        description: null,
         publishedAt: null,
         fetchedAt: '2026-05-05T13:00:00.000Z',
       },
@@ -195,5 +200,53 @@ describe('stock news routes', () => {
         url: expect.stringContaining('kind.krx.co.kr'),
       }),
     ]);
+  });
+
+  it('uses DART disclosure service when it is configured', async () => {
+    const stockRepo = new StockRepository(db);
+    const sectorRepo = new SectorRepository(db);
+    const masterRepo = new MasterStockRepository(db);
+    const disclosureRepo = new StockDisclosureRepository(db);
+    const service = createStockService({ stockRepo, sectorRepo, masterRepo });
+    stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
+    const dartDisclosureService = {
+      isConfigured: vi.fn(() => true),
+      refreshTicker: vi.fn(async () =>
+        disclosureRepo.upsertMany([
+          {
+            ticker: '005930',
+            source: 'dart',
+            kind: 'filing',
+            title: '주요사항보고서',
+            url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260507000001',
+            publishedAt: '2026-05-06T15:00:00.000Z',
+            fetchedAt: '2026-05-07T04:00:00.000Z',
+          },
+        ]),
+      ),
+    };
+    const dartApp = Fastify({ logger: false });
+    await dartApp.register(stockRoutes, {
+      service,
+      disclosureRepo,
+      dartDisclosureService,
+      now: () => new Date('2026-05-07T04:00:00.000Z'),
+    });
+
+    const res = await dartApp.inject({ method: 'GET', url: '/stocks/005930/disclosures' });
+
+    expect(res.statusCode).toBe(200);
+    expect(dartDisclosureService.refreshTicker).toHaveBeenCalledWith({
+      ticker: '005930',
+      now: new Date('2026-05-07T04:00:00.000Z'),
+    });
+    expect(res.json().data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'filing', title: '주요사항보고서' }),
+        expect.objectContaining({ kind: 'search-link', source: 'dart' }),
+        expect.objectContaining({ kind: 'search-link', source: 'kind' }),
+      ]),
+    );
+    await dartApp.close();
   });
 });

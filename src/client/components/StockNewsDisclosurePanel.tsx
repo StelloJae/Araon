@@ -256,10 +256,24 @@ export function NewsFeedItemLink({
         )}
       </div>
       <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-        네이버 금융 · {formatFeedTime(item.publishedAt ?? item.fetchedAt)}
+        {newsSourceLabel(item.source)} · {formatFeedTime(item.publishedAt ?? item.fetchedAt)}
       </div>
+      {item.description !== null && item.description.trim().length > 0 && (
+        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+          {item.description}
+        </div>
+      )}
     </a>
   );
+}
+
+function newsSourceLabel(source: StockNewsItem['source']): string {
+  switch (source) {
+    case 'naver-finance':
+      return '네이버 금융';
+    case 'naver-search':
+      return '네이버 뉴스 검색';
+  }
 }
 
 function disclosureSourceLabel(source: StockDisclosureItem['source']): string {

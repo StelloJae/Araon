@@ -59,6 +59,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Desktop beta.11 install acceptance**: GitHub Release `v1.1.0-beta.11` macOS DMG/ZIP 다운로드·checksum 확인 / DMG mount와 ZIP extract 성공 / Computer Use로 first-run KIS 앱키 등록 화면 확인 / no credentials 상태에서 runtime unconfigured, master refresh blocked, `credentials.enc` 미생성 / direct executable과 `open -n` 경로는 실행 가능 / macOS `codesign`·`spctl`은 `code has no resources but signature indicates they must be present`로 실패 / Windows EXE는 asset 존재·checksum만 확인, 실행 not executed
 - **Desktop packaging hardening**: macOS signing failure 원인은 `mac.identity=null`로 bundle signing을 완전히 skip하면서 Mach-O linker/ad-hoc signature metadata와 sealed resources 상태가 어긋난 것. `mac.identity="-"` ad-hoc signing으로 로컬 macOS app bundle은 `codesign --verify --deep --strict` 통과. beta.12 release validation 중 `better-sqlite3`가 host Node ABI 141로 packaged되는 문제도 발견해 `nativeRebuilder="legacy"`로 Electron 41 ABI 145 packaging을 고정. `spctl`은 Developer ID/notarization이 없어서 여전히 rejected가 정상. Browser quarantine/Finder path와 Windows EXE 실행은 계속 pending.
 - **P1 data-growth hardening**: `stock_signal_events` 90일 retention + max 200 read clamp / `stock_notes` limit+offset pagination, no auto-prune / `stock_news_items` 24h stale + 7일 prune + sanitized fetch failure status / `price_candles` prune는 server start 후 daily maintenance로 호출 / `/runtime/data-health`가 signal/news/note growth와 candle prune 상태를 표시 / live KIS·WS·selected minute probe 0회
+- **News/disclosure feed enrichment**: 네이버 금융 종목뉴스 iframe HTML을 key 없이 파싱해 제목·언론사·시간·링크를 `stock_news_items`에 캐시한다. `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`이 있으면 Naver Search API 뉴스 결과를 보강하고, `DART_API_KEY`가 있으면 DART corp-code catalog + 공시검색 API로 최근 filing을 `stock_disclosure_items`에 캐시한다. 기사 본문, 공시 원문, Araon 생성 요약/감성분석은 저장하지 않는다.
 - **Local backup/restore**: Settings 연결 탭과 `/runtime/backup/export`·`/runtime/backup/restore`에서 추적 종목, 즐겨찾기, 관찰 메모, 관찰 계획만 JSON으로 백업/복원한다. `credentials.enc`, token, approval key, account, candle, raw tick, runtime state는 절대 포함하지 않는다.
 - **No-live reliability soak**: `npm run soak:no-live -- --duration-ms 60000 --interval-ms 5000`는 fresh temp dataDir + no credentials로 health endpoints를 반복 조회한다. non-2xx, non-JSON, raw secret-looking value를 실패 처리하며 live KIS/token/approval/WebSocket/backfill 호출은 하지 않는다.
 
@@ -193,6 +194,9 @@ npm run dev:client &
 | `src/server/db/migrations/004-price-candles.sql` | `price_candles` schema: local `1m` + manual KIS `1d`. raw tick table 아님 |
 | `src/server/db/migrations/008-stock-news-fetch-status.sql` | `stock_news_fetch_status` schema: success/failed, sanitized error code, fetched timestamp만 저장 |
 | `src/server/db/migrations/012-price-history-points.sql` | `price_history_points` schema: tracked ticker + 5초 bucket compact price trace. raw tick table 아님 |
+| `src/server/db/migrations/013-news-provider-enrichment.sql` | `stock_news_items.description` + `dart_corp_codes` schema. Naver Search snippet과 DART corp-code mapping용 |
+| `src/server/news/news-feed-service.ts` | 네이버 금융 종목뉴스 iframe parser + optional Naver Search API provider. 제목/스니펫/링크만 저장, 본문/요약 없음 |
+| `src/server/disclosures/dart-disclosure-service.ts` | optional DART API provider. corp-code ZIP cache + recent disclosure list mapping. 공시 원문 다운로드 없음 |
 | `src/server/routes/stocks.ts` | `GET /stocks/:ticker/candles`, `GET /stocks/:ticker/price-history`, `POST /stocks/:ticker/candles/backfill`. backfill은 장중 차단 |
 | `src/client/components/StockCandleChart.tsx` | StockDetailModal `차트` 탭용 Lightweight Charts renderer. 1W/1M interval + 6m/1y range + manual daily backfill control 포함 |
 | `src/server/sse/sse-manager.ts` | SSE — price-update / market-status / heartbeat 이벤트 |
@@ -796,14 +800,16 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/observation-memo-log-mvp.md`
 - HOLD: 메모 수정, 태그/분류, candle timestamp 연결, AI 요약, export
 
-### News/disclosure link MVP 결과 (2026-05-06)
-- `StockDetailModal`의 `관련 뉴스 · 공시` placeholder를 실제 외부 확인 링크 패널로 교체
-- 링크: 네이버 금융 뉴스, 네이버 금융 종목, DART 공시 검색, KIND 공시 검색
-- in-app feed/API ingestion/요약은 하지 않는다. Araon이 모르는 뉴스·공시 내용을 생성하지 않는 정책 유지
+### News/disclosure feed MVP 결과 (2026-05-06, enriched 2026-05-07)
+- `StockDetailModal`의 `관련 뉴스 · 공시` placeholder를 실제 외부 확인 링크/피드 패널로 교체
+- 기본: 네이버 금융 종목뉴스 HTML에서 제목·언론사·시간·링크를 가져와 `stock_news_items`에 캐시
+- 선택: `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`이 있으면 Naver Search API 뉴스 결과를 보강
+- 선택: `DART_API_KEY`가 있으면 DART corp-code catalog와 공시검색 API로 최근 filing을 `stock_disclosure_items`에 캐시
+- 기사 본문, 공시 원문, Araon 생성 요약/감성분석은 저장하지 않는다
 - live KIS / WebSocket / background job 호출: 0회
-- focused test: `src/client/components/__tests__/stock-news-disclosure-panel.test.ts`
+- focused tests: `src/client/components/__tests__/stock-news-disclosure-panel.test.ts`, `src/server/news/__tests__/news-feed-service.test.ts`, `src/server/disclosures/__tests__/dart-disclosure-service.test.ts`, `src/server/routes/__tests__/stock-news.test.ts`
 - report: `docs/research/news-disclosure-link-mvp.md`
-- HOLD: DART/KIND API 연동, 뉴스 feed 저장, 공시 알림, AI 요약/감성 분석
+- HOLD: KIND API 연동, 공시 알림, AI 요약/감성 분석
 
 ### Candle chart tooltip polish 결과 (2026-05-06)
 - `StockCandleChart`가 Lightweight Charts crosshair move에서 실제 candle item을 찾아 KST 시각/OHLCV/source tooltip을 표시

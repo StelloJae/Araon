@@ -15,6 +15,7 @@ import {
   StockObservationPlanRepository,
   StockNewsRepository,
   StockDisclosureRepository,
+  DartCorpCodeRepository,
   StockSignalEventRepository,
   MasterStockRepository,
   MasterStockMetaRepository,
@@ -41,7 +42,11 @@ import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
 import { fetchKisHistoricalMinuteCandles } from './kis/kis-historical-minute-chart.js';
 import { fetchKisTodayMinuteCandles } from './kis/kis-today-minute-chart.js';
 import { createStockService } from './services/stock-service.js';
-import { createStockNewsFeedService } from './news/news-feed-service.js';
+import {
+  createNaverSearchNewsProvider,
+  createStockNewsFeedService,
+} from './news/news-feed-service.js';
+import { createDartDisclosureService } from './disclosures/dart-disclosure-service.js';
 import { createDataRetentionScheduler } from './maintenance/data-retention.js';
 import { createMasterStockService } from './services/master-stock-service.js';
 import { createCredentialSetupMutex, credentialsRoutes } from './routes/credentials.js';
@@ -123,8 +128,22 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const observationPlanRepo = new StockObservationPlanRepository(db);
   const newsRepo = new StockNewsRepository(db);
   const disclosureRepo = new StockDisclosureRepository(db);
+  const dartCorpCodeRepo = new DartCorpCodeRepository(db);
   const signalEventRepo = new StockSignalEventRepository(db);
-  const newsFeedService = createStockNewsFeedService({ repo: newsRepo });
+  const naverSearchNews = createNaverSearchNewsProvider({
+    clientId: process.env['NAVER_SEARCH_CLIENT_ID'] ?? '',
+    clientSecret: process.env['NAVER_SEARCH_CLIENT_SECRET'] ?? '',
+  });
+  const newsFeedService = createStockNewsFeedService(
+    naverSearchNews === undefined
+      ? { repo: newsRepo }
+      : { repo: newsRepo, searchNews: naverSearchNews },
+  );
+  const dartDisclosureService = createDartDisclosureService({
+    apiKey: process.env['DART_API_KEY'] ?? '',
+    corpCodeRepo: dartCorpCodeRepo,
+    disclosureRepo,
+  });
   const candleRecorder = createCandleRecorder({
     priceStore,
     aggregator: createCandleAggregator({ writer: candleRepo }),
@@ -238,6 +257,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     signalEventRepo,
     newsFeedService,
     disclosureRepo,
+    dartDisclosureService,
     dailyBackfillService,
     todayMinuteBackfillService,
     historicalMinuteBackfillService,

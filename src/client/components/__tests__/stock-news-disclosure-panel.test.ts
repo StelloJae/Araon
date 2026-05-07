@@ -32,6 +32,7 @@ describe('StockNewsDisclosurePanel', () => {
           source: 'naver-finance',
           title: '삼성전자 신규 뉴스',
           url: 'https://finance.naver.com/item/news_read.naver?article_id=1&office_id=001&code=005930',
+          description: '언론사 또는 검색 API 패시지',
           publishedAt: null,
           fetchedAt: '2026-05-06T09:00:00.000Z',
           isNew: true,
@@ -42,6 +43,7 @@ describe('StockNewsDisclosurePanel', () => {
 
     expect(html).toContain('새 링크');
     expect(html).toContain('삼성전자 신규 뉴스');
+    expect(html).toContain('언론사 또는 검색 API 패시지');
     expect(html).not.toContain('뉴스 분석');
     expect(html).not.toContain('요약');
   });

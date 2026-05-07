@@ -59,6 +59,24 @@ KIS_CRED_KEY=replace-with-a-long-random-local-secret
 Do not put your KIS app key or app secret in `.env`. Enter those through the
 local browser UI.
 
+Optional news/disclosure providers can be configured in `.env`:
+
+```bash
+NAVER_SEARCH_CLIENT_ID=
+NAVER_SEARCH_CLIENT_SECRET=
+DART_API_KEY=
+```
+
+These are not brokerage credentials. Leave them blank if you only want the
+default no-key Naver Finance feed and external disclosure search links.
+
+To get the optional keys:
+
+- Naver: create an application in Naver Developers and enable the Search API.
+  Araon uses the News Search API.
+- DART: create an OpenDART API key. Araon uses the corp-code catalog and
+  disclosure-list APIs to map tickers to recent filings.
+
 ## Verify The Checkout
 
 ```bash

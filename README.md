@@ -32,6 +32,8 @@ fallback.
 - cap40 controlled realtime acceptance completed for the v1 release
 - Managed cap40 realtime by default after credentials are configured
 - Emergency realtime/backfill pause from the local UI
+- Cached news/disclosure feed links, with optional Naver Search and OpenDART
+  enrichment
 - KIS master catalog for searchable KOSPI/KOSDAQ universe data
 - KIS official index industry grouping with manual sector override support
 - 한국어 초성 검색 for stock names
@@ -119,6 +121,20 @@ Set a private local encryption seed in `.env`:
 ```bash
 KIS_CRED_KEY=replace-with-a-long-random-local-secret
 ```
+
+Optional news/disclosure enrichment can also be configured in `.env`:
+
+```bash
+NAVER_SEARCH_CLIENT_ID=
+NAVER_SEARCH_CLIENT_SECRET=
+DART_API_KEY=
+```
+
+Leave these blank to use the no-key Naver Finance link feed and external
+DART/KIND search links only. To enable them, register a Naver Developers app
+with the Search API enabled and request an OpenDART API key. Araon stores only
+news/disclosure titles, timestamps, provider snippets, and links; it does not
+store article bodies or generate news summaries.
 
 Run the server and client in separate terminals:
 
