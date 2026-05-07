@@ -13,6 +13,7 @@ import {
   StockNoteRepository,
   StockObservationPlanRepository,
   StockNewsRepository,
+  StockDisclosureRepository,
   StockSignalEventRepository,
   MasterStockRepository,
   MasterStockMetaRepository,
@@ -115,6 +116,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const noteRepo = new StockNoteRepository(db);
   const observationPlanRepo = new StockObservationPlanRepository(db);
   const newsRepo = new StockNewsRepository(db);
+  const disclosureRepo = new StockDisclosureRepository(db);
   const signalEventRepo = new StockSignalEventRepository(db);
   const newsFeedService = createStockNewsFeedService({ repo: newsRepo });
   const candleRecorder = createCandleRecorder({
@@ -223,6 +225,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     observationPlanRepo,
     signalEventRepo,
     newsFeedService,
+    disclosureRepo,
     dailyBackfillService,
     todayMinuteBackfillService,
     historicalMinuteBackfillService,

@@ -26,6 +26,7 @@ import type {
   StockObservationPlanStatus,
   StockNewsFetchStatus,
   StockNewsItem,
+  StockDisclosureItem,
   StockSignalEvent,
   Tier,
 } from '@shared/types.js';
@@ -206,6 +207,17 @@ interface StockNewsFetchStatusRow {
   last_fetch_error_code: string | null;
   last_fetched_at: string;
   updated_at: string;
+}
+
+interface StockDisclosureItemRow {
+  id: string;
+  ticker: string;
+  source: string;
+  kind: string;
+  title: string;
+  url: string;
+  published_at: string | null;
+  fetched_at: string;
 }
 
 interface MasterStockRow {
@@ -396,6 +408,19 @@ function rowToStockNewsFetchStatus(row: StockNewsFetchStatusRow): StockNewsFetch
     lastFetchErrorCode: row.last_fetch_error_code,
     lastFetchedAt: row.last_fetched_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function rowToStockDisclosureItem(row: StockDisclosureItemRow): StockDisclosureItem {
+  return {
+    id: row.id,
+    ticker: row.ticker,
+    source: row.source as StockDisclosureItem['source'],
+    kind: row.kind as StockDisclosureItem['kind'],
+    title: row.title,
+    url: row.url,
+    publishedAt: row.published_at,
+    fetchedAt: row.fetched_at,
   };
 }
 
@@ -1774,5 +1799,55 @@ export class StockNewsRepository {
       lastFetchErrorCode: status?.last_fetch_error_code ?? null,
       lastFetchedAt: status?.last_fetched_at ?? null,
     };
+  }
+}
+
+export type StockDisclosureItemInput = Omit<StockDisclosureItem, 'id'>;
+
+export class StockDisclosureRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  listByTicker(ticker: string, limit = 20): StockDisclosureItem[] {
+    const safeLimit = Math.max(1, Math.min(limit, 100));
+    const rows = this.db
+      .prepare<[string, number], StockDisclosureItemRow>(
+        `SELECT id, ticker, source, kind, title, url, published_at, fetched_at
+         FROM stock_disclosure_items
+         WHERE ticker = ?
+         ORDER BY fetched_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(ticker, safeLimit);
+    return rows.map(rowToStockDisclosureItem);
+  }
+
+  upsertMany(items: readonly StockDisclosureItemInput[]): StockDisclosureItem[] {
+    if (items.length === 0) return [];
+    const stmt = this.db.prepare(
+      `INSERT INTO stock_disclosure_items (
+         id, ticker, source, kind, title, url, published_at, fetched_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(ticker, source, url) DO UPDATE SET
+         kind = excluded.kind,
+         title = excluded.title,
+         published_at = excluded.published_at,
+         fetched_at = excluded.fetched_at`,
+    );
+    this.db.transaction(() => {
+      for (const item of items) {
+        stmt.run(
+          randomUUID(),
+          item.ticker,
+          item.source,
+          item.kind,
+          item.title,
+          item.url,
+          item.publishedAt,
+          item.fetchedAt,
+        );
+      }
+    })();
+    return this.listByTicker(items[0]?.ticker ?? '');
   }
 }

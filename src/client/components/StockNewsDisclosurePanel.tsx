@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { StockNewsItem } from '@shared/types';
-import { getStockNews, refreshStockNews } from '../lib/api-client';
+import type { StockDisclosureItem, StockNewsItem } from '@shared/types';
+import {
+  getStockDisclosures,
+  getStockNews,
+  refreshStockNews,
+} from '../lib/api-client';
 
 interface StockNewsDisclosurePanelProps {
   ticker: string;
@@ -12,6 +16,7 @@ export function StockNewsDisclosurePanel({
   name,
 }: StockNewsDisclosurePanelProps) {
   const [items, setItems] = useState<StockNewsItem[]>([]);
+  const [disclosures, setDisclosures] = useState<StockDisclosureItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +57,20 @@ export function StockNewsDisclosurePanel({
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticker]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getStockDisclosures(ticker)
+      .then((next) => {
+        if (!cancelled) setDisclosures(next);
+      })
+      .catch(() => {
+        if (!cancelled) setDisclosures([]);
       });
     return () => {
       cancelled = true;
@@ -141,6 +160,40 @@ export function StockNewsDisclosurePanel({
           ))
         )}
       </div>
+      {disclosures.length > 0 && (
+        <div
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            marginBottom: 10,
+            overflow: 'hidden',
+            background: 'var(--bg-card)',
+          }}
+        >
+          {disclosures.map((item, idx) => (
+            <a
+              key={item.id}
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: 'block',
+                padding: '10px 12px',
+                borderTop: idx === 0 ? 'none' : '1px solid var(--border-soft)',
+                textDecoration: 'none',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.45 }}>
+                {item.title}
+              </div>
+              <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+                {disclosureSourceLabel(item.source)} · 구조화된 외부 공시 링크
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
       <div
         style={{
           display: 'grid',
@@ -180,6 +233,15 @@ export function StockNewsDisclosurePanel({
       </div>
     </section>
   );
+}
+
+function disclosureSourceLabel(source: StockDisclosureItem['source']): string {
+  switch (source) {
+    case 'dart':
+      return 'DART';
+    case 'kind':
+      return 'KIND';
+  }
 }
 
 function FeedState({ label, danger = false }: { label: string; danger?: boolean }) {

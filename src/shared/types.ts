@@ -411,6 +411,20 @@ export interface StockNewsFetchStatus {
   updatedAt: string;
 }
 
+export type StockDisclosureSource = 'dart' | 'kind';
+export type StockDisclosureKind = 'search-link' | 'filing';
+
+export interface StockDisclosureItem {
+  id: string;
+  ticker: string;
+  source: StockDisclosureSource;
+  kind: StockDisclosureKind;
+  title: string;
+  url: string;
+  publishedAt: string | null;
+  fetchedAt: string;
+}
+
 // === SSE event schema =====================================================
 // Shared contract for `src/server/sse/*` event emission.
 // All events carry a monotonic `id` so consumers can detect gaps and request

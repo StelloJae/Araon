@@ -6,6 +6,7 @@ import { migrateUp } from '../../db/migrator.js';
 import {
   MasterStockRepository,
   SectorRepository,
+  StockDisclosureRepository,
   StockNewsRepository,
   StockRepository,
 } from '../../db/repositories.js';
@@ -25,6 +26,7 @@ function buildApp(db: Database.Database) {
   const sectorRepo = new SectorRepository(db);
   const masterRepo = new MasterStockRepository(db);
   const newsRepo = new StockNewsRepository(db);
+  const disclosureRepo = new StockDisclosureRepository(db);
   const service = createStockService({ stockRepo, sectorRepo, masterRepo });
   stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
   const fetchHtml = vi.fn(async () =>
@@ -35,6 +37,7 @@ function buildApp(db: Database.Database) {
   app.register(stockRoutes, {
     service,
     newsFeedService,
+    disclosureRepo,
     now: () => new Date('2026-05-06T09:00:00.000Z'),
   });
   return { app, fetchHtml, newsRepo };
@@ -173,5 +176,24 @@ describe('stock news routes', () => {
         lastFetchErrorCode: null,
         lastFetchedAt: null,
       });
+  });
+
+  it('returns structured disclosure search links without fetching external pages', async () => {
+    const res = await app.inject({ method: 'GET', url: '/stocks/005930/disclosures' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ success: true; data: Array<{ source: string; kind: string; url: string }> }>();
+    expect(body.data).toEqual([
+      expect.objectContaining({
+        source: 'dart',
+        kind: 'search-link',
+        url: expect.stringContaining('dart.fss.or.kr'),
+      }),
+      expect.objectContaining({
+        source: 'kind',
+        kind: 'search-link',
+        url: expect.stringContaining('kind.krx.co.kr'),
+      }),
+    ]);
   });
 });

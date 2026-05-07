@@ -18,6 +18,7 @@ import type { StockService } from '../services/stock-service.js';
 import type {
   CandleCoverageRepository,
   PriceCandleRepository,
+  StockDisclosureRepository,
   StockNoteRepository,
   StockObservationPlanRepository,
   StockSignalEventRepository,
@@ -37,6 +38,7 @@ import type {
   PriceCandle,
   PriceCandleSource,
   StockNote,
+  StockDisclosureItem,
   StockObservationPlan,
   StockSignalEvent,
   StockSignalOutcome,
@@ -66,6 +68,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   todayMinuteBackfillService?: TodayMinuteBackfillService;
   historicalMinuteBackfillService?: HistoricalMinuteBackfillService;
   newsFeedService?: StockNewsFeedService;
+  disclosureRepo?: StockDisclosureRepository;
   now?: () => Date;
 }
 
@@ -442,6 +445,31 @@ export async function stockRoutes(
       });
     }
     return reply.send({ success: true, data: opts.newsFeedService.list(ticker) });
+  });
+
+  app.get<{ Params: { ticker: string } }>('/stocks/:ticker/disclosures', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.disclosureRepo === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'STOCK_DISCLOSURE_REPOSITORY_NOT_WIRED' },
+      });
+    }
+    const existing = opts.disclosureRepo.listByTicker(ticker);
+    if (existing.length > 0) {
+      return reply.send({ success: true, data: existing });
+    }
+    const fetchedAt = (opts.now ?? (() => new Date()))().toISOString();
+    return reply.send({
+      success: true,
+      data: opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt)),
+    });
   });
 
   app.post<{ Params: { ticker: string } }>(
@@ -1205,4 +1233,30 @@ function buildSignalOutcome(
     changePct: (candle.close / signal.signalPrice - 1) * 100,
     observedAt: candle.bucketAt,
   };
+}
+
+function buildDisclosureSearchLinks(
+  ticker: string,
+  fetchedAt: string,
+): Array<Omit<StockDisclosureItem, 'id'>> {
+  return [
+    {
+      ticker,
+      source: 'dart',
+      kind: 'search-link',
+      title: 'DART 전자공시 검색',
+      url: `https://dart.fss.or.kr/dsab007/main.do?option=corp&textCrpNm=${encodeURIComponent(ticker)}`,
+      publishedAt: null,
+      fetchedAt,
+    },
+    {
+      ticker,
+      source: 'kind',
+      kind: 'search-link',
+      title: 'KIND 상장공시 검색',
+      url: `https://kind.krx.co.kr/disclosure/disclosurebystocktype.do?method=searchDisclosureByStockTypeMain&searchCorpName=${encodeURIComponent(ticker)}`,
+      publishedAt: null,
+      fetchedAt,
+    },
+  ];
 }

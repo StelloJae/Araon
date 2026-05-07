@@ -13,6 +13,7 @@ import type {
   Favorite,
   Stock,
   StockNewsItem,
+  StockDisclosureItem,
   StockNote,
   StockObservationPlan,
   StockObservationPlanStatus,
@@ -160,6 +161,11 @@ export async function getStockTimeline(ticker: string): Promise<StockTimelineIte
 export async function getStockNews(ticker: string): Promise<StockNewsItem[]> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/news`);
   return unwrap<StockNewsItem[]>(res);
+}
+
+export async function getStockDisclosures(ticker: string): Promise<StockDisclosureItem[]> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/disclosures`);
+  return unwrap<StockDisclosureItem[]>(res);
 }
 
 export async function refreshStockNews(ticker: string): Promise<StockNewsItem[]> {
