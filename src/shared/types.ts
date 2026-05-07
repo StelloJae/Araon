@@ -459,6 +459,20 @@ export interface StockNewsItem {
   isNew?: boolean;
 }
 
+export interface PageInfo {
+  limit: number;
+  offset: number;
+  total: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+export interface StockNewsPage {
+  items: StockNewsItem[];
+  pagination: PageInfo;
+  fetchStatus: StockNewsFetchStatus | null;
+}
+
 export type StockNewsFetchStatusValue = 'success' | 'failed';
 
 export interface StockNewsFetchStatus {
@@ -481,6 +495,11 @@ export interface StockDisclosureItem {
   url: string;
   publishedAt: string | null;
   fetchedAt: string;
+}
+
+export interface StockDisclosurePage {
+  items: StockDisclosureItem[];
+  pagination: PageInfo;
 }
 
 // === SSE event schema =====================================================

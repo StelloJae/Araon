@@ -41,6 +41,7 @@ import type {
   PriceHistoryApiItem,
   StockNote,
   StockDisclosureItem,
+  StockDisclosurePage,
   StockObservationPlan,
   StockSignalEvent,
   StockSignalOutcome,
@@ -187,6 +188,11 @@ const timelineQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(30),
 });
 
+const feedPageQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(50).default(5),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+
 type AddOneBody = z.infer<typeof addOneBodySchema>;
 type BulkBody = z.infer<typeof bulkBodySchema>;
 type CandleBackfillBody = z.infer<typeof candleBackfillBodySchema>;
@@ -196,6 +202,7 @@ type StockNoteBody = z.infer<typeof stockNoteBodySchema>;
 type ObservationPlanBody = z.infer<typeof observationPlanBodySchema>;
 type StockNoteQuery = z.input<typeof stockNoteQuerySchema>;
 type SignalEventBody = z.infer<typeof signalEventBodySchema>;
+type FeedPageQuery = z.input<typeof feedPageQuerySchema>;
 
 // === Plugin ===================================================================
 
@@ -452,12 +459,19 @@ export async function stockRoutes(
     return reply.send({ success: true, data: items });
   });
 
-  app.get<{ Params: { ticker: string } }>('/stocks/:ticker/news', async (request, reply) => {
+  app.get<{ Params: { ticker: string }; Querystring: FeedPageQuery }>('/stocks/:ticker/news', async (request, reply) => {
     const ticker = request.params.ticker;
     if (!/^\d{6}$/.test(ticker)) {
       return reply.status(400).send({
         success: false,
         error: { code: 'INVALID_TICKER' },
+      });
+    }
+    const parsed = feedPageQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_QUERY', details: parsed.error.flatten() },
       });
     }
     if (opts.newsFeedService === undefined) {
@@ -466,15 +480,22 @@ export async function stockRoutes(
         error: { code: 'STOCK_NEWS_FEED_NOT_WIRED' },
       });
     }
-    return reply.send({ success: true, data: opts.newsFeedService.list(ticker) });
+    return reply.send({ success: true, data: opts.newsFeedService.page(ticker, parsed.data) });
   });
 
-  app.get<{ Params: { ticker: string } }>('/stocks/:ticker/disclosures', async (request, reply) => {
+  app.get<{ Params: { ticker: string }; Querystring: FeedPageQuery }>('/stocks/:ticker/disclosures', async (request, reply) => {
     const ticker = request.params.ticker;
     if (!/^\d{6}$/.test(ticker)) {
       return reply.status(400).send({
         success: false,
         error: { code: 'INVALID_TICKER' },
+      });
+    }
+    const parsed = feedPageQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_QUERY', details: parsed.error.flatten() },
       });
     }
     if (opts.disclosureRepo === undefined) {
@@ -503,15 +524,19 @@ export async function stockRoutes(
       opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt.toISOString()));
       return reply.send({
         success: true,
-        data: opts.disclosureRepo.listByTicker(ticker),
+        data: buildDisclosurePage(opts.disclosureRepo, ticker, parsed.data),
       });
     }
     if (existing.length > 0) {
-      return reply.send({ success: true, data: existing });
+      return reply.send({
+        success: true,
+        data: buildDisclosurePage(opts.disclosureRepo, ticker, parsed.data),
+      });
     }
+    opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt.toISOString()));
     return reply.send({
       success: true,
-      data: opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt.toISOString())),
+      data: buildDisclosurePage(opts.disclosureRepo, ticker, parsed.data),
     });
   });
 
@@ -538,10 +563,13 @@ export async function stockRoutes(
           now: (opts.now ?? (() => new Date()))(),
         };
         if (stockName !== undefined) refreshInput.name = stockName;
-        const data = await opts.newsFeedService.refresh({
+        await opts.newsFeedService.refresh({
           ...refreshInput,
         });
-        return reply.send({ success: true, data });
+        return reply.send({
+          success: true,
+          data: opts.newsFeedService.page(ticker, { limit: 5, offset: 0 }),
+        });
       } catch (err: unknown) {
         log.warn(
           { ticker, err: err instanceof Error ? err.message : String(err) },
@@ -1554,4 +1582,24 @@ function buildDisclosureSearchLinks(
       fetchedAt,
     },
   ];
+}
+
+function buildDisclosurePage(
+  repo: StockDisclosureRepository,
+  ticker: string,
+  options: { limit?: number; offset?: number },
+): StockDisclosurePage {
+  const limit = Math.max(1, Math.min(options.limit ?? 5, 50));
+  const offset = Math.max(0, options.offset ?? 0);
+  const total = repo.countByTicker(ticker);
+  return {
+    items: repo.listByTicker(ticker, { limit, offset }),
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasNext: offset + limit < total,
+      hasPrev: offset > 0,
+    },
+  };
 }

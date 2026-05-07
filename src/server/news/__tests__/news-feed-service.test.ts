@@ -50,7 +50,13 @@ describe('stock news feed service', () => {
       '<a href="/item/news_read.naver?article_id=2&office_id=001&code=005930">새 뉴스</a>',
     );
     const service = createStockNewsFeedService({
-      repo: { upsertMany: vi.fn(() => []), listByTicker: vi.fn(() => []), recordFetchStatus: vi.fn() },
+      repo: {
+        upsertMany: vi.fn(() => []),
+        listByTicker: vi.fn(() => []),
+        countByTicker: vi.fn(() => 0),
+        recordFetchStatus: vi.fn(),
+        getFetchStatus: vi.fn(() => null),
+      },
       fetchHtml,
     });
 
@@ -72,7 +78,13 @@ describe('stock news feed service', () => {
     const listByTicker = vi.fn(() => []);
     const recordFetchStatus = vi.fn();
     const service = createStockNewsFeedService({
-      repo: { upsertMany, listByTicker, recordFetchStatus },
+      repo: {
+        upsertMany,
+        listByTicker,
+        countByTicker: vi.fn(() => 0),
+        recordFetchStatus,
+        getFetchStatus: vi.fn(() => null),
+      },
       fetchHtml: vi.fn(async () =>
         '<a href="/item/news_read.naver?article_id=2&office_id=001&code=005930">새 뉴스</a>',
       ),
@@ -119,7 +131,13 @@ describe('stock news feed service', () => {
       },
     ]);
     const service = createStockNewsFeedService({
-      repo: { upsertMany, listByTicker, recordFetchStatus: vi.fn() },
+      repo: {
+        upsertMany,
+        listByTicker,
+        countByTicker: vi.fn(() => 1),
+        recordFetchStatus: vi.fn(),
+        getFetchStatus: vi.fn(() => null),
+      },
       fetchHtml: vi.fn(async () =>
         '<a href="/item/news_read.naver?article_id=2&office_id=001&code=005930">다시 본 뉴스</a>',
       ),
@@ -139,7 +157,13 @@ describe('stock news feed service', () => {
       items.map((item: any, index: number) => ({ id: `news-${index}`, ...item })),
     );
     const service = createStockNewsFeedService({
-      repo: { upsertMany, listByTicker: vi.fn(() => []), recordFetchStatus: vi.fn() },
+      repo: {
+        upsertMany,
+        listByTicker: vi.fn(() => []),
+        countByTicker: vi.fn(() => 0),
+        recordFetchStatus: vi.fn(),
+        getFetchStatus: vi.fn(() => null),
+      },
       fetchHtml: vi.fn(async () => ''),
       searchNews: vi.fn(async () => [
         {

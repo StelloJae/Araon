@@ -1,16 +1,20 @@
-import type { StockNewsItem } from '@shared/types.js';
+import type { StockNewsItem, StockNewsPage } from '@shared/types.js';
 import iconv from 'iconv-lite';
 import type { StockNewsRepository } from '../db/repositories.js';
 
 type ParsedStockNewsItem = Omit<StockNewsItem, 'id' | 'isNew'>;
 
 export interface StockNewsFeedService {
-  list(ticker: string): StockNewsItem[];
+  list(ticker: string, options?: { limit?: number; offset?: number }): StockNewsItem[];
+  page(ticker: string, options?: { limit?: number; offset?: number }): StockNewsPage;
   refresh(input: { ticker: string; name?: string; now: Date }): Promise<StockNewsItem[]>;
 }
 
 export interface CreateStockNewsFeedServiceOptions {
-  repo: Pick<StockNewsRepository, 'listByTicker' | 'upsertMany' | 'recordFetchStatus'>;
+  repo: Pick<
+    StockNewsRepository,
+    'listByTicker' | 'countByTicker' | 'upsertMany' | 'recordFetchStatus' | 'getFetchStatus'
+  >;
   fetchHtml?: (url: string) => Promise<string>;
   searchNews?: (input: { ticker: string; name: string; now: Date }) => Promise<StockSearchNewsResult[]>;
 }
@@ -36,8 +40,25 @@ export function createStockNewsFeedService(
 ): StockNewsFeedService {
   const fetchHtml = options.fetchHtml ?? defaultFetchHtml;
 
-  function list(ticker: string): StockNewsItem[] {
-    return options.repo.listByTicker(ticker);
+  function list(ticker: string, listOptions: { limit?: number; offset?: number } = {}): StockNewsItem[] {
+    return options.repo.listByTicker(ticker, listOptions);
+  }
+
+  function page(ticker: string, pageOptions: { limit?: number; offset?: number } = {}): StockNewsPage {
+    const limit = Math.max(1, Math.min(pageOptions.limit ?? 5, 50));
+    const offset = Math.max(0, pageOptions.offset ?? 0);
+    const total = options.repo.countByTicker(ticker);
+    return {
+      items: options.repo.listByTicker(ticker, { limit, offset }),
+      pagination: {
+        limit,
+        offset,
+        total,
+        hasNext: offset + limit < total,
+        hasPrev: offset > 0,
+      },
+      fetchStatus: options.repo.getFetchStatus(ticker),
+    };
   }
 
   async function refresh(input: { ticker: string; name?: string; now: Date }): Promise<StockNewsItem[]> {
@@ -104,7 +125,7 @@ export function createStockNewsFeedService(
     }
   }
 
-  return { list, refresh };
+  return { list, page, refresh };
 }
 
 export function parseNaverFinanceNews(

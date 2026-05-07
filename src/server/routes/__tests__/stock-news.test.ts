@@ -60,7 +60,20 @@ describe('stock news routes', () => {
   it('lists cached news feed items', async () => {
     const empty = await app.inject({ method: 'GET', url: '/stocks/005930/news' });
     expect(empty.statusCode).toBe(200);
-    expect(empty.json()).toEqual({ success: true, data: [] });
+    expect(empty.json()).toEqual({
+      success: true,
+      data: {
+        items: [],
+        pagination: {
+          limit: 5,
+          offset: 0,
+          total: 0,
+          hasNext: false,
+          hasPrev: false,
+        },
+        fetchStatus: null,
+      },
+    });
   });
 
   it('refreshes news feed items without synthetic summaries', async () => {
@@ -69,7 +82,7 @@ describe('stock news routes', () => {
       url: '/stocks/005930/news/refresh',
     });
     expect(refreshed.statusCode).toBe(200);
-    expect(refreshed.json().data).toEqual([
+    expect(refreshed.json().data.items).toEqual([
       expect.objectContaining({
         ticker: '005930',
         title: '새 뉴스',
@@ -80,7 +93,52 @@ describe('stock news routes', () => {
     ]);
 
     const listed = await app.inject({ method: 'GET', url: '/stocks/005930/news' });
-    expect(listed.json().data).toHaveLength(1);
+    expect(listed.json().data.items).toHaveLength(1);
+    expect(listed.json().data.pagination).toMatchObject({
+      limit: 5,
+      offset: 0,
+      total: 1,
+      hasNext: false,
+      hasPrev: false,
+    });
+  });
+
+  it('paginates cached news feed items', async () => {
+    const newsRepo = new StockNewsRepository(db);
+    newsRepo.upsertMany([
+      {
+        ticker: '005930',
+        source: 'naver-finance',
+        title: '첫 뉴스',
+        url: 'https://finance.naver.com/item/news_read.naver?article_id=10&office_id=001&code=005930',
+        description: null,
+        publishedAt: '2026-05-06T08:00:00.000Z',
+        fetchedAt: '2026-05-06T09:00:00.000Z',
+      },
+      {
+        ticker: '005930',
+        source: 'naver-finance',
+        title: '둘째 뉴스',
+        url: 'https://finance.naver.com/item/news_read.naver?article_id=11&office_id=001&code=005930',
+        description: null,
+        publishedAt: '2026-05-06T07:00:00.000Z',
+        fetchedAt: '2026-05-06T09:00:00.000Z',
+      },
+    ]);
+
+    const res = await app.inject({ method: 'GET', url: '/stocks/005930/news?limit=1&offset=1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.items).toEqual([
+      expect.objectContaining({ title: '둘째 뉴스' }),
+    ]);
+    expect(res.json().data.pagination).toEqual({
+      limit: 1,
+      offset: 1,
+      total: 2,
+      hasNext: false,
+      hasPrev: true,
+    });
   });
 
   it('records sanitized refresh failure state without storing raw HTML', async () => {
@@ -187,8 +245,8 @@ describe('stock news routes', () => {
     const res = await app.inject({ method: 'GET', url: '/stocks/005930/disclosures' });
 
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ success: true; data: Array<{ source: string; kind: string; url: string }> }>();
-    expect(body.data).toEqual([
+    const body = res.json<{ success: true; data: { items: Array<{ source: string; kind: string; url: string }> } }>();
+    expect(body.data.items).toEqual([
       expect.objectContaining({
         source: 'dart',
         kind: 'search-link',
@@ -240,7 +298,7 @@ describe('stock news routes', () => {
       ticker: '005930',
       now: new Date('2026-05-07T04:00:00.000Z'),
     });
-    expect(res.json().data).toEqual(
+    expect(res.json().data.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'filing', title: '주요사항보고서' }),
         expect.objectContaining({ kind: 'search-link', source: 'dart' }),
@@ -248,5 +306,25 @@ describe('stock news routes', () => {
       ]),
     );
     await dartApp.close();
+  });
+
+  it('paginates disclosure items after fallback search links are stored', async () => {
+    const first = await app.inject({ method: 'GET', url: '/stocks/005930/disclosures' });
+    expect(first.statusCode).toBe(200);
+
+    const second = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/disclosures?limit=1&offset=1',
+    });
+
+    expect(second.statusCode).toBe(200);
+    expect(second.json().data.items).toHaveLength(1);
+    expect(second.json().data.pagination).toEqual({
+      limit: 1,
+      offset: 1,
+      total: 2,
+      hasNext: false,
+      hasPrev: true,
+    });
   });
 });

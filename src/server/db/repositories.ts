@@ -1870,18 +1870,32 @@ export interface StockNewsGrowthSummary {
 export class StockNewsRepository {
   constructor(private readonly db: Database.Database) {}
 
-  listByTicker(ticker: string, limit = 20): StockNewsItem[] {
-    const safeLimit = Math.max(1, Math.min(limit, 100));
+  listByTicker(
+    ticker: string,
+    options: number | { limit?: number; offset?: number } = 20,
+  ): StockNewsItem[] {
+    const { limit, offset } = normalizeListOptions(options);
     const rows = this.db
-      .prepare<[string, number], StockNewsItemRow>(
+      .prepare<[string, number, number], StockNewsItemRow>(
         `SELECT id, ticker, source, title, url, description, published_at, fetched_at
          FROM stock_news_items
          WHERE ticker = ?
          ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC
-         LIMIT ?`,
+         LIMIT ? OFFSET ?`,
       )
-      .all(ticker, safeLimit);
+      .all(ticker, limit, offset);
     return rows.map(rowToStockNewsItem);
+  }
+
+  countByTicker(ticker: string): number {
+    const row = this.db
+      .prepare<[string], { count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM stock_news_items
+         WHERE ticker = ?`,
+      )
+      .get(ticker);
+    return row?.count ?? 0;
   }
 
   upsertMany(items: readonly StockNewsItemInput[]): StockNewsItem[] {
@@ -2009,10 +2023,13 @@ export type StockDisclosureItemInput = Omit<StockDisclosureItem, 'id'>;
 export class StockDisclosureRepository {
   constructor(private readonly db: Database.Database) {}
 
-  listByTicker(ticker: string, limit = 20): StockDisclosureItem[] {
-    const safeLimit = Math.max(1, Math.min(limit, 100));
+  listByTicker(
+    ticker: string,
+    options: number | { limit?: number; offset?: number } = 20,
+  ): StockDisclosureItem[] {
+    const { limit, offset } = normalizeListOptions(options);
     const rows = this.db
-      .prepare<[string, number], StockDisclosureItemRow>(
+      .prepare<[string, number, number], StockDisclosureItemRow>(
         `SELECT id, ticker, source, kind, title, url, published_at, fetched_at
          FROM stock_disclosure_items
          WHERE ticker = ?
@@ -2023,10 +2040,21 @@ export class StockDisclosureRepository {
              ELSE 2
            END,
            id DESC
-         LIMIT ?`,
+         LIMIT ? OFFSET ?`,
       )
-      .all(ticker, safeLimit);
+      .all(ticker, limit, offset);
     return rows.map(rowToStockDisclosureItem);
+  }
+
+  countByTicker(ticker: string): number {
+    const row = this.db
+      .prepare<[string], { count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM stock_disclosure_items
+         WHERE ticker = ?`,
+      )
+      .get(ticker);
+    return row?.count ?? 0;
   }
 
   upsertMany(items: readonly StockDisclosureItemInput[]): StockDisclosureItem[] {
@@ -2058,6 +2086,21 @@ export class StockDisclosureRepository {
     })();
     return this.listByTicker(items[0]?.ticker ?? '');
   }
+}
+
+function normalizeListOptions(
+  options: number | { limit?: number; offset?: number },
+): { limit: number; offset: number } {
+  if (typeof options === 'number') {
+    return {
+      limit: Math.max(1, Math.min(options, 100)),
+      offset: 0,
+    };
+  }
+  return {
+    limit: Math.max(1, Math.min(options.limit ?? 20, 100)),
+    offset: Math.max(0, options.offset ?? 0),
+  };
 }
 
 export interface DartCorpCode {

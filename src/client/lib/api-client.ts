@@ -15,8 +15,8 @@ import type {
   LocalRestoreResult,
   PriceHistoryApiResponse,
   Stock,
-  StockNewsItem,
-  StockDisclosureItem,
+  StockDisclosurePage,
+  StockNewsPage,
   StockNote,
   StockObservationPlan,
   StockObservationPlanStatus,
@@ -161,21 +161,39 @@ export async function getStockTimeline(ticker: string): Promise<StockTimelineIte
   return unwrap<StockTimelineItem[]>(res);
 }
 
-export async function getStockNews(ticker: string): Promise<StockNewsItem[]> {
-  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/news`);
-  return unwrap<StockNewsItem[]>(res);
+export async function getStockNews(
+  ticker: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<StockNewsPage> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.offset !== undefined) params.set('offset', String(options.offset));
+  const query = params.toString();
+  const res = await fetch(
+    `/stocks/${encodeURIComponent(ticker)}/news${query.length > 0 ? `?${query}` : ''}`,
+  );
+  return unwrap<StockNewsPage>(res);
 }
 
-export async function getStockDisclosures(ticker: string): Promise<StockDisclosureItem[]> {
-  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/disclosures`);
-  return unwrap<StockDisclosureItem[]>(res);
+export async function getStockDisclosures(
+  ticker: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<StockDisclosurePage> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.offset !== undefined) params.set('offset', String(options.offset));
+  const query = params.toString();
+  const res = await fetch(
+    `/stocks/${encodeURIComponent(ticker)}/disclosures${query.length > 0 ? `?${query}` : ''}`,
+  );
+  return unwrap<StockDisclosurePage>(res);
 }
 
-export async function refreshStockNews(ticker: string): Promise<StockNewsItem[]> {
+export async function refreshStockNews(ticker: string): Promise<StockNewsPage> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/news/refresh`, {
     method: 'POST',
   });
-  return unwrap<StockNewsItem[]>(res);
+  return unwrap<StockNewsPage>(res);
 }
 
 export type CandleRange = '1d' | '1w' | '1m' | '3m' | '6m' | '1y';

@@ -11,46 +11,65 @@ interface StockNewsDisclosurePanelProps {
   name: string;
 }
 
+const FEED_PAGE_SIZE = 5;
+const EMPTY_PAGE = {
+  limit: FEED_PAGE_SIZE,
+  offset: 0,
+  total: 0,
+  hasNext: false,
+  hasPrev: false,
+};
+
 export function StockNewsDisclosurePanel({
   ticker,
   name,
 }: StockNewsDisclosurePanelProps) {
   const [items, setItems] = useState<StockNewsItem[]>([]);
   const [disclosures, setDisclosures] = useState<StockDisclosureItem[]>([]);
+  const [newsPage, setNewsPage] = useState(EMPTY_PAGE);
+  const [disclosurePage, setDisclosurePage] = useState(EMPTY_PAGE);
+  const [newsOffset, setNewsOffset] = useState(0);
+  const [disclosureOffset, setDisclosureOffset] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [disclosureLoading, setDisclosureLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const encodedName = encodeURIComponent(name);
-  const links = [
+  const fallbackLinks = [
     {
       label: '네이버 금융 뉴스',
-      detail: '종목 뉴스와 시황 기사',
       href: `https://finance.naver.com/item/news.naver?code=${encodeURIComponent(ticker)}`,
     },
     {
       label: '네이버 금융 종목',
-      detail: '종목 기본 정보와 토론 흐름',
       href: `https://finance.naver.com/item/main.naver?code=${encodeURIComponent(ticker)}`,
     },
     {
       label: 'DART 공시 검색',
-      detail: '금감원 전자공시 검색',
       href: `https://dart.fss.or.kr/dsab007/main.do?option=corp&textCrpNm=${encodedName}`,
     },
     {
       label: 'KIND 공시',
-      detail: 'KRX 상장공시 검색',
       href: `https://kind.krx.co.kr/disclosure/disclosurebystocktype.do?method=searchDisclosureByStockTypeMain&searchCorpName=${encodedName}`,
     },
   ];
+  const showFallbackLinks =
+    !loading &&
+    !disclosureLoading &&
+    error === null &&
+    items.length === 0 &&
+    disclosures.length === 0;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void getStockNews(ticker)
+    void getStockNews(ticker, { limit: FEED_PAGE_SIZE, offset: newsOffset })
       .then((next) => {
-        if (!cancelled) setItems(next);
+        if (!cancelled) {
+          setItems(next.items);
+          setNewsPage(next.pagination);
+        }
       })
       .catch(() => {
         if (!cancelled) setError('뉴스 피드를 불러오지 못했습니다.');
@@ -61,27 +80,42 @@ export function StockNewsDisclosurePanel({
     return () => {
       cancelled = true;
     };
-  }, [ticker]);
+  }, [ticker, newsOffset]);
 
   useEffect(() => {
     let cancelled = false;
-    void getStockDisclosures(ticker)
+    setDisclosureLoading(true);
+    void getStockDisclosures(ticker, { limit: FEED_PAGE_SIZE, offset: disclosureOffset })
       .then((next) => {
-        if (!cancelled) setDisclosures(next);
+        if (!cancelled) {
+          setDisclosures(next.items);
+          setDisclosurePage(next.pagination);
+        }
       })
       .catch(() => {
         if (!cancelled) setDisclosures([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDisclosureLoading(false);
       });
     return () => {
       cancelled = true;
     };
+  }, [ticker, disclosureOffset]);
+
+  useEffect(() => {
+    setNewsOffset(0);
+    setDisclosureOffset(0);
   }, [ticker]);
 
   async function refreshFeed() {
     setRefreshing(true);
     setError(null);
     try {
-      setItems(await refreshStockNews(ticker));
+      const next = await refreshStockNews(ticker);
+      setNewsOffset(0);
+      setItems(next.items);
+      setNewsPage(next.pagination);
     } catch {
       setError('뉴스 피드를 갱신하지 못했습니다.');
     } finally {
@@ -140,8 +174,16 @@ export function StockNewsDisclosurePanel({
             <NewsFeedItemLink key={item.id} item={item} first={idx === 0} />
           ))
         )}
+        {items.length > 0 && (
+          <PaginationBar
+            page={newsPage}
+            label="뉴스"
+            onPrev={() => setNewsOffset(Math.max(0, newsPage.offset - newsPage.limit))}
+            onNext={() => setNewsOffset(newsPage.offset + newsPage.limit)}
+          />
+        )}
       </div>
-      {disclosures.length > 0 && (
+      {(disclosures.length > 0 || disclosureLoading) && (
         <div
           style={{
             border: '1px solid var(--border)',
@@ -151,67 +193,44 @@ export function StockNewsDisclosurePanel({
             background: 'var(--bg-card)',
           }}
         >
-          {disclosures.map((item, idx) => (
-            <a
-              key={item.id}
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                display: 'block',
-                padding: '10px 12px',
-                borderTop: idx === 0 ? 'none' : '1px solid var(--border-soft)',
-                textDecoration: 'none',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.45 }}>
-                {item.title}
-              </div>
-              <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-                {disclosureSourceLabel(item.source)} · 구조화된 외부 공시 링크
-              </div>
-            </a>
-          ))}
+          {disclosureLoading ? (
+            <FeedState label="공시 항목을 불러오는 중" />
+          ) : (
+            disclosures.map((item, idx) => (
+              <DisclosureItemLink key={item.id} item={item} first={idx === 0} />
+            ))
+          )}
+          {disclosures.length > 0 && (
+            <PaginationBar
+              page={disclosurePage}
+              label="공시"
+              onPrev={() => setDisclosureOffset(Math.max(0, disclosurePage.offset - disclosurePage.limit))}
+              onNext={() => setDisclosureOffset(disclosurePage.offset + disclosurePage.limit)}
+            />
+          )}
         </div>
       )}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          gap: 8,
-        }}
-      >
-        {links.map((link) => (
+      {showFallbackLinks && (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+          외부에서 확인:{' '}
+          {fallbackLinks.map((link, idx) => (
           <a
             key={link.label}
             href={link.href}
             target="_blank"
             rel="noreferrer"
             style={{
-              display: 'block',
-              textDecoration: 'none',
-              border: '1px solid var(--border)',
-              borderRadius: 10,
-              padding: '11px 12px',
-              background: 'var(--bg-card)',
-              color: 'var(--text-primary)',
+              color: 'var(--text-secondary)',
+              fontWeight: 700,
+              textDecoration: 'underline',
+              textUnderlineOffset: 2,
             }}
           >
-            <div style={{ fontSize: 12, fontWeight: 800 }}>{link.label}</div>
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: 11,
-                lineHeight: 1.45,
-                color: 'var(--text-muted)',
-              }}
-            >
-              {link.detail}
-            </div>
+            {idx > 0 ? ` · ${link.label}` : link.label}
           </a>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -264,6 +283,118 @@ export function NewsFeedItemLink({
         </div>
       )}
     </a>
+  );
+}
+
+function DisclosureItemLink({
+  item,
+  first,
+}: {
+  item: StockDisclosureItem;
+  first: boolean;
+}) {
+  return (
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noreferrer"
+      style={{
+        display: 'block',
+        padding: '10px 12px',
+        borderTop: first ? 'none' : '1px solid var(--border-soft)',
+        textDecoration: 'none',
+        color: 'var(--text-primary)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.45 }}>
+          {item.title}
+        </span>
+        <span
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 999,
+            padding: '2px 6px',
+            color: 'var(--text-muted)',
+            fontSize: 10,
+            fontWeight: 800,
+          }}
+        >
+          {item.kind === 'filing' ? '공시' : '검색'}
+        </span>
+      </div>
+      <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+        {disclosureSourceLabel(item.source)} · {formatFeedTime(item.publishedAt ?? item.fetchedAt)}
+      </div>
+    </a>
+  );
+}
+
+function PaginationBar({
+  page,
+  label,
+  onPrev,
+  onNext,
+}: {
+  page: typeof EMPTY_PAGE;
+  label: string;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const from = page.total === 0 ? 0 : page.offset + 1;
+  const to = Math.min(page.offset + page.limit, page.total);
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        padding: '8px 10px',
+        borderTop: '1px solid var(--border-soft)',
+        fontSize: 11,
+        color: 'var(--text-muted)',
+      }}
+    >
+      <span>
+        {label} {from}-{to} / {page.total}
+      </span>
+      <span style={{ display: 'flex', gap: 6 }}>
+        <PageButton disabled={!page.hasPrev} onClick={onPrev}>이전</PageButton>
+        <PageButton disabled={!page.hasNext} onClick={onNext}>다음</PageButton>
+      </span>
+    </div>
+  );
+}
+
+function PageButton({
+  disabled,
+  onClick,
+  children,
+}: {
+  disabled: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        height: 24,
+        border: '1px solid var(--border)',
+        borderRadius: 7,
+        background: disabled ? 'var(--bg-muted)' : 'var(--bg-card)',
+        color: disabled ? 'var(--text-muted)' : 'var(--text-primary)',
+        fontSize: 10,
+        fontWeight: 800,
+        padding: '0 8px',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
