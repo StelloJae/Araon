@@ -34,6 +34,14 @@ It is not a broker, trading bot, or advisory product. Araon never places orders
 and does not manage your account. The intent is simple: keep the important
 market context visible while you make decisions somewhere else.
 
+## Preview
+
+![Araon dashboard](docs/assets/screenshots/araon-dashboard.png)
+
+![Araon stock chart](docs/assets/screenshots/araon-stock-chart.png)
+
+[Watch a short demo](docs/assets/demo/araon-flow.mp4)
+
 ## Who It Is For
 
 Araon is built for people who:

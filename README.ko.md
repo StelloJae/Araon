@@ -33,6 +33,14 @@
 자동매매 기능은 없습니다. 실제 거래는 기존에 쓰는 증권사 환경에서 하고,
 아라온은 옆에서 가격 흐름과 관련 정보를 정리해주는 역할에 집중합니다.
 
+## 화면 미리보기
+
+![Araon dashboard](docs/assets/screenshots/araon-dashboard.png)
+
+![Araon stock chart](docs/assets/screenshots/araon-stock-chart.png)
+
+[짧은 데모 영상 보기](docs/assets/demo/araon-flow.mp4)
+
 ## 이런 사람에게 맞습니다
 
 - 폰이나 증권사 앱으로 거래하고, 별도 화면에는 관찰용 대시보드를 켜두고 싶은 사람

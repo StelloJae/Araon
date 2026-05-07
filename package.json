@@ -29,6 +29,7 @@
     "dist/client/**/*",
     "dist/cli/**/*",
     "src/server/db/migrations/**/*",
+    "docs/assets/**/*",
     "docs/guides/**/*",
     "docs/release-notes/v1.1.0.md",
     "README.md",

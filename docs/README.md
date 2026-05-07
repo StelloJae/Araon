@@ -37,6 +37,10 @@ Guides are written for people trying Araon for the first time.
 - [KIS OpenAPI setup guide](guides/kis-openapi-setup.md)
 - [Araon 공유용 체크리스트](guides/share-araon.ko.md)
 
+## Assets
+
+Reusable screenshots and short demo media live in [assets](assets/README.md).
+
 ## Archive
 
 `docs/archive/` contains implementation notes, live-probe evidence, acceptance
