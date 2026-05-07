@@ -6,8 +6,6 @@ Included:
 
 - tracked stocks
 - favorites
-- stock observation notes
-- stock observation plans
 
 Excluded:
 
@@ -34,8 +32,7 @@ Content-Type: application/json
 ```
 
 The payload uses `schemaVersion: 1`. Restore writes tracked stocks first, then
-favorites, notes, and observation plans so foreign-key dependent local records
-can be restored safely.
+favorites.
 
 ## UI
 
@@ -46,3 +43,7 @@ The panel downloads a JSON backup and accepts the same JSON for restore.
 
 This feature never exports `credentials.enc`, tokens, approval keys, account
 values, candles, or raw tick data. It is not a market-data backup mechanism.
+
+Observation notes, observation plans, and the observation timeline were removed
+from the product surface on 2026-05-07, so they are no longer exported or
+restored.

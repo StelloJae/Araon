@@ -22,9 +22,6 @@ import type {
   CandleCoverageLedgerStatus,
   PriceCandleSource,
   StoredCandleInterval,
-  StockNote,
-  StockObservationPlan,
-  StockObservationPlanStatus,
   StockNewsFetchStatus,
   StockNewsItem,
   StockDisclosureItem,
@@ -161,24 +158,6 @@ interface CandleCoverageSegmentRow {
   inserted: number;
   updated: number;
   last_error_code: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface StockNoteRow {
-  id: string;
-  ticker: string;
-  body: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface StockObservationPlanRow {
-  ticker: string;
-  thesis: string;
-  trigger: string;
-  invalidation: string;
-  status: string;
   created_at: string;
   updated_at: string;
 }
@@ -375,28 +354,6 @@ function rowToCandleCoverageSegment(row: CandleCoverageSegmentRow): CandleCovera
     inserted: row.inserted,
     updated: row.updated,
     lastErrorCode: row.last_error_code,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function rowToStockNote(row: StockNoteRow): StockNote {
-  return {
-    id: row.id,
-    ticker: row.ticker,
-    body: row.body,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function rowToStockObservationPlan(row: StockObservationPlanRow): StockObservationPlan {
-  return {
-    ticker: row.ticker,
-    thesis: row.thesis,
-    trigger: row.trigger,
-    invalidation: row.invalidation,
-    status: row.status as StockObservationPlan['status'],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1467,210 +1424,6 @@ export class CandleCoverageRepository {
           .sort()
           .at(-1) ?? null,
     };
-  }
-}
-
-// === StockNoteRepository ======================================================
-
-export interface StockNoteListOptions {
-  limit?: number;
-  offset?: number;
-}
-
-export interface StockNoteGrowthSummary {
-  noteCount: number;
-  oldestNoteAt: string | null;
-  newestNoteAt: string | null;
-}
-
-const STOCK_NOTE_DEFAULT_LIMIT = 50;
-const STOCK_NOTE_MAX_LIMIT = 200;
-
-export class StockNoteRepository {
-  constructor(private readonly db: Database.Database) {}
-
-  listAll(limit = 5000): StockNote[] {
-    const safeLimit = Math.max(1, Math.min(limit, 5000));
-    const rows = this.db
-      .prepare<[number], StockNoteRow>(
-        `SELECT id, ticker, body, created_at, updated_at
-         FROM stock_notes
-         ORDER BY created_at DESC, id DESC
-         LIMIT ?`,
-      )
-      .all(safeLimit);
-    return rows.map(rowToStockNote);
-  }
-
-  listByTicker(ticker: string, options: StockNoteListOptions = {}): StockNote[] {
-    const limit = Math.max(1, Math.min(options.limit ?? STOCK_NOTE_DEFAULT_LIMIT, STOCK_NOTE_MAX_LIMIT));
-    const offset = Math.max(0, options.offset ?? 0);
-    const rows = this.db
-      .prepare<[string, number, number], StockNoteRow>(
-        `SELECT id, ticker, body, created_at, updated_at
-         FROM stock_notes
-         WHERE ticker = ?
-         ORDER BY created_at DESC, id DESC
-         LIMIT ?
-         OFFSET ?`,
-      )
-      .all(ticker, limit, offset);
-    return rows.map(rowToStockNote);
-  }
-
-  summarizeGrowth(): StockNoteGrowthSummary {
-    const row = this.db
-      .prepare<[], {
-        note_count: number;
-        oldest_note_at: string | null;
-        newest_note_at: string | null;
-      }>(
-        `SELECT COUNT(*) AS note_count,
-                MIN(created_at) AS oldest_note_at,
-                MAX(created_at) AS newest_note_at
-         FROM stock_notes`,
-      )
-      .get();
-    return {
-      noteCount: row?.note_count ?? 0,
-      oldestNoteAt: row?.oldest_note_at ?? null,
-      newestNoteAt: row?.newest_note_at ?? null,
-    };
-  }
-
-  create(input: { ticker: string; body: string; now?: Date }): StockNote {
-    const nowIso = (input.now ?? new Date()).toISOString();
-    const note: StockNote = {
-      id: randomUUID(),
-      ticker: input.ticker,
-      body: input.body,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    };
-    this.db
-      .prepare(
-        `INSERT INTO stock_notes (id, ticker, body, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(note.id, note.ticker, note.body, note.createdAt, note.updatedAt);
-    return note;
-  }
-
-  restoreMany(notes: readonly StockNote[]): number {
-    const stmt = this.db.prepare(
-      `INSERT INTO stock_notes (id, ticker, body, created_at, updated_at)
-       VALUES (@id, @ticker, @body, @createdAt, @updatedAt)
-       ON CONFLICT(id) DO UPDATE SET
-         ticker = excluded.ticker,
-         body = excluded.body,
-         created_at = excluded.created_at,
-         updated_at = excluded.updated_at`,
-    );
-    const write = this.db.transaction((rows: readonly StockNote[]) => {
-      for (const note of rows) stmt.run(note);
-    });
-    write(notes);
-    return notes.length;
-  }
-
-  delete(ticker: string, id: string): boolean {
-    const result = this.db
-      .prepare('DELETE FROM stock_notes WHERE ticker = ? AND id = ?')
-      .run(ticker, id);
-    return result.changes > 0;
-  }
-}
-
-export class StockObservationPlanRepository {
-  constructor(private readonly db: Database.Database) {}
-
-  listAll(): StockObservationPlan[] {
-    const rows = this.db
-      .prepare<[], StockObservationPlanRow>(
-        `SELECT ticker, thesis, trigger, invalidation, status, created_at, updated_at
-         FROM stock_observation_plans
-         ORDER BY updated_at DESC, ticker`,
-      )
-      .all();
-    return rows.map(rowToStockObservationPlan);
-  }
-
-  findByTicker(ticker: string): StockObservationPlan | null {
-    const row = this.db
-      .prepare<[string], StockObservationPlanRow>(
-        `SELECT ticker, thesis, trigger, invalidation, status, created_at, updated_at
-         FROM stock_observation_plans
-         WHERE ticker = ?
-         LIMIT 1`,
-      )
-      .get(ticker);
-    return row === undefined ? null : rowToStockObservationPlan(row);
-  }
-
-  upsert(input: {
-    ticker: string;
-    thesis: string;
-    trigger: string;
-    invalidation: string;
-    status: StockObservationPlanStatus;
-    now?: Date;
-  }): StockObservationPlan {
-    const nowIso = (input.now ?? new Date()).toISOString();
-    const existing = this.findByTicker(input.ticker);
-    const createdAt = existing?.createdAt ?? nowIso;
-    this.db
-      .prepare(
-        `INSERT INTO stock_observation_plans (
-           ticker, thesis, trigger, invalidation, status, created_at, updated_at
-         )
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(ticker) DO UPDATE SET
-           thesis = excluded.thesis,
-           trigger = excluded.trigger,
-           invalidation = excluded.invalidation,
-           status = excluded.status,
-           updated_at = excluded.updated_at`,
-      )
-      .run(
-        input.ticker,
-        input.thesis,
-        input.trigger,
-        input.invalidation,
-        input.status,
-        createdAt,
-        nowIso,
-      );
-    const row = this.findByTicker(input.ticker);
-    if (row === null) throw new Error('stock observation plan upsert failed');
-    return row;
-  }
-
-  restoreMany(plans: readonly StockObservationPlan[]): number {
-    const stmt = this.db.prepare(
-      `INSERT INTO stock_observation_plans (
-         ticker, thesis, trigger, invalidation, status, created_at, updated_at
-       )
-       VALUES (@ticker, @thesis, @trigger, @invalidation, @status, @createdAt, @updatedAt)
-       ON CONFLICT(ticker) DO UPDATE SET
-         thesis = excluded.thesis,
-         trigger = excluded.trigger,
-         invalidation = excluded.invalidation,
-         status = excluded.status,
-         created_at = excluded.created_at,
-         updated_at = excluded.updated_at`,
-    );
-    const write = this.db.transaction((rows: readonly StockObservationPlan[]) => {
-      for (const plan of rows) stmt.run(plan);
-    });
-    write(plans);
-    return plans.length;
-  }
-
-  delete(ticker: string): boolean {
-    const result = this.db
-      .prepare('DELETE FROM stock_observation_plans WHERE ticker = ?')
-      .run(ticker);
-    return result.changes > 0;
   }
 }
 

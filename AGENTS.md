@@ -58,9 +58,9 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Desktop beta.9 install validation**: GitHub Release `Araon-1.1.0-beta.9-arm64-mac.zip`을 `/tmp`에 받아 압축 해제 후 `ARAON_DATA_DIR=/tmp/araon-desktop-smoke-data`로 실행 / Computer Use로 first-run KIS 앱키 등록 화면과 managed defaults copy 확인 / credentials configured=false, runtime unconfigured, defaults true/live, `credentials.enc` 미생성 / DMG drag install·Windows EXE·desktop credentials entry는 not executed
 - **Desktop beta.11 install acceptance**: GitHub Release `v1.1.0-beta.11` macOS DMG/ZIP 다운로드·checksum 확인 / DMG mount와 ZIP extract 성공 / Computer Use로 first-run KIS 앱키 등록 화면 확인 / no credentials 상태에서 runtime unconfigured, master refresh blocked, `credentials.enc` 미생성 / direct executable과 `open -n` 경로는 실행 가능 / macOS `codesign`·`spctl`은 `code has no resources but signature indicates they must be present`로 실패 / Windows EXE는 asset 존재·checksum만 확인, 실행 not executed
 - **Desktop packaging hardening**: macOS signing failure 원인은 `mac.identity=null`로 bundle signing을 완전히 skip하면서 Mach-O linker/ad-hoc signature metadata와 sealed resources 상태가 어긋난 것. `mac.identity="-"` ad-hoc signing으로 로컬 macOS app bundle은 `codesign --verify --deep --strict` 통과. beta.12 release validation 중 `better-sqlite3`가 host Node ABI 141로 packaged되는 문제도 발견해 `nativeRebuilder="legacy"`로 Electron 41 ABI 145 packaging을 고정. `spctl`은 Developer ID/notarization이 없어서 여전히 rejected가 정상. Browser quarantine/Finder path와 Windows EXE 실행은 계속 pending.
-- **P1 data-growth hardening**: `stock_signal_events` 90일 retention + max 200 read clamp / `stock_notes` limit+offset pagination, no auto-prune / `stock_news_items` 24h stale + 7일 prune + sanitized fetch failure status / `price_candles` prune는 server start 후 daily maintenance로 호출 / `/runtime/data-health`가 signal/news/note growth와 candle prune 상태를 표시 / live KIS·WS·selected minute probe 0회
+- **P1 data-growth hardening**: `stock_signal_events` 90일 retention + max 200 read clamp / `stock_news_items` 24h stale + 7일 prune + sanitized fetch failure status / `price_candles` prune는 server start 후 daily maintenance로 호출 / `/runtime/data-health`가 signal/news growth와 candle prune 상태를 표시 / live KIS·WS·selected minute probe 0회
 - **News/disclosure feed enrichment**: 네이버 금융 종목뉴스 iframe HTML을 key 없이 파싱해 제목·언론사·시간·링크를 `stock_news_items`에 캐시한다. `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`이 있으면 Naver Search API 뉴스 결과를 보강하고, `DART_API_KEY`가 있으면 DART corp-code catalog + 공시검색 API로 최근 filing을 `stock_disclosure_items`에 캐시한다. 기사 본문, 공시 원문, Araon 생성 요약/감성분석은 저장하지 않는다.
-- **Local backup/restore**: Settings 연결 탭과 `/runtime/backup/export`·`/runtime/backup/restore`에서 추적 종목, 즐겨찾기, 관찰 메모, 관찰 계획만 JSON으로 백업/복원한다. `credentials.enc`, token, approval key, account, candle, raw tick, runtime state는 절대 포함하지 않는다.
+- **Local backup/restore**: Settings 연결 탭과 `/runtime/backup/export`·`/runtime/backup/restore`에서 추적 종목과 즐겨찾기만 JSON으로 백업/복원한다. `credentials.enc`, token, approval key, account, candle, raw tick, runtime state는 절대 포함하지 않는다.
 - **No-live reliability soak**: `npm run soak:no-live -- --duration-ms 60000 --interval-ms 5000`는 fresh temp dataDir + no credentials로 health endpoints를 반복 조회한다. non-2xx, non-JSON, raw secret-looking value를 실패 처리하며 live KIS/token/approval/WebSocket/backfill 호출은 하지 않는다.
 
 ### NXT 시리즈 진행도
@@ -187,7 +187,7 @@ npm run dev:client &
 | `src/server/chart/daily-backfill-service.ts` | KIS daily candle backfill service. `1d` rows만 저장, `1m/3m/6m/1y` range를 100일 이하 창으로 분할 |
 | `src/server/chart/background-backfill-scheduler.ts` | Managed-default background daily backfill scheduler. 장후/주말만 실행, favorites/tracked 우선, sequential low-rate, daily call counter + 429/5xx cooldown |
 | `src/server/maintenance/data-retention.ts` | P1 data-growth maintenance. startup + daily prune: price history point 48h, 1m candle 30일, 1d candle 2년, signal 90일, news 7일. 실패는 sanitized diagnostic으로 격리 |
-| `docs/runbooks/local-backup-restore.md` | 로컬 백업/복원 범위. 포함: stocks/favorites/notes/observation plans. 제외: credentials/tokens/account/candles/raw ticks/runtime state |
+| `docs/runbooks/local-backup-restore.md` | 로컬 백업/복원 범위. 포함: stocks/favorites. 제외: credentials/tokens/account/candles/raw ticks/runtime state |
 | `docs/runbooks/long-run-soak.md` | no-live reliability soak 절차. fresh temp dataDir로 `/credentials/status`, `/runtime/*`, backup export를 반복 조회해 5xx/non-JSON/secret-like value를 잡는다 |
 | `scripts/soak-araon.mts` | no-live soak harness. `npm run soak:no-live`에서 사용 |
 | `src/server/kis/kis-daily-chart.ts` | KIS 국내주식기간별시세 daily mapper/client. 테스트는 mock transport만 사용 |
@@ -791,14 +791,11 @@ phase 변경은 `H0UNMKO0`/`H0NXMKO0`의 `MKOP_CLS_CODE`로 통지.
 - report: `docs/research/candle-chart-ui-acceptance.md`
 - 판단: chart/backfill MVP는 단일 종목 live-probe + 제품 화면 표시까지 verified. 이후 daily background backfill은 tracked/favorites 대상 managed default로 승격됐고, full master/minute historical backfill은 계속 HOLD
 
-### Observation memo log MVP 결과 (2026-05-06)
-- local SQLite `stock_notes` 테이블 추가. 종목별 관찰 메모는 ticker FK로 추적 종목 삭제 시 cascade된다
-- API: `GET /stocks/:ticker/notes`, `POST /stocks/:ticker/notes`, `DELETE /stocks/:ticker/notes/:noteId`
-- UI: `StockDetailModal`에 `관찰 메모` 섹션 추가. 사용자가 직접 쓴 관찰 기록만 저장하며 매수/매도 추천이나 합성 금융 데이터는 만들지 않는다
-- live KIS / WebSocket / daily backfill 호출: 0회
-- focused tests: `src/server/routes/__tests__/stock-notes.test.ts`, `src/client/components/__tests__/stock-notes-panel.test.ts`
-- report: `docs/research/observation-memo-log-mvp.md`
-- HOLD: 메모 수정, 태그/분류, candle timestamp 연결, AI 요약, export
+### Observation surfaces removal (2026-05-07)
+- StockDetailModal의 사용자 입력형 `관찰 계획`, `관찰 메모`, `관찰 타임라인` 패널과 별도 `관찰 근거` 섹션은 제품 흐름을 무겁게 만들어 제거됐다.
+- API 노출 경로 `GET/PUT /stocks/:ticker/observation-plan`, `GET/POST/DELETE /stocks/:ticker/notes`, `GET /stocks/:ticker/timeline`은 제거됐다.
+- 기존 SQLite migration/table은 배포 DB migration 호환성을 위해 남긴다. 새 코드 경로에서는 읽기/쓰기/백업/복원/데이터 건강 상태에 포함하지 않는다.
+- realtime signal 기록 저장과 `/runtime/signals/outcomes`는 내부 성과 진단용으로 유지한다.
 
 ### News/disclosure feed MVP 결과 (2026-05-06, enriched 2026-05-07)
 - `StockDetailModal`의 `관련 뉴스 · 공시` placeholder를 실제 외부 확인 링크/피드 패널로 교체

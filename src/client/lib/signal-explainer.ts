@@ -136,7 +136,7 @@ export function buildSignalExplanation({
     level,
     score: rawScore,
     confidence,
-    primaryReason: reasons[0]?.text ?? '관찰 근거 부족',
+    primaryReason: reasons[0]?.text ?? '신호 근거 부족',
     reasons,
     caveats,
   };

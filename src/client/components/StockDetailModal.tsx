@@ -29,10 +29,6 @@ import {
   krColor,
 } from '../lib/format';
 import { CloseIcon, StarIcon } from '../lib/icons';
-import {
-  buildSignalExplanation,
-  type SignalSurgeInput,
-} from '../lib/signal-explainer';
 import { buildSparklineGeometry } from '../lib/sparkline';
 import {
   MIN_POINTS_FOR_SPARKLINE,
@@ -44,14 +40,8 @@ import {
   describeSectorSource,
   type EffectiveSector,
 } from '../lib/effective-sector';
-import type { MarketStatus } from '@shared/types';
-import { useSurgeStore } from '../stores/surge-store';
-import { SignalReasonList } from './SignalReasonList';
 import { StockCandleChart } from './StockCandleChart';
 import { StockNewsDisclosurePanel } from './StockNewsDisclosurePanel';
-import { StockNotesPanel } from './StockNotesPanel';
-import { StockObservationPlanPanel } from './StockObservationPlanPanel';
-import { StockObservationTimeline } from './StockObservationTimeline';
 import { StockDataQualityPanel } from './StockDataQualityPanel';
 import { usePersistedPriceHistory } from '../hooks/usePersistedPriceHistory';
 
@@ -63,7 +53,6 @@ interface StockDetailModalProps {
   stock: StockViewModel;
   allStocks: ReadonlyArray<StockViewModel>;
   isFavorite: boolean;
-  marketStatus: MarketStatus;
   onClose: () => void;
   onNavigate: (code: string) => void;
   onToggleFav: (code: string) => void;
@@ -74,7 +63,6 @@ export function StockDetailModal({
   stock,
   allStocks,
   isFavorite,
-  marketStatus,
   onClose,
   onNavigate,
   onToggleFav,
@@ -83,9 +71,6 @@ export function StockDetailModal({
   const [activeTab, setActiveTab] = useState<'realtime' | 'chart'>('realtime');
   const history = usePriceHistoryStore((s) => selectHistory(s, stock.code));
   usePersistedPriceHistory(stock.code, true);
-  const activeSurge = useSurgeStore(
-    (s) => s.feed.find((entry) => entry.code === stock.code) ?? null,
-  );
 
   // ESC close + ←/→ navigate. Single registration tied to the focused
   // stock's code so the closure always sees the current ticker index.
@@ -119,30 +104,6 @@ export function StockDetailModal({
     const d = new Date(stock.updatedAt);
     return Number.isNaN(d.getTime()) ? null : d;
   }, [stock.updatedAt]);
-  const signalSurge = useMemo<SignalSurgeInput | null>(() => {
-    if (activeSurge === null) return null;
-    return {
-      isLive: true,
-      signalType: activeSurge.signalType,
-      momentumPct: activeSurge.momentumPct,
-      momentumWindow: activeSurge.momentumWindow,
-      dailyChangePct: activeSurge.dailyChangePct,
-      volumeSurgeRatio: activeSurge.volumeSurgeRatio,
-      volumeBaselineStatus: activeSurge.volumeBaselineStatus,
-    };
-  }, [activeSurge]);
-  const explanation = useMemo(
-    () =>
-      buildSignalExplanation({
-        stock,
-        allStocks,
-        isFavorite,
-        surgeItem: signalSurge,
-        marketStatus,
-      }),
-    [stock, allStocks, isFavorite, signalSurge, marketStatus],
-  );
-
   return (
     <div
       onClick={onClose}
@@ -266,27 +227,6 @@ export function StockDetailModal({
 
           <MetricsGrid stock={stock} lastUpdated={lastUpdated} />
 
-          {activeTab === 'realtime' && (
-            <>
-              <div style={{ marginTop: 18 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    marginBottom: 8,
-                  }}
-                >
-                  관찰 근거
-                </div>
-                <SignalReasonList explanation={explanation} mode="list" />
-              </div>
-            </>
-          )}
-
-          <StockObservationPlanPanel ticker={stock.code} />
-          <StockNotesPanel ticker={stock.code} />
-          <StockObservationTimeline ticker={stock.code} />
           <StockNewsDisclosurePanel ticker={stock.code} name={stock.name} />
         </div>
       </div>

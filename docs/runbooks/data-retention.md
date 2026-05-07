@@ -4,7 +4,7 @@
 
 Araon is a localhost monitoring tool, so local data should stay useful without
 growing without bound. This runbook covers the P1 data-growth hardening policies
-for signal events, observation notes, cached news links, and candle pruning.
+for signal events, cached news links, and candle pruning.
 
 No policy here creates synthetic market data, runs KIS live probes, or enables
 historical minute backfill.
@@ -19,17 +19,6 @@ historical minute backfill.
 - Server/repository max read limit: 200
 - Prune path: `pruneOldSignalEvents(now, retentionDays)`
 - Outcome calculation only runs for retained signal rows.
-
-### Observation Notes
-
-- Table: `stock_notes`
-- Default ticker read limit: 50
-- Server/repository max read limit: 200
-- Pagination: limit + offset
-- Automatic prune: none
-
-Notes are user-authored observation records, so Araon bounds reads but does not
-delete them automatically.
 
 ### Cached News Links
 
@@ -71,7 +60,6 @@ as `database locked` or `maintenance_failed`.
 `GET /runtime/data-health` includes:
 
 - signal event count and oldest/newest signal timestamp
-- note count and oldest/newest note timestamp
 - news item count, stale count, failed fetch count, and last fetch status
 - candle prune last run time and sanitized last error
 - existing candle coverage, daily backfill call count/cooldown, and volume baseline
@@ -80,6 +68,10 @@ as `database locked` or `maintenance_failed`.
 The Settings connection tab renders these as diagnostics under the data-health
 panel. Raw keys, tokens, approval keys, and account values must never appear in
 this response or UI.
+
+Observation notes/plans/timeline were removed from the product surface on
+2026-05-07. Existing migration tables may remain for deployed DB compatibility,
+but they are not part of current data-health or backup/restore policy.
 
 ## Still Out Of Scope
 

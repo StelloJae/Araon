@@ -344,40 +344,16 @@ export interface CandleApiResponse {
   status: CandleApiStatus;
 }
 
-export interface StockNote {
-  id: string;
-  ticker: string;
-  body: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type StockObservationPlanStatus = 'watching' | 'paused' | 'archived';
-
-export interface StockObservationPlan {
-  ticker: string;
-  thesis: string;
-  trigger: string;
-  invalidation: string;
-  status: StockObservationPlanStatus;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface LocalBackupPayload {
   schemaVersion: 1;
   exportedAt: string;
   stocks: Stock[];
   favorites: Favorite[];
-  notes: StockNote[];
-  observationPlans: StockObservationPlan[];
 }
 
 export interface LocalRestoreResult {
   stocks: number;
   favorites: number;
-  notes: number;
-  observationPlans: number;
 }
 
 export type StockSignalType = 'scalp' | 'strong_scalp' | 'overheat' | 'trend';
@@ -427,25 +403,6 @@ export interface StockSignalOutcomeDashboard {
   pendingSignals: number;
   horizons: StockSignalOutcomeHorizonSummary[];
 }
-
-export interface StockTimelineNoteItem {
-  kind: 'note';
-  id: string;
-  ticker: string;
-  occurredAt: string;
-  note: StockNote;
-}
-
-export interface StockTimelineSignalItem {
-  kind: 'signal';
-  id: string;
-  ticker: string;
-  occurredAt: string;
-  signal: StockSignalEvent;
-  outcomes: StockSignalOutcome[];
-}
-
-export type StockTimelineItem = StockTimelineNoteItem | StockTimelineSignalItem;
 
 export interface StockNewsItem {
   id: string;

@@ -348,7 +348,7 @@ function ConnectionTab() {
       await reloadCatalog();
       setBackupPhase({
         kind: 'success',
-        message: `복원 완료 · ${result.stocks}종목 / ${result.favorites}즐겨찾기 / ${result.notes}메모`,
+        message: `복원 완료 · ${result.stocks}종목 / ${result.favorites}즐겨찾기`,
       });
     } catch (err) {
       setBackupPhase({ kind: 'error', message: operatorErrorMessage(err) });
@@ -1317,11 +1317,6 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor={health.signalOutcomes.evaluatedSignals > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
             />
             <Row
-              k="관찰 메모"
-              v={`${health.growth.notes.noteCount}개`}
-              chipColor="var(--text-muted)"
-            />
-            <Row
               k="뉴스 캐시"
               v={`${health.growth.news.itemCount}개 · stale ${health.growth.news.staleItemCount}개`}
               chipColor={health.growth.news.staleItemCount > 0 ? 'var(--kr-down)' : 'var(--text-muted)'}
@@ -1398,7 +1393,7 @@ export function LocalBackupPanel({
         로컬 백업 / 복원
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        추적 종목, 즐겨찾기, 관찰 메모, 관찰 계획만 JSON으로 백업합니다.
+        추적 종목과 즐겨찾기만 JSON으로 백업합니다.
         credentials, 토큰, 계좌, candle 데이터는 포함하지 않습니다.
       </div>
       <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>

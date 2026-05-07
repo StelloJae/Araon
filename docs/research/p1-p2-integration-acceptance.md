@@ -154,9 +154,9 @@ Existing local status checks:
   - `status.state=partial`
   - no synthetic backfilled candle was implied.
 
-- `GET /stocks/005930/timeline?limit=5`
-  - returned an empty timeline for this local data state.
-  - This matched the UI empty state.
+- Observation timeline note:
+  - This surface was later removed from the product on 2026-05-07.
+  - Current builds should not expose `GET /stocks/:ticker/timeline`.
 
 - `GET /stocks/005930/news`
   - returned an empty cached news list for this local data state.
@@ -185,16 +185,14 @@ Verification for the fix:
 
 ## Feature-Specific Results
 
-### Signal Timeline / Outcomes
+### Signal Outcomes
 
-Result: **PASS with operational follow-up**
+Result: **PASS with operational follow-up; timeline UI later removed**
 
-- Timeline UI rendered in the stock modal.
-- Empty state was natural when no signals/notes existed.
-- Timeline API enforces query `limit <= 100`.
+- Signal outcome diagnostics remained available.
 - Signal repository clamps direct signal listing to max `200` rows.
-- Outcome fields are only built from candle data; no fake outcome was shown when
-  no timeline event existed.
+- Outcome fields are only built from candle data; no fake outcome is shown when
+  no signal coverage exists.
 
 Follow-up:
 
@@ -252,17 +250,10 @@ Follow-up:
 
 ### Notes / Observation Log
 
-Result: **PASS for UI/contract, existing-data write not run**
+Result: **REMOVED after acceptance**
 
-- Observation note UI rendered.
-- The copy clearly says notes are observation records, not buy/sell decisions.
-- Create/list/delete routes and tests already cover persistence behavior.
-- No note was created in the user's existing local data during this acceptance,
-  to avoid modifying personal observation data.
-
-Follow-up:
-
-- Notes list currently returns all notes for a ticker at repository level before
+The user-authored observation note and plan surfaces were later removed from
+StockDetailModal, API routes, backup/restore, and data-health output.
   timeline slicing. This is acceptable for small local use, but long-run note
   volume needs a limit/pagination policy.
 
@@ -308,10 +299,9 @@ Remaining gaps:
 
 - `pruneOldCandles()` is now invoked by daily data-retention maintenance.
 - `stock_signal_events` has 90-day retention/prune.
-- `stock_notes` has bounded limit/offset pagination; notes are not auto-pruned.
 - `stock_news_items` has 24-hour stale detection, 7-day prune coverage, and
   sanitized parser/fetch failure metadata.
-- Data health panel now surfaces signal/news/note table growth and candle prune
+- Data health panel now surfaces signal/news table growth and candle prune
   maintenance status.
 
 ## Browser / Computer Verification Note
@@ -327,7 +317,7 @@ Computer Use verified:
 - existing local dashboard at `http://127.0.0.1:5173/`
 - stock detail realtime/chart tabs
 - pinned candle inspection
-- timeline/notes/news panels
+- news/disclosure panels
 - settings connection/data-health panel
 
 ## Backlog
@@ -360,9 +350,9 @@ None found.
 
 The current P1/P2 product surface is usable and no P0 blocker was found. The main
 user flow works: dashboard, search/list grouping, modal, realtime tab, chart tab,
-pinned candle, observation surfaces, news/disclosure links, and data health all
+pinned candle, news/disclosure links, and data health all
 render coherently.
 
 The conditional items are operational rather than blocking: Browser Use backend
 unavailability, no live selected minute backfill probe in this acceptance, and
-remaining retention/data-growth policies for signal/news/note tables.
+remaining retention/data-growth policies for signal/news tables.

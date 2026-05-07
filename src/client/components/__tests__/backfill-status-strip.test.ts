@@ -43,7 +43,6 @@ function health(
         newestSignalEventAt: null,
         retentionDays: 90,
       },
-      notes: { noteCount: 0, oldestNoteAt: null, newestNoteAt: null },
       news: {
         itemCount: 0,
         staleItemCount: 0,

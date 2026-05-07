@@ -35,15 +35,13 @@ This completion deliberately keeps the safety and data-honesty boundaries:
 
 ## Completed Scope
 
-### P1-1 / P1-3: Signal Timeline and Outcomes
+### P1-1 / P1-3: Signal Events and Outcomes
 
 Implemented:
 
 - `stock_signal_events` SQLite table
 - `POST /stocks/:ticker/signals`
-- `GET /stocks/:ticker/timeline`
 - client-side realtime signal recording from SSE price updates
-- StockDetailModal observation timeline
 - candle-based 5m/15m/30m outcome calculation when stored candles exist
 
 Policy:
@@ -57,7 +55,10 @@ Primary files:
 - `src/server/db/migrations/006-stock-signal-events.sql`
 - `src/server/routes/stocks.ts`
 - `src/client/hooks/useSSE.ts`
-- `src/client/components/StockObservationTimeline.tsx`
+
+2026-05-07 update: the StockDetailModal observation timeline UI and
+`GET /stocks/:ticker/timeline` were removed. Signal events remain for internal
+outcome diagnostics.
 
 ### P1-2: Selected Ticker Today-Minute Backfill
 
@@ -183,10 +184,6 @@ Primary files:
 ### `POST /stocks/:ticker/signals`
 
 Records a deterministic signal event for a tracked ticker.
-
-### `GET /stocks/:ticker/timeline`
-
-Returns notes and signal events, including candle-derived outcome fields when available.
 
 ### `POST /stocks/:ticker/candles/backfill-minute`
 

@@ -48,7 +48,7 @@ describe('SignalReasonList', () => {
           level: 'none',
           score: 0,
           confidence: 'collecting',
-          primaryReason: '관찰 근거 부족',
+          primaryReason: '신호 근거 부족',
           reasons: [],
           caveats: ['거래량 기준선 수집 중'],
         },
@@ -56,7 +56,7 @@ describe('SignalReasonList', () => {
       }),
     );
 
-    expect(html).toContain('관찰 근거 부족');
+    expect(html).toContain('신호 근거 부족');
     expect(html).toContain('거래량 기준선 수집 중');
     expect(html).not.toContain('거래량 기준선 대비');
     expect(html).not.toContain('2.0x');

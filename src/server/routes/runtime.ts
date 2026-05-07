@@ -8,8 +8,6 @@ import type {
   Price,
   PriceCandle,
   Stock,
-  StockNote,
-  StockObservationPlan,
   StockSignalEvent,
   StockSignalOutcome,
   StockSignalOutcomeDashboard,
@@ -26,7 +24,6 @@ import type {
 import type {
   PriceCandleCoverageSummary,
   StockNewsGrowthSummary,
-  StockNoteGrowthSummary,
   StockSignalGrowthSummary,
 } from '../db/repositories.js';
 import {
@@ -76,15 +73,6 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   signalEventRepo?: {
     summarizeGrowth(): StockSignalGrowthSummary;
     listRecent?(limit?: number): StockSignalEvent[];
-  };
-  noteRepo?: {
-    summarizeGrowth(): StockNoteGrowthSummary;
-    listAll?(limit?: number): StockNote[];
-    restoreMany?(notes: readonly StockNote[]): number;
-  };
-  observationPlanRepo?: {
-    listAll?(): StockObservationPlan[];
-    restoreMany?(plans: readonly StockObservationPlan[]): number;
   };
   newsRepo?: { summarizeGrowth(now?: Date, staleAfterMs?: number): StockNewsGrowthSummary };
   dataRetention?: { snapshot(): DataRetentionSnapshot };
@@ -183,31 +171,11 @@ const backupFavoriteSchema = z.object({
   addedAt: z.string().min(1),
 });
 
-const backupNoteSchema = z.object({
-  id: z.string().min(1).max(128),
-  ticker: z.string().min(1).max(16),
-  body: z.string().min(1).max(5000),
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
-});
-
-const backupObservationPlanSchema = z.object({
-  ticker: z.string().min(1).max(16),
-  thesis: z.string().max(2000),
-  trigger: z.string().max(2000),
-  invalidation: z.string().max(2000),
-  status: z.enum(['watching', 'paused', 'archived']),
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
-});
-
 const localBackupPayloadSchema = z.object({
   schemaVersion: z.literal(1),
   exportedAt: z.string().min(1),
   stocks: z.array(backupStockSchema).max(5000),
   favorites: z.array(backupFavoriteSchema).max(5000),
-  notes: z.array(backupNoteSchema).max(5000),
-  observationPlans: z.array(backupObservationPlanSchema).max(5000),
 });
 
 const sessionTimers = new WeakMap<KisRuntime, ReturnType<typeof setTimeout>>();
@@ -265,7 +233,6 @@ export async function runtimeRoutes(
     const prices = opts.priceStore?.getAllPrices() ?? [];
     const baselineCounts = countVolumeBaselineStatuses(prices);
     const signalGrowth = opts.signalEventRepo?.summarizeGrowth() ?? emptySignalGrowth();
-    const noteGrowth = opts.noteRepo?.summarizeGrowth() ?? emptyNoteGrowth();
     const newsGrowth = opts.newsRepo?.summarizeGrowth(now, NEWS_STALE_AFTER_MS)
       ?? emptyNewsGrowth();
     const maintenance = opts.dataRetention?.snapshot() ?? emptyMaintenance();
@@ -307,7 +274,6 @@ export async function runtimeRoutes(
             ...signalGrowth,
             retentionDays: SIGNAL_RETENTION_DAYS,
           },
-          notes: noteGrowth,
           news: {
             ...newsGrowth,
             ttlHours: Math.round(NEWS_STALE_AFTER_MS / (60 * 60 * 1000)),
@@ -523,8 +489,6 @@ function buildLocalBackupPayload(
     exportedAt: now.toISOString(),
     stocks: opts.stockRepo?.findAll() ?? [],
     favorites: opts.favoriteRepo?.findAll() ?? [],
-    notes: opts.noteRepo?.listAll?.() ?? [],
-    observationPlans: opts.observationPlanRepo?.listAll?.() ?? [],
   };
 }
 
@@ -534,8 +498,6 @@ function canRestoreLocalBackup(opts: RuntimeRoutesOptions): boolean {
   return (
     stockWritable
     && opts.favoriteRepo?.upsert !== undefined
-    && opts.noteRepo?.restoreMany !== undefined
-    && opts.observationPlanRepo?.restoreMany !== undefined
   );
 }
 
@@ -552,14 +514,9 @@ async function restoreLocalBackup(
     for (const stock of payload.stocks) opts.stockRepo?.upsert?.(stock);
   }
   for (const favorite of payload.favorites) opts.favoriteRepo?.upsert?.(favorite);
-  const noteCount = opts.noteRepo?.restoreMany?.(payload.notes) ?? 0;
-  const planCount =
-    opts.observationPlanRepo?.restoreMany?.(payload.observationPlans) ?? 0;
   return {
     stocks: payload.stocks.length,
     favorites: payload.favorites.length,
-    notes: noteCount,
-    observationPlans: planCount,
   };
 }
 
@@ -746,14 +703,6 @@ function emptySignalGrowth(): StockSignalGrowthSummary {
     eventCount: 0,
     oldestSignalEventAt: null,
     newestSignalEventAt: null,
-  };
-}
-
-function emptyNoteGrowth(): StockNoteGrowthSummary {
-  return {
-    noteCount: 0,
-    oldestNoteAt: null,
-    newestNoteAt: null,
   };
 }
 

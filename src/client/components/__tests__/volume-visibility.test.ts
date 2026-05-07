@@ -208,7 +208,7 @@ describe('volume visibility', () => {
     expect(html).not.toContain('거래량 기준선 대비');
   });
 
-  it('renders signal explanation in the stock detail modal', () => {
+  it('does not render observation reasons in the stock detail modal', () => {
     const html = renderToStaticMarkup(
       createElement(StockDetailModal, {
         stock: stock({
@@ -222,7 +222,6 @@ describe('volume visibility', () => {
           stock({ code: '042700', name: '한미반도체', changePct: 3.1 }),
         ],
         isFavorite: true,
-        marketStatus: 'open',
         onClose: () => undefined,
         onNavigate: () => undefined,
         onToggleFav: () => undefined,
@@ -230,10 +229,9 @@ describe('volume visibility', () => {
       }),
     );
 
-    expect(html).toContain('관찰 근거');
-    expect(html).toContain('오늘 +5.4% 강세');
-    expect(html).toContain('전기전자 동반 강세');
-    expect(html).toContain('거래량 기준선 수집 중');
+    expect(html).not.toContain('관찰 근거');
+    expect(html).not.toContain('오늘 +5.4% 강세');
+    expect(html).not.toContain('전기전자 동반 강세');
     expect(html).not.toContain('거래량 기준선 대비');
   });
 
@@ -243,7 +241,6 @@ describe('volume visibility', () => {
         stock: stock(),
         allStocks: [stock()],
         isFavorite: false,
-        marketStatus: 'open',
         onClose: () => undefined,
         onNavigate: () => undefined,
         onToggleFav: () => undefined,
@@ -262,7 +259,6 @@ describe('volume visibility', () => {
         stock: stock(),
         allStocks: [stock()],
         isFavorite: false,
-        marketStatus: 'open',
         onClose: () => undefined,
         onNavigate: () => undefined,
         onToggleFav: () => undefined,
@@ -298,7 +294,6 @@ describe('volume visibility', () => {
         }),
         allStocks: [stock()],
         isFavorite: false,
-        marketStatus: 'open',
         onClose: () => undefined,
         onNavigate: () => undefined,
         onToggleFav: () => undefined,

@@ -150,7 +150,7 @@ export function SignalReasonList({
             color: 'var(--text-muted)',
           }}
         >
-          관찰 가능한 조건이 아직 충분하지 않습니다.
+          신호로 볼 조건이 아직 충분하지 않습니다.
         </div>
       )}
 
@@ -175,11 +175,11 @@ export function SignalReasonList({
 function levelLabel(level: SignalLevel): string {
   switch (level) {
     case 'urgent':
-      return '긴급 관찰';
+      return '긴급 신호';
     case 'strong':
-      return '강한 관찰';
+      return '강한 신호';
     case 'watch':
-      return '관찰';
+      return '신호';
     case 'none':
       return '대기';
   }

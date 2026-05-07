@@ -132,32 +132,6 @@ async function build(
       summarizeGrowth(): { eventCount: number; oldestSignalEventAt: string | null; newestSignalEventAt: string | null };
       listRecent?(limit?: number): any[];
     };
-    noteRepo?: { summarizeGrowth(): { noteCount: number; oldestNoteAt: string | null; newestNoteAt: string | null } };
-    backupNoteRepo?: {
-      summarizeGrowth(): { noteCount: number; oldestNoteAt: string | null; newestNoteAt: string | null };
-      listAll(): Array<{ id: string; ticker: string; body: string; createdAt: string; updatedAt: string }>;
-      restoreMany(notes: readonly Array<{ id: string; ticker: string; body: string; createdAt: string; updatedAt: string }>): number;
-    };
-    observationPlanRepo?: {
-      listAll(): Array<{
-        ticker: string;
-        thesis: string;
-        trigger: string;
-        invalidation: string;
-        status: 'watching' | 'paused' | 'archived';
-        createdAt: string;
-        updatedAt: string;
-      }>;
-      restoreMany(plans: readonly Array<{
-        ticker: string;
-        thesis: string;
-        trigger: string;
-        invalidation: string;
-        status: 'watching' | 'paused' | 'archived';
-        createdAt: string;
-        updatedAt: string;
-      }>): number;
-    };
     newsRepo?: { summarizeGrowth(now: Date, staleAfterMs: number): { itemCount: number; staleItemCount: number; oldestFetchedAt: string | null; newestFetchedAt: string | null; failedFetchCount: number; lastFetchStatus: 'success' | 'failed' | null; lastFetchErrorCode: string | null; lastFetchedAt: string | null } };
     dataRetention?: { snapshot(): { lastRunAt: string | null; candlePruneLastRunAt: string | null; candlePruneLastError: string | null } };
     priceStore?: { getAllPrices(): Array<{ ticker: string; price: number; changeRate: number; volume: number; updatedAt: string; isSnapshot: boolean; volumeBaselineStatus?: 'ready' | 'collecting' | 'unavailable' }> };
@@ -174,8 +148,6 @@ async function build(
     favoriteRepo: opts.backupFavoriteRepo ?? opts.favoriteRepo,
     candleRepo: opts.candleRepo,
     signalEventRepo: opts.signalEventRepo,
-    noteRepo: opts.backupNoteRepo ?? opts.noteRepo,
-    observationPlanRepo: opts.observationPlanRepo,
     newsRepo: opts.newsRepo,
     dataRetention: opts.dataRetention,
     priceStore: opts.priceStore,
@@ -215,13 +187,6 @@ describe('GET /runtime/data-health', () => {
           eventCount: 12,
           oldestSignalEventAt: '2026-05-01T00:00:00.000Z',
           newestSignalEventAt: '2026-05-06T06:00:00.000Z',
-        })),
-      },
-      noteRepo: {
-        summarizeGrowth: vi.fn(() => ({
-          noteCount: 3,
-          oldestNoteAt: '2026-05-02T00:00:00.000Z',
-          newestNoteAt: '2026-05-06T06:10:00.000Z',
         })),
       },
       newsRepo: {
@@ -335,11 +300,6 @@ describe('GET /runtime/data-health', () => {
             newestSignalEventAt: '2026-05-06T06:00:00.000Z',
             retentionDays: 90,
           },
-          notes: {
-            noteCount: 3,
-            oldestNoteAt: '2026-05-02T00:00:00.000Z',
-            newestNoteAt: '2026-05-06T06:10:00.000Z',
-          },
           news: {
             itemCount: 4,
             staleItemCount: 1,
@@ -413,33 +373,6 @@ describe('runtime local backup routes', () => {
         ]),
         upsert: vi.fn(),
       },
-      backupNoteRepo: {
-        summarizeGrowth: vi.fn(() => ({ noteCount: 1, oldestNoteAt: null, newestNoteAt: null })),
-        listAll: vi.fn(() => [
-          {
-            id: 'note-1',
-            ticker: '005930',
-            body: '장후 일봉 확인',
-            createdAt: '2026-05-06T01:00:00.000Z',
-            updatedAt: '2026-05-06T01:00:00.000Z',
-          },
-        ]),
-        restoreMany: vi.fn(),
-      },
-      observationPlanRepo: {
-        listAll: vi.fn(() => [
-          {
-            ticker: '005930',
-            thesis: '반도체 수급 관찰',
-            trigger: '거래대금 증가',
-            invalidation: '전일 저점 이탈',
-            status: 'watching',
-            createdAt: '2026-05-06T01:00:00.000Z',
-            updatedAt: '2026-05-06T01:00:00.000Z',
-          },
-        ]),
-        restoreMany: vi.fn(),
-      },
     });
 
     const res = await app.inject({ method: 'GET', url: '/runtime/backup/export' });
@@ -450,8 +383,6 @@ describe('runtime local backup routes', () => {
       schemaVersion: 1,
       stocks: [{ ticker: '005930', name: '삼성전자', market: 'KOSPI' }],
       favorites: [{ ticker: '005930', tier: 'realtime' }],
-      notes: [{ id: 'note-1', body: '장후 일봉 확인' }],
-      observationPlans: [{ ticker: '005930', status: 'watching' }],
     });
     expect(JSON.stringify(json)).not.toContain('appSecret');
     expect(JSON.stringify(json)).not.toContain('accessToken');
@@ -467,21 +398,10 @@ describe('runtime local backup routes', () => {
       findAll: vi.fn(() => []),
       upsert: vi.fn(),
     };
-    const noteRepo = {
-      summarizeGrowth: vi.fn(() => ({ noteCount: 0, oldestNoteAt: null, newestNoteAt: null })),
-      listAll: vi.fn(() => []),
-      restoreMany: vi.fn(() => 1),
-    };
-    const observationPlanRepo = {
-      listAll: vi.fn(() => []),
-      restoreMany: vi.fn(() => 1),
-    };
     const app = await build({
       runtimeRef: runtimeRef({ status: 'unconfigured' }),
       backupStockRepo: stockRepo,
       backupFavoriteRepo: favoriteRepo,
-      backupNoteRepo: noteRepo,
-      observationPlanRepo,
     });
 
     const res = await app.inject({
@@ -492,26 +412,6 @@ describe('runtime local backup routes', () => {
         exportedAt: '2026-05-06T01:00:00.000Z',
         stocks: [{ ticker: '005930', name: '삼성전자', market: 'KOSPI' }],
         favorites: [{ ticker: '005930', tier: 'realtime', addedAt: '2026-05-06T01:00:00.000Z' }],
-        notes: [
-          {
-            id: 'note-1',
-            ticker: '005930',
-            body: '복원 테스트',
-            createdAt: '2026-05-06T01:00:00.000Z',
-            updatedAt: '2026-05-06T01:00:00.000Z',
-          },
-        ],
-        observationPlans: [
-          {
-            ticker: '005930',
-            thesis: '복원 논리',
-            trigger: '거래량',
-            invalidation: '손절 기준',
-            status: 'watching',
-            createdAt: '2026-05-06T01:00:00.000Z',
-            updatedAt: '2026-05-06T01:00:00.000Z',
-          },
-        ],
       },
     });
 
@@ -519,8 +419,6 @@ describe('runtime local backup routes', () => {
     expect(res.json().data).toEqual({
       stocks: 1,
       favorites: 1,
-      notes: 1,
-      observationPlans: 1,
     });
     expect(stockRepo.bulkUpsert).toHaveBeenCalledWith([
       { ticker: '005930', name: '삼성전자', market: 'KOSPI' },
@@ -530,8 +428,6 @@ describe('runtime local backup routes', () => {
       tier: 'realtime',
       addedAt: '2026-05-06T01:00:00.000Z',
     });
-    expect(noteRepo.restoreMany).toHaveBeenCalled();
-    expect(observationPlanRepo.restoreMany).toHaveBeenCalled();
   });
 });
 

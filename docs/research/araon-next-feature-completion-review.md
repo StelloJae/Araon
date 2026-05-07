@@ -70,16 +70,15 @@ Product value:
 
 Commit: `5521450 feat(observation): clarify plan readiness before save`
 
-What changed:
+2026-05-07 update: the observation-plan editor was removed from the product
+surface. This historical note is retained only as prior context.
 
-- The observation-plan editor shows whether thesis, trigger, and invalidation
-  are complete before save.
-- Missing fields are named directly instead of leaving only a disabled button.
+Removal status:
 
-Product value:
-
-- The watch thesis workflow is easier to complete and less confusing during
-  quick market review.
+- The former observation-plan editor is no longer part of the stock detail
+  modal.
+- Current builds should keep the modal focused on realtime movement, chart
+  coverage, news/disclosure links, and data health.
 
 ### 5. News link change marker
 

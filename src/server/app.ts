@@ -11,8 +11,6 @@ import {
   PriceSnapshotRepository,
   PriceHistoryPointRepository,
   PriceCandleRepository,
-  StockNoteRepository,
-  StockObservationPlanRepository,
   StockNewsRepository,
   StockDisclosureRepository,
   DartCorpCodeRepository,
@@ -124,8 +122,6 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const priceStore = new PriceStore({
     enrichPrice: (price) => volumeBaselineEnricher.enrich(price),
   });
-  const noteRepo = new StockNoteRepository(db);
-  const observationPlanRepo = new StockObservationPlanRepository(db);
   const newsRepo = new StockNewsRepository(db);
   const disclosureRepo = new StockDisclosureRepository(db);
   const dartCorpCodeRepo = new DartCorpCodeRepository(db);
@@ -252,8 +248,6 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     candleRepo,
     priceHistoryRepo,
     candleCoverageRepo,
-    noteRepo,
-    observationPlanRepo,
     signalEventRepo,
     newsFeedService,
     disclosureRepo,
@@ -279,8 +273,6 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     backfillStateStore,
     backgroundBackfill,
     signalEventRepo,
-    noteRepo,
-    observationPlanRepo,
     newsRepo,
     dataRetention,
   });

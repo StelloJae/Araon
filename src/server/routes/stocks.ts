@@ -20,8 +20,6 @@ import type {
   PriceCandleRepository,
   PriceHistoryPointRepository,
   StockDisclosureRepository,
-  StockNoteRepository,
-  StockObservationPlanRepository,
   StockSignalEventRepository,
 } from '../db/repositories.js';
 import { parseStockCsv } from '../parsers/csv-parser.js';
@@ -39,13 +37,9 @@ import type {
   PriceCandle,
   PriceCandleSource,
   PriceHistoryApiItem,
-  StockNote,
   StockDisclosureItem,
   StockDisclosurePage,
-  StockObservationPlan,
   StockSignalEvent,
-  StockSignalOutcome,
-  StockTimelineItem,
 } from '@shared/types.js';
 import type {
   DailyBackfillRange,
@@ -75,8 +69,6 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   candleRepo?: PriceCandleRepository;
   priceHistoryRepo?: PriceHistoryPointRepository;
   candleCoverageRepo?: CandleCoverageRepository;
-  noteRepo?: StockNoteRepository;
-  observationPlanRepo?: StockObservationPlanRepository;
   signalEventRepo?: StockSignalEventRepository;
   dailyBackfillService?: DailyBackfillService;
   todayMinuteBackfillService?: TodayMinuteBackfillService;
@@ -152,22 +144,6 @@ const ensureCoverageBodySchema = z.object({
   force: z.boolean().optional().default(false),
 });
 
-const stockNoteBodySchema = z.object({
-  body: z.string().trim().min(1).max(2_000),
-});
-
-const observationPlanBodySchema = z.object({
-  thesis: z.string().trim().min(1).max(2_000),
-  trigger: z.string().trim().min(1).max(1_000),
-  invalidation: z.string().trim().min(1).max(1_000),
-  status: z.enum(['watching', 'paused', 'archived']).default('watching'),
-});
-
-const stockNoteQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(200).default(50),
-  offset: z.coerce.number().int().nonnegative().default(0),
-});
-
 const signalEventBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
   signalType: z.enum(['scalp', 'strong_scalp', 'overheat', 'trend']),
@@ -184,10 +160,6 @@ const signalEventBodySchema = z.object({
   volumeBaselineStatus: z.enum(['collecting', 'ready', 'unavailable']).nullable(),
 });
 
-const timelineQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(100).default(30),
-});
-
 const feedPageQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(50).default(5),
   offset: z.coerce.number().int().nonnegative().default(0),
@@ -198,9 +170,6 @@ type BulkBody = z.infer<typeof bulkBodySchema>;
 type CandleBackfillBody = z.infer<typeof candleBackfillBodySchema>;
 type MinuteBackfillBody = z.infer<typeof minuteBackfillBodySchema>;
 type EnsureCoverageBody = z.infer<typeof ensureCoverageBodySchema>;
-type StockNoteBody = z.infer<typeof stockNoteBodySchema>;
-type ObservationPlanBody = z.infer<typeof observationPlanBodySchema>;
-type StockNoteQuery = z.input<typeof stockNoteQuerySchema>;
 type SignalEventBody = z.infer<typeof signalEventBodySchema>;
 type FeedPageQuery = z.input<typeof feedPageQuerySchema>;
 
@@ -211,157 +180,6 @@ export async function stockRoutes(
   opts: StockRoutesOptions,
 ): Promise<void> {
   const { service } = opts;
-
-  app.get<{ Params: { ticker: string } }>(
-    '/stocks/:ticker/observation-plan',
-    async (request, reply) => {
-      const ticker = request.params.ticker;
-      if (!/^\d{6}$/.test(ticker)) {
-        return reply.status(400).send({
-          success: false,
-          error: { code: 'INVALID_TICKER' },
-        });
-      }
-      if (opts.observationPlanRepo === undefined) {
-        return reply.status(503).send({
-          success: false,
-          error: { code: 'STOCK_OBSERVATION_PLAN_REPOSITORY_NOT_WIRED' },
-        });
-      }
-      return reply.send({
-        success: true,
-        data: opts.observationPlanRepo.findByTicker(ticker),
-      });
-    },
-  );
-
-  app.put<{
-    Params: { ticker: string };
-    Body: ObservationPlanBody;
-  }>('/stocks/:ticker/observation-plan', async (request, reply) => {
-    const ticker = request.params.ticker;
-    if (!/^\d{6}$/.test(ticker)) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: 'INVALID_TICKER' },
-      });
-    }
-    if (opts.observationPlanRepo === undefined) {
-      return reply.status(503).send({
-        success: false,
-        error: { code: 'STOCK_OBSERVATION_PLAN_REPOSITORY_NOT_WIRED' },
-      });
-    }
-    const parsed = observationPlanBodySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({
-        success: false,
-        error: parsed.error.issues,
-      });
-    }
-
-    const plan: StockObservationPlan = opts.observationPlanRepo.upsert({
-      ticker,
-      thesis: parsed.data.thesis,
-      trigger: parsed.data.trigger,
-      invalidation: parsed.data.invalidation,
-      status: parsed.data.status,
-      now: (opts.now ?? (() => new Date()))(),
-    });
-    return reply.send({ success: true, data: plan });
-  });
-
-  app.get<{ Params: { ticker: string }; Querystring: StockNoteQuery }>(
-    '/stocks/:ticker/notes',
-    async (request, reply) => {
-    const ticker = request.params.ticker;
-    if (!/^\d{6}$/.test(ticker)) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: 'INVALID_TICKER' },
-      });
-    }
-    if (opts.noteRepo === undefined) {
-      return reply.status(503).send({
-        success: false,
-        error: { code: 'STOCK_NOTE_REPOSITORY_NOT_WIRED' },
-      });
-    }
-    const parsed = stockNoteQuerySchema.safeParse(request.query);
-    if (!parsed.success) {
-      return reply.status(400).send({
-        success: false,
-        error: parsed.error.issues,
-      });
-    }
-
-    return reply.send({
-      success: true,
-      data: opts.noteRepo.listByTicker(ticker, parsed.data),
-    });
-  },
-  );
-
-  app.post<{
-    Params: { ticker: string };
-    Body: StockNoteBody;
-  }>('/stocks/:ticker/notes', async (request, reply) => {
-    const ticker = request.params.ticker;
-    if (!/^\d{6}$/.test(ticker)) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: 'INVALID_TICKER' },
-      });
-    }
-    if (opts.noteRepo === undefined) {
-      return reply.status(503).send({
-        success: false,
-        error: { code: 'STOCK_NOTE_REPOSITORY_NOT_WIRED' },
-      });
-    }
-    const parsed = stockNoteBodySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({
-        success: false,
-        error: parsed.error.issues,
-      });
-    }
-
-    const note: StockNote = opts.noteRepo.create({
-      ticker,
-      body: parsed.data.body,
-      now: (opts.now ?? (() => new Date()))(),
-    });
-    return reply.status(201).send({ success: true, data: note });
-  });
-
-  app.delete<{ Params: { ticker: string; noteId: string } }>(
-    '/stocks/:ticker/notes/:noteId',
-    async (request, reply) => {
-      const { ticker, noteId } = request.params;
-      if (!/^\d{6}$/.test(ticker)) {
-        return reply.status(400).send({
-          success: false,
-          error: { code: 'INVALID_TICKER' },
-        });
-      }
-      if (!/^[0-9a-fA-F-]{36}$/.test(noteId)) {
-        return reply.status(400).send({
-          success: false,
-          error: { code: 'INVALID_NOTE_ID' },
-        });
-      }
-      if (opts.noteRepo === undefined) {
-        return reply.status(503).send({
-          success: false,
-          error: { code: 'STOCK_NOTE_REPOSITORY_NOT_WIRED' },
-        });
-      }
-
-      opts.noteRepo.delete(ticker, noteId);
-      return reply.status(204).send();
-    },
-  );
 
   app.post<{
     Params: { ticker: string };
@@ -406,57 +224,6 @@ export async function stockRoutes(
       now: (opts.now ?? (() => new Date()))(),
     });
     return reply.status(201).send({ success: true, data: event });
-  });
-
-  app.get<{
-    Params: { ticker: string };
-    Querystring: z.input<typeof timelineQuerySchema>;
-  }>('/stocks/:ticker/timeline', async (request, reply) => {
-    const ticker = request.params.ticker;
-    if (!/^\d{6}$/.test(ticker)) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: 'INVALID_TICKER' },
-      });
-    }
-    if (opts.noteRepo === undefined || opts.signalEventRepo === undefined) {
-      return reply.status(503).send({
-        success: false,
-        error: { code: 'STOCK_TIMELINE_NOT_WIRED' },
-      });
-    }
-    const parsed = timelineQuerySchema.safeParse(request.query);
-    if (!parsed.success) {
-      return reply.status(400).send({
-        success: false,
-        error: parsed.error.issues,
-      });
-    }
-
-    const notes: StockTimelineItem[] = opts.noteRepo
-      .listByTicker(ticker, { limit: parsed.data.limit })
-      .map((note) => ({
-        kind: 'note',
-        id: note.id,
-        ticker,
-        occurredAt: note.createdAt,
-        note,
-      }));
-    const signals: StockTimelineItem[] = opts.signalEventRepo
-      .listByTicker(ticker, parsed.data.limit)
-      .map((signal) => ({
-        kind: 'signal',
-        id: signal.id,
-        ticker,
-        occurredAt: signal.signalAt,
-        signal,
-        outcomes: buildSignalOutcomes(signal, opts.candleRepo),
-      }));
-
-    const items = [...notes, ...signals]
-      .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
-      .slice(0, parsed.data.limit);
-    return reply.send({ success: true, data: items });
   });
 
   app.get<{ Params: { ticker: string }; Querystring: FeedPageQuery }>('/stocks/:ticker/news', async (request, reply) => {
@@ -1544,56 +1311,6 @@ function toCandleApiItem(candle: {
     sampleCount: candle.sampleCount,
     source: candle.source ?? null,
     isPartial: candle.isPartial,
-  };
-}
-
-function buildSignalOutcomes(
-  signal: StockSignalEvent,
-  candleRepo: PriceCandleRepository | undefined,
-): StockSignalOutcome[] {
-  return [
-    buildSignalOutcome(signal, candleRepo, '5m', 5),
-    buildSignalOutcome(signal, candleRepo, '15m', 15),
-    buildSignalOutcome(signal, candleRepo, '30m', 30),
-  ];
-}
-
-function buildSignalOutcome(
-  signal: StockSignalEvent,
-  candleRepo: PriceCandleRepository | undefined,
-  horizon: StockSignalOutcome['horizon'],
-  minutes: number,
-): StockSignalOutcome {
-  if (candleRepo === undefined || signal.signalPrice <= 0) {
-    return {
-      horizon,
-      state: 'pending',
-      price: null,
-      changePct: null,
-      observedAt: null,
-    };
-  }
-  const target = new Date(new Date(signal.signalAt).getTime() + minutes * 60_000);
-  const candle = candleRepo.findFirstCandleAtOrAfter({
-    ticker: signal.ticker,
-    interval: '1m',
-    at: target.toISOString(),
-  });
-  if (candle === null) {
-    return {
-      horizon,
-      state: 'pending',
-      price: null,
-      changePct: null,
-      observedAt: null,
-    };
-  }
-  return {
-    horizon,
-    state: 'ready',
-    price: candle.close,
-    changePct: (candle.close / signal.signalPrice - 1) * 100,
-    observedAt: candle.bucketAt,
   };
 }
 

@@ -1,51 +1,49 @@
-# Observation Memo Log MVP
+# Observation Surfaces Removal
 
-Date: 2026-05-06
+Date: 2026-05-07
 
-## Goal
+## Decision
 
-Add a small local observation log to the stock detail modal so Araon can preserve
-the user's own thesis fragments and follow-up notes alongside realtime signals
-and local chart history.
+The user-authored observation surfaces were removed from Araon.
 
-This is not an advice engine and does not synthesize financial data.
+Removed product surfaces:
 
-## Implemented Scope
+- `관찰 계획`
+- `관찰 메모`
+- `관찰 타임라인`
+- stock-detail 전용 `관찰 근거` 섹션
 
-- Local SQLite table: `stock_notes`
-- Per-ticker note list, create, and delete
-- `StockDetailModal` section: `관찰 메모`
-- Client API helpers for note list/create/delete
-- Notes cascade when a tracked stock is removed
+The reason is product focus. These panels made the stock detail modal heavier
+without improving the core monitoring loop: realtime movement, candle coverage,
+news/disclosure links, and data health.
 
-## API
+## Removed Runtime/API Surface
 
+- `GET /stocks/:ticker/observation-plan`
+- `PUT /stocks/:ticker/observation-plan`
 - `GET /stocks/:ticker/notes`
 - `POST /stocks/:ticker/notes`
-  - body: `{ "body": "..." }`
-  - body is trimmed and capped at 2,000 characters
 - `DELETE /stocks/:ticker/notes/:noteId`
+- `GET /stocks/:ticker/timeline`
 
-All routes are local app routes. They do not call KIS and do not expose
-credentials, account values, tokens, or approval keys.
+`StockDetailModal` no longer imports or renders the observation plan, notes,
+timeline, or detail-only observation reason components. The client API helpers
+for those routes were also removed.
 
 ## Data Policy
 
-- Notes are user-authored text only.
-- No synthetic prices, candles, ratios, news, or recommendations are generated.
-- Removing a tracked stock deletes its notes through the stock foreign key.
+Existing SQLite migration files and deployed tables remain in place for
+migration compatibility. New code paths do not read, write, export, restore, or
+display those records.
 
-## Validation
+Realtime signal events remain as internal diagnostics for signal outcome
+tracking and data-health summaries. They are no longer exposed through a stock
+detail observation timeline.
 
-- Focused tests:
-  - `src/server/routes/__tests__/stock-notes.test.ts`
-  - `src/client/components/__tests__/stock-notes-panel.test.ts`
-- `npm run typecheck`
+## Validation Target
 
-## HOLD
-
-- Rich tagging / categories
-- Editing an existing note
-- Exporting notes
-- Linking notes to exact candle timestamps
-- AI summaries
+- Removed routes return `404`.
+- Local backup/restore contains only tracked stocks and favorites.
+- `/runtime/data-health` no longer reports observation-note growth.
+- The stock detail modal shows realtime/chart/data-quality/news surfaces without
+  observation plan, notes, timeline, or observation-reason panels.

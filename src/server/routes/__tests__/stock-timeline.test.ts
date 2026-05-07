@@ -6,7 +6,6 @@ import { migrateUp } from '../../db/migrator.js';
 import {
   PriceCandleRepository,
   SectorRepository,
-  StockNoteRepository,
   StockRepository,
   StockSignalEventRepository,
   MasterStockRepository,
@@ -26,15 +25,14 @@ function buildApp(db: Database.Database) {
   const stockRepo = new StockRepository(db);
   const sectorRepo = new SectorRepository(db);
   const masterRepo = new MasterStockRepository(db);
-  const noteRepo = new StockNoteRepository(db);
   const signalEventRepo = new StockSignalEventRepository(db);
   const candleRepo = new PriceCandleRepository(db);
   const service = createStockService({ stockRepo, sectorRepo, masterRepo });
   stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
 
   const app = Fastify({ logger: false });
-  app.register(stockRoutes, { service, noteRepo, signalEventRepo, candleRepo });
-  return { app, noteRepo, signalEventRepo, candleRepo };
+  app.register(stockRoutes, { service, signalEventRepo, candleRepo });
+  return { app, signalEventRepo, candleRepo };
 }
 
 function candle(bucketAt: string, overrides: Partial<PriceCandle> = {}): PriceCandle {
@@ -60,13 +58,12 @@ function candle(bucketAt: string, overrides: Partial<PriceCandle> = {}): PriceCa
 describe('stock signal timeline routes', () => {
   let db: Database.Database;
   let app: ReturnType<typeof buildApp>['app'];
-  let noteRepo: StockNoteRepository;
   let signalEventRepo: StockSignalEventRepository;
   let candleRepo: PriceCandleRepository;
 
   beforeEach(() => {
     db = openMemoryDb();
-    ({ app, noteRepo, signalEventRepo, candleRepo } = buildApp(db));
+    ({ app, signalEventRepo, candleRepo } = buildApp(db));
   });
 
   afterEach(async () => {
@@ -107,12 +104,7 @@ describe('stock signal timeline routes', () => {
     expect(second.json().data.id).toBe(first.json().data.id);
   });
 
-  it('returns notes and signal outcomes in one observation timeline', async () => {
-    noteRepo.create({
-      ticker: '005930',
-      body: '장후 백필 이후 일봉 확인',
-      now: new Date('2026-05-06T01:10:00.000Z'),
-    });
+  it('does not expose the removed observation timeline route', async () => {
     await candleRepo.bulkUpsertCandles([
       candle('2026-05-06T01:05:00.000Z', { close: 70_700 }),
       candle('2026-05-06T01:15:00.000Z', { close: 70_350 }),
@@ -139,15 +131,7 @@ describe('stock signal timeline routes', () => {
 
     const res = await app.inject({ method: 'GET', url: '/stocks/005930/timeline' });
 
-    expect(res.statusCode).toBe(200);
-    const body = res.json<{ success: true; data: Array<Record<string, any>> }>();
-    expect(body.data.map((item) => item.kind)).toEqual(['note', 'signal']);
-    const signal = body.data.find((item) => item.kind === 'signal')!;
-    expect(signal.outcomes).toEqual([
-      expect.objectContaining({ horizon: '5m', state: 'ready', price: 70_700 }),
-      expect.objectContaining({ horizon: '15m', state: 'ready', price: 70_350 }),
-      expect.objectContaining({ horizon: '30m', state: 'pending', price: null }),
-    ]);
+    expect(res.statusCode).toBe(404);
   });
 
   it('prunes old signal events while retaining recent observation history', () => {

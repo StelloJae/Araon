@@ -156,11 +156,6 @@ describe('managed operations settings copy', () => {
               newestSignalEventAt: '2026-05-06T09:00:00.000Z',
               retentionDays: 90,
             },
-            notes: {
-              noteCount: 4,
-              oldestNoteAt: '2026-05-02T09:00:00.000Z',
-              newestNoteAt: '2026-05-06T09:00:00.000Z',
-            },
             news: {
               itemCount: 6,
               staleItemCount: 1,
@@ -228,7 +223,6 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('5m 평균 +0.80%');
     expect(html).toContain('15m 평균 +0.60%');
     expect(html).toContain('30m 평균 +0.30%');
-    expect(html).toContain('관찰 메모');
     expect(html).toContain('뉴스 캐시');
     expect(html).toContain('candle 정리');
     expect(html).toContain('오늘 백필 호출');
@@ -249,8 +243,8 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('로컬 백업 / 복원');
     expect(html).toContain('추적 종목');
     expect(html).toContain('즐겨찾기');
-    expect(html).toContain('관찰 메모');
-    expect(html).toContain('관찰 계획');
+    expect(html).not.toContain('관찰 메모');
+    expect(html).not.toContain('관찰 계획');
     expect(html).toContain('credentials');
     expect(html).toContain('candle 데이터는 포함하지 않습니다');
     expect(html).toContain('백업 내보내기');

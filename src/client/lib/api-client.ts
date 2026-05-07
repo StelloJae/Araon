@@ -17,12 +17,8 @@ import type {
   Stock,
   StockDisclosurePage,
   StockNewsPage,
-  StockNote,
-  StockObservationPlan,
-  StockObservationPlanStatus,
   StockSignalEvent,
   StockSignalOutcomeDashboard,
-  StockTimelineItem,
 } from '@shared/types';
 import type { SessionRealtimeCap } from './realtime-session-control';
 
@@ -95,55 +91,6 @@ export async function removeStock(ticker: string): Promise<void> {
   }
 }
 
-export async function getStockNotes(ticker: string): Promise<StockNote[]> {
-  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/notes`);
-  return unwrap<StockNote[]>(res);
-}
-
-export async function getStockObservationPlan(
-  ticker: string,
-): Promise<StockObservationPlan | null> {
-  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/observation-plan`);
-  return unwrap<StockObservationPlan | null>(res);
-}
-
-export async function saveStockObservationPlan(
-  ticker: string,
-  plan: {
-    thesis: string;
-    trigger: string;
-    invalidation: string;
-    status: StockObservationPlanStatus;
-  },
-): Promise<StockObservationPlan> {
-  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/observation-plan`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(plan),
-  });
-  return unwrap<StockObservationPlan>(res);
-}
-
-export async function createStockNote(ticker: string, body: string): Promise<StockNote> {
-  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/notes`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body }),
-  });
-  return unwrap<StockNote>(res);
-}
-
-export async function deleteStockNote(ticker: string, noteId: string): Promise<void> {
-  const res = await fetch(
-    `/stocks/${encodeURIComponent(ticker)}/notes/${encodeURIComponent(noteId)}`,
-    { method: 'DELETE' },
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new ApiError(res.status, `${res.status} ${res.statusText}`, text);
-  }
-}
-
 export async function recordStockSignal(
   ticker: string,
   signal: Omit<StockSignalEvent, 'id' | 'ticker' | 'createdAt' | 'updatedAt'>,
@@ -154,11 +101,6 @@ export async function recordStockSignal(
     body: JSON.stringify(signal),
   });
   return unwrap<StockSignalEvent>(res);
-}
-
-export async function getStockTimeline(ticker: string): Promise<StockTimelineItem[]> {
-  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/timeline`);
-  return unwrap<StockTimelineItem[]>(res);
 }
 
 export async function getStockNews(
@@ -633,11 +575,6 @@ export interface RuntimeDataHealthPayload {
       oldestSignalEventAt: string | null;
       newestSignalEventAt: string | null;
       retentionDays: number;
-    };
-    notes: {
-      noteCount: number;
-      oldestNoteAt: string | null;
-      newestNoteAt: string | null;
     };
     news: {
       itemCount: number;
