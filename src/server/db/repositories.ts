@@ -1876,7 +1876,13 @@ export class StockDisclosureRepository {
         `SELECT id, ticker, source, kind, title, url, published_at, fetched_at
          FROM stock_disclosure_items
          WHERE ticker = ?
-         ORDER BY fetched_at DESC, id DESC
+         ORDER BY fetched_at DESC,
+           CASE source
+             WHEN 'dart' THEN 0
+             WHEN 'kind' THEN 1
+             ELSE 2
+           END,
+           id DESC
          LIMIT ?`,
       )
       .all(ticker, safeLimit);

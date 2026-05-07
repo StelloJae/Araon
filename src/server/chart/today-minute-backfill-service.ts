@@ -50,6 +50,7 @@ export function createTodayMinuteBackfillService(
     const fetched: PriceCandle[] = [];
     let cursor = kstHms(input.now);
     let pages = 0;
+    const todayYmd = kstYmd(input.now);
 
     for (let page = 0; page < maxPages; page += 1) {
       const candles = await options.fetchMinuteCandles({
@@ -59,8 +60,10 @@ export function createTodayMinuteBackfillService(
       });
       pages += 1;
       if (candles.length === 0) break;
-      fetched.push(...candles);
-      const earliest = candles[0]!;
+      const todayCandles = candles.filter((candle) => kstYmd(new Date(candle.bucketAt)) === todayYmd);
+      fetched.push(...todayCandles);
+      const earliest = todayCandles[0];
+      if (earliest === undefined) break;
       const nextCursor = previousKstMinuteHms(earliest.bucketAt);
       if (nextCursor === null || nextCursor === cursor) break;
       cursor = nextCursor;
@@ -105,6 +108,15 @@ function kstHms(date: Date): string {
     String(shifted.getUTCHours()).padStart(2, '0'),
     String(shifted.getUTCMinutes()).padStart(2, '0'),
     String(shifted.getUTCSeconds()).padStart(2, '0'),
+  ].join('');
+}
+
+function kstYmd(date: Date): string {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  return [
+    shifted.getUTCFullYear(),
+    String(shifted.getUTCMonth() + 1).padStart(2, '0'),
+    String(shifted.getUTCDate()).padStart(2, '0'),
   ].join('');
 }
 

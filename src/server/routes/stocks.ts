@@ -54,6 +54,8 @@ import type { StockNewsFeedService } from '../news/news-feed-service.js';
 
 const log = createChildLogger('routes/stocks');
 const MAX_DISPLAY_MINUTE_TRADE_VALUE_KRW = 5_000_000_000_000;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const FRESH_TODAY_MINUTE_COVERAGE_MS = 5 * 60 * 1000;
 
 // === Plugin options ===========================================================
 
@@ -595,22 +597,23 @@ export async function stockRoutes(
       });
     }
 
-    if (!isBackfillAllowed(now, 'closed')) {
-      return reply.send({
-        success: true,
-        data: {
-          state: 'skipped',
-          reason: 'MARKET_HOURS',
-          source: null,
-          requested: 0,
-          inserted: 0,
-          updated: 0,
-          message: '장중에는 차트 과거 데이터 자동 보강을 대기합니다.',
-        },
-      });
-    }
+    const backfillAllowed = isBackfillAllowed(now, 'closed');
 
     if (dailyBaseInterval(parsed.data.interval)) {
+      if (!backfillAllowed) {
+        return reply.send({
+          success: true,
+          data: {
+            state: 'skipped',
+            reason: 'MARKET_HOURS',
+            source: null,
+            requested: 0,
+            inserted: 0,
+            updated: 0,
+            message: '장중에는 일봉 과거 데이터 자동 보강을 대기합니다.',
+          },
+        });
+      }
       if (opts.dailyBackfillService === undefined) {
         return reply.status(503).send({
           success: false,
@@ -686,6 +689,86 @@ export async function stockRoutes(
         return reply.status(503).send({
           success: false,
           error: { code: 'DAILY_COVERAGE_ENSURE_FAILED' },
+        });
+      }
+    }
+
+    if (!backfillAllowed) {
+      if (parsed.data.range !== '1d') {
+        return reply.send({
+          success: true,
+          data: {
+            state: 'skipped',
+            reason: 'MARKET_HOURS',
+            source: null,
+            requested: 0,
+            inserted: 0,
+            updated: 0,
+            message: '장중에는 현재 선택 종목의 오늘 분봉만 자동 보강합니다.',
+          },
+        });
+      }
+      if (hasFreshTodayMinuteCoverage(opts.candleRepo, ticker, now)) {
+        return reply.send({
+          success: true,
+          data: {
+            state: 'current',
+            source: 'kis-time-today',
+            requested: 0,
+            inserted: 0,
+            updated: 0,
+            message: '오늘 분봉 coverage가 이미 최신입니다.',
+          },
+        });
+      }
+      if (opts.todayMinuteBackfillService === undefined) {
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'TODAY_MINUTE_BACKFILL_NOT_WIRED' },
+        });
+      }
+      try {
+        const result = await opts.todayMinuteBackfillService.backfillTodayMinuteCandles({
+          ticker,
+          now,
+          maxPages: 4,
+        });
+        if (opts.candleCoverageRepo !== undefined && result.requested > 0) {
+          opts.candleCoverageRepo.upsertSegment({
+            ticker,
+            interval: '1m',
+            source: result.source,
+            rangeFrom: window.from,
+            rangeTo: window.to,
+            status: 'partial',
+            requested: result.requested,
+            inserted: result.inserted,
+            updated: result.updated,
+            now,
+          });
+        }
+        return reply.send({
+          success: true,
+          data: {
+            state: result.requested > 0 ? 'backfilled' : 'empty',
+            source: result.source,
+            requested: result.requested,
+            inserted: result.inserted,
+            updated: result.updated,
+            from: result.from,
+            to: result.to,
+            pages: result.pages,
+            message: '선택 종목의 오늘 분봉을 자동 보강했습니다.',
+          },
+        });
+      } catch (err: unknown) {
+        log.warn(
+          { ticker, err: err instanceof Error ? err.message : String(err) },
+          'today minute chart coverage ensure failed',
+        );
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'TODAY_MINUTE_COVERAGE_ENSURE_FAILED' },
         });
       }
     }
@@ -1022,6 +1105,35 @@ function hasBackfilledIntradayInWindow(
       limit: 200,
     })
     .some((candle) => candle.source === 'kis-time-daily');
+}
+
+function hasFreshTodayMinuteCoverage(
+  repo: PriceCandleRepository,
+  ticker: string,
+  now: Date,
+): boolean {
+  const todayStart = kstStartOfDayIso(now);
+  const rows = repo
+    .listCandles({
+      ticker,
+      interval: '1m',
+      from: todayStart,
+      to: now.toISOString(),
+      limit: 2_000,
+    })
+    .filter((candle) => candle.source === 'kis-time-today' && isDisplayableIntradayCandle(candle));
+  const newest = rows[rows.length - 1];
+  if (newest === undefined) return false;
+  const newestMs = Date.parse(newest.bucketAt);
+  return Number.isFinite(newestMs) && now.getTime() - newestMs <= FRESH_TODAY_MINUTE_COVERAGE_MS;
+}
+
+function kstStartOfDayIso(date: Date): string {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  const startUtcMs =
+    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) -
+    KST_OFFSET_MS;
+  return new Date(startUtcMs).toISOString();
 }
 
 function isDisplayableIntradayCandle(candle: PriceCandle): boolean {

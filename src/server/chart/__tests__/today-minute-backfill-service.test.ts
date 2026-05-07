@@ -70,4 +70,42 @@ describe('today minute backfill service', () => {
       coverage: { backfilled: true, localOnly: false },
     });
   });
+
+  it('keeps today-minute backfill scoped to the current KST trading day', async () => {
+    const fetchMinuteCandles = vi
+      .fn()
+      .mockResolvedValueOnce([
+        candle('2026-05-06T06:04:00.000Z', 69_900),
+        candle('2026-05-07T00:58:00.000Z', 70_100),
+        candle('2026-05-07T00:59:00.000Z', 70_200),
+      ])
+      .mockResolvedValueOnce([]);
+    const bulkUpsertCandles = vi.fn(async () => undefined);
+    const countExistingCandles = vi.fn(() => 0);
+    const service = createTodayMinuteBackfillService({
+      repo: { bulkUpsertCandles, countExistingCandles },
+      fetchMinuteCandles,
+    });
+
+    const result = await service.backfillTodayMinuteCandles({
+      ticker: '005930',
+      now: new Date('2026-05-07T01:03:00.000Z'),
+      maxPages: 2,
+    });
+
+    expect(fetchMinuteCandles).toHaveBeenNthCalledWith(2, {
+      ticker: '005930',
+      toHms: '095700',
+      now: new Date('2026-05-07T01:03:00.000Z'),
+    });
+    expect(bulkUpsertCandles).toHaveBeenCalledWith([
+      expect.objectContaining({ bucketAt: '2026-05-07T00:58:00.000Z' }),
+      expect.objectContaining({ bucketAt: '2026-05-07T00:59:00.000Z' }),
+    ]);
+    expect(result).toMatchObject({
+      requested: 2,
+      inserted: 2,
+      updated: 0,
+    });
+  });
 });

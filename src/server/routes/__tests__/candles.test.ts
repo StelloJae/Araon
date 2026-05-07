@@ -398,6 +398,80 @@ describe('GET /stocks/:ticker/candles', () => {
     expect(backfillTodayMinuteCandles).not.toHaveBeenCalled();
   });
 
+  it('auto-ensures selected today-minute coverage during market hours for visible intraday charts', async () => {
+    const backfillTodayMinuteCandles = vi.fn().mockResolvedValue({
+      ticker: '005930',
+      requested: 90,
+      inserted: 90,
+      updated: 0,
+      from: '2026-05-05T04:30:00.000Z',
+      to: '2026-05-05T06:00:00.000Z',
+      source: 'kis-time-today',
+      pages: 3,
+      coverage: { backfilled: true, localOnly: false },
+    });
+    const backfillHistoricalMinuteCandles = vi.fn();
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      todayMinuteBackfillService: { backfillTodayMinuteCandles },
+      historicalMinuteBackfillService: { backfillHistoricalMinuteCandles },
+      now: () => new Date('2026-05-05T06:00:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload: { interval: '1m', range: '1d' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(backfillTodayMinuteCandles).toHaveBeenCalledWith({
+      ticker: '005930',
+      now: new Date('2026-05-05T06:00:00.000Z'),
+      maxPages: 4,
+    });
+    expect(backfillHistoricalMinuteCandles).not.toHaveBeenCalled();
+    expect(JSON.parse(res.body).data).toMatchObject({
+      state: 'backfilled',
+      source: 'kis-time-today',
+      requested: 90,
+    });
+  });
+
+  it('does not refetch today-minute coverage when the selected chart already has fresh candles', async () => {
+    const repo = new PriceCandleRepository(db);
+    await repo.bulkUpsertCandles([
+      candle('2026-05-05T05:59:00.000Z', {
+        source: 'kis-time-today',
+        sampleCount: 1,
+      }),
+    ]);
+    const backfillTodayMinuteCandles = vi.fn();
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: repo,
+      todayMinuteBackfillService: { backfillTodayMinuteCandles },
+      now: () => new Date('2026-05-05T06:00:30.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload: { interval: '1m', range: '1d' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(backfillTodayMinuteCandles).not.toHaveBeenCalled();
+    expect(JSON.parse(res.body).data).toMatchObject({
+      state: 'current',
+      source: 'kis-time-today',
+      requested: 0,
+    });
+  });
+
   it('runs selected ticker minute backfill after close with a mock service', async () => {
     const backfillTodayMinuteCandles = vi.fn().mockResolvedValue({
       ticker: '005930',

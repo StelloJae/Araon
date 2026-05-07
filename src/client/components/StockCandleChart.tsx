@@ -50,27 +50,33 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
 
   useEffect(() => {
     let cancelled = false;
+    let coverageMessage: string | null = null;
     setStatus('loading');
     setCoveragePending(true);
-    setMessage(dailyInterval(interval) ? '과거 일봉 coverage 확인 중' : '과거 분봉 coverage 확인 중');
+    coverageMessage = dailyInterval(interval)
+      ? '과거 일봉 coverage 확인 중'
+      : '과거 분봉 coverage 확인 중';
+    setMessage(coverageMessage);
 
     ensureStockCandleCoverage(ticker, { interval, range })
       .then((coverage) => {
         if (cancelled) return;
         if (coverage.state === 'backfilled') {
           const label = coverage.source === 'kis-daily' ? '일봉' : '분봉';
-          setMessage(`${label} 자동 보강 완료: ${coverage.inserted + coverage.updated}개 candle 반영`);
+          coverageMessage = `${label} 자동 보강 완료: ${coverage.inserted + coverage.updated}개 candle 반영`;
         } else if (coverage.state === 'current') {
-          setMessage('차트 coverage가 이미 준비되어 있습니다.');
+          coverageMessage = '차트 coverage가 이미 준비되어 있습니다.';
         } else if (coverage.state === 'skipped') {
-          setMessage(coverage.message);
+          coverageMessage = coverage.message;
         } else {
-          setMessage('차트 coverage를 확인했습니다. 표시 가능한 candle이 있으면 바로 보여줍니다.');
+          coverageMessage = '차트 coverage를 확인했습니다. 표시 가능한 candle이 있으면 바로 보여줍니다.';
         }
+        setMessage(coverageMessage);
       })
       .catch(() => {
         if (cancelled) return;
-        setMessage('KIS credentials 준비 후 차트 과거 데이터를 자동 보강합니다.');
+        coverageMessage = 'KIS credentials 준비 후 차트 과거 데이터를 자동 보강합니다.';
+        setMessage(coverageMessage);
       })
       .finally(() => {
         if (!cancelled) setCoveragePending(false);
@@ -92,7 +98,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
               : '로컬 저장 candle',
         );
         if (data.items.length === 0) {
-          setMessage(data.status.message);
+          setMessage(coverageMessage ?? data.status.message);
         }
       })
       .catch(() => {

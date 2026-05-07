@@ -269,7 +269,7 @@ export async function ensureStockCandleCoverage(
 ): Promise<{
   state: 'backfilled' | 'current' | 'empty' | 'skipped';
   reason?: string;
-  source: 'kis-daily' | 'kis-time-daily' | null;
+  source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | null;
   requested: number;
   inserted: number;
   updated: number;
@@ -283,7 +283,7 @@ export async function ensureStockCandleCoverage(
   return unwrap<{
     state: 'backfilled' | 'current' | 'empty' | 'skipped';
     reason?: string;
-    source: 'kis-daily' | 'kis-time-daily' | null;
+    source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | null;
     requested: number;
     inserted: number;
     updated: number;
