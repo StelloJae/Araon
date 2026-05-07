@@ -59,6 +59,7 @@ localhost 단일 사용자용 한국 주식 watchlist 대시보드. Node 20 + Fa
 - **Desktop packaging hardening**: macOS signing failure 원인은 `mac.identity=null`로 bundle signing을 완전히 skip하면서 Mach-O linker/ad-hoc signature metadata와 sealed resources 상태가 어긋난 것. `mac.identity="-"` ad-hoc signing으로 로컬 macOS app bundle은 `codesign --verify --deep --strict` 통과. beta.12 release validation 중 `better-sqlite3`가 host Node ABI 141로 packaged되는 문제도 발견해 `nativeRebuilder="legacy"`로 Electron 41 ABI 145 packaging을 고정. `spctl`은 Developer ID/notarization이 없어서 여전히 rejected가 정상. Browser quarantine/Finder path와 Windows EXE 실행은 계속 pending.
 - **P1 data-growth hardening**: `stock_signal_events` 90일 retention + max 200 read clamp / `stock_notes` limit+offset pagination, no auto-prune / `stock_news_items` 24h stale + 7일 prune + sanitized fetch failure status / `price_candles` prune는 server start 후 daily maintenance로 호출 / `/runtime/data-health`가 signal/news/note growth와 candle prune 상태를 표시 / live KIS·WS·selected minute probe 0회
 - **Local backup/restore**: Settings 연결 탭과 `/runtime/backup/export`·`/runtime/backup/restore`에서 추적 종목, 즐겨찾기, 관찰 메모, 관찰 계획만 JSON으로 백업/복원한다. `credentials.enc`, token, approval key, account, candle, raw tick, runtime state는 절대 포함하지 않는다.
+- **No-live reliability soak**: `npm run soak:no-live -- --duration-ms 60000 --interval-ms 5000`는 fresh temp dataDir + no credentials로 health endpoints를 반복 조회한다. non-2xx, non-JSON, raw secret-looking value를 실패 처리하며 live KIS/token/approval/WebSocket/backfill 호출은 하지 않는다.
 
 ### NXT 시리즈 진행도
 
@@ -184,6 +185,8 @@ npm run dev:client &
 | `src/server/chart/background-backfill-scheduler.ts` | Managed-default background daily backfill scheduler. 장후/주말만 실행, favorites/tracked 우선, sequential low-rate, daily call counter + 429/5xx cooldown |
 | `src/server/maintenance/data-retention.ts` | P1 data-growth maintenance. startup + daily prune: 1m candle 30일, 1d candle 2년, signal 90일, news 7일. 실패는 sanitized diagnostic으로 격리 |
 | `docs/runbooks/local-backup-restore.md` | 로컬 백업/복원 범위. 포함: stocks/favorites/notes/observation plans. 제외: credentials/tokens/account/candles/raw ticks/runtime state |
+| `docs/runbooks/long-run-soak.md` | no-live reliability soak 절차. fresh temp dataDir로 `/credentials/status`, `/runtime/*`, backup export를 반복 조회해 5xx/non-JSON/secret-like value를 잡는다 |
+| `scripts/soak-araon.mts` | no-live soak harness. `npm run soak:no-live`에서 사용 |
 | `src/server/kis/kis-daily-chart.ts` | KIS 국내주식기간별시세 daily mapper/client. 테스트는 mock transport만 사용 |
 | `src/server/db/migrations/004-price-candles.sql` | `price_candles` schema: local `1m` + manual KIS `1d`. raw tick table 아님 |
 | `src/server/db/migrations/008-stock-news-fetch-status.sql` | `stock_news_fetch_status` schema: success/failed, sanitized error code, fetched timestamp만 저장 |
