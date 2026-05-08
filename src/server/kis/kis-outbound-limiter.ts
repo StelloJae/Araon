@@ -70,6 +70,15 @@ export function createKisOutboundLimiter(
     const cooldownUntilMs = cooldownUntilByProfile.get(profileId) ?? 0;
     const current = now();
     if (cooldownUntilMs > current) {
+      if (input.endpointClass === 'daily-backfill') {
+        throw new KisRestError(
+          'KIS outbound limiter cooldown active',
+          429,
+          null,
+          'EGW00201',
+          null,
+        );
+      }
       await sleep(cooldownUntilMs - current);
       refill();
     }

@@ -8,6 +8,7 @@ import {
   ChartRepairButton,
   CandleDataInspector,
   PinnedCandlePanel,
+  chartCoverageTimeoutMessage,
   formatCandleTooltipRows,
   getChartPalette,
   normalizeCandleRangeForInterval,
@@ -229,6 +230,12 @@ describe('StockCandleChart', () => {
     );
 
     expect(result).toBe('timeout');
+  });
+
+  it('does not imply chart loading is blocked when stored candles are already visible', () => {
+    expect(chartCoverageTimeoutMessage(true)).toContain('저장된 candle을 표시');
+    expect(chartCoverageTimeoutMessage(true)).toContain('백그라운드');
+    expect(chartCoverageTimeoutMessage(false)).toContain('보강 확인이 오래 걸려');
   });
 
   it('uses the coverage result when it resolves before timeout', async () => {

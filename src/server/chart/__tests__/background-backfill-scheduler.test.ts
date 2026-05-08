@@ -84,6 +84,31 @@ describe('createBackgroundDailyBackfillScheduler', () => {
     expect(backfillDailyCandles).not.toHaveBeenCalled();
   });
 
+  it('does not wait inside low-priority backfill while the shared KIS limiter is cooling down', async () => {
+    const backfillDailyCandles = vi.fn();
+    const scheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: {
+        snapshot: () => settings({ backgroundDailyBackfillEnabled: true }),
+      },
+      stockRepo: { findAll: () => [stock('005930')] },
+      favoriteRepo: { findAll: () => [favorite('005930')] },
+      dailyBackfillService: { backfillDailyCandles },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:05:00.000Z'),
+      isUpstreamCooldownActive: () => true,
+    });
+
+    await expect(scheduler.runOnce()).resolves.toMatchObject({
+      attempted: 0,
+      skippedReason: 'cooldown',
+    });
+    expect(backfillDailyCandles).not.toHaveBeenCalled();
+    expect(scheduler.snapshot()).toMatchObject({
+      running: false,
+      lastSkippedReason: 'cooldown',
+    });
+  });
+
   it('runs low-priority daily backfill for favorites first after close', async () => {
     const backfillDailyCandles = vi.fn(async (input: { ticker: string }) => ({
       ticker: input.ticker,

@@ -40,7 +40,7 @@ describe('createKisOutboundLimiter', () => {
       error: new KisRestError('limited', 429, null, 'EGW00201', null),
     });
 
-    await limiter.acquire({ profileId: 'primary', endpointClass: 'daily-backfill' });
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
 
     expect(sleep).toHaveBeenCalledWith(60_000);
     expect(limiter.snapshot().profiles).toEqual([
@@ -50,6 +50,34 @@ describe('createKisOutboundLimiter', () => {
         cooldownActive: false,
       }),
     ]);
+  });
+
+  it('fails fast for daily backfill while a profile cooldown is active', async () => {
+    let now = 1_000;
+    const sleep = vi.fn(async (ms: number) => {
+      now += ms;
+    });
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 10,
+      burst: 10,
+      cooldownMs: 60_000,
+      now: () => now,
+      sleep,
+    });
+
+    limiter.recordFailure({
+      profileId: 'primary',
+      endpointClass: 'polling',
+      error: new KisRestError('limited', 429, null, 'EGW00201', null),
+    });
+
+    await expect(
+      limiter.acquire({ profileId: 'primary', endpointClass: 'daily-backfill' }),
+    ).rejects.toMatchObject({
+      status: 429,
+      msgCd: 'EGW00201',
+    });
+    expect(sleep).not.toHaveBeenCalled();
   });
 
   it('does not cooldown unrelated profiles', async () => {

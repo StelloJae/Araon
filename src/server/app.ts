@@ -230,6 +230,13 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     },
     shouldBackfillTicker: ({ ticker, range, now }) =>
       shouldBackfillDailyTicker({ ticker, range, now, repo: candleRepo }),
+    isUpstreamCooldownActive: () => {
+      const state = runtimeRef.get();
+      return state.status === 'started'
+        && state.runtime.outboundLimiter
+          .snapshot()
+          .profiles.some((profile) => profile.cooldownActive);
+    },
   });
   const dataRetention = createDataRetentionScheduler({
     candleRepo,

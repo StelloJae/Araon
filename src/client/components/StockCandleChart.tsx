@@ -118,6 +118,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
   useEffect(() => {
     let cancelled = false;
     let coverageMessage: string | null = null;
+    let loadedItemCount = 0;
     setStatus('loading');
     setCoveragePending(true);
     coverageMessage = dailyInterval(interval)
@@ -129,6 +130,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       getStockCandles(ticker, { interval, range })
         .then((data) => {
           if (cancelled) return;
+          loadedItemCount = data.items.length;
           if (showLoading) setStatus(data.items.length === 0 ? 'empty' : 'ready');
           applyCandleData(data);
           if (data.items.length === 0) setMessage(coverageMessage ?? data.status.message);
@@ -151,7 +153,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       .then((coverage) => {
         if (cancelled) return;
         if (coverage === null) {
-          coverageMessage = '보강 확인이 오래 걸려 저장된 candle을 먼저 표시합니다.';
+          coverageMessage = chartCoverageTimeoutMessage(loadedItemCount > 0);
         } else if (coverage.state === 'backfilled') {
           const label = coverage.source === 'kis-daily' ? '일봉' : '분봉';
           coverageMessage = `${label} 자동 보강 완료: ${coverage.inserted + coverage.updated}개 candle 반영`;
@@ -259,6 +261,12 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       />
     </div>
   );
+}
+
+export function chartCoverageTimeoutMessage(hasStoredCandles: boolean): string {
+  return hasStoredCandles
+    ? '저장된 candle을 표시하고 있으며 보강 확인은 백그라운드에서 이어집니다.'
+    : '보강 확인이 오래 걸려 저장된 candle을 먼저 표시합니다.';
 }
 
 export function ChartRepairButton({

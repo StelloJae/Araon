@@ -90,6 +90,7 @@ export interface CreateBackgroundDailyBackfillSchedulerOptions {
     range: DailyBackfillRange;
     now: Date;
   }) => boolean | Promise<boolean>;
+  isUpstreamCooldownActive?: () => boolean;
   now?: () => Date;
   intervalMs?: number;
   maxTickersPerRun?: number;
@@ -168,6 +169,10 @@ export function createBackgroundDailyBackfillScheduler(
 
     if (!isBackfillAllowed(runAt, options.marketPhase())) {
       return finish(emptyResult('market_not_allowed'));
+    }
+
+    if (options.isUpstreamCooldownActive?.() === true) {
+      return finish(emptyResult('cooldown'));
     }
 
     const candidates = backgroundTickerOrder(
