@@ -17,6 +17,9 @@ describe('CredentialsSetup first-run copy', () => {
     expect(html).toContain('옆 모니터에서 흐름');
     expect(html).toContain('주문/매매 기능은 없고');
     expect(html).toContain('실시간 시세와 일봉 보강을 자동으로 관리');
+    expect(html).toContain('처음 시작 순서');
+    expect(html).toContain('전체 종목 목록을 자동으로 준비');
+    expect(html).toContain('검색창에서 종목명·코드로 관심종목을 추가');
     expect(html).toContain('최대 40종목까지 통합 시세');
     expect(html).toContain('REST 폴링 fallback');
     expect(html).toContain('비상정지');

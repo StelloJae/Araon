@@ -7,7 +7,9 @@ import {
   DataHealthPanel,
   DevModeControl,
   LocalBackupPanel,
+  NotifTab,
   RealtimeSessionControl,
+  SurgeTab,
 } from '../SettingsModal';
 
 describe('managed operations settings copy', () => {
@@ -67,6 +69,17 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('개발 모드');
     expect(html).toContain('Simulated Market');
     expect(html).toContain('운영자 재검증');
+  });
+
+  it('distinguishes notification thresholds from dashboard surge filters', () => {
+    const notifHtml = renderToStaticMarkup(createElement(NotifTab));
+    const surgeHtml = renderToStaticMarkup(createElement(SurgeTab));
+
+    expect(notifHtml).toContain('즐겨찾기 알림 기준');
+    expect(notifHtml).toContain('메인 급상승 목록에는 영향을 주지 않습니다');
+    expect(notifHtml).not.toContain('Phase 6');
+    expect(surgeHtml).toContain('메인 급상승 표시 기준');
+    expect(surgeHtml).toContain('알림을 보내지는 않습니다');
   });
 
   it('presents daily backfill as automatic with emergency pause only', () => {

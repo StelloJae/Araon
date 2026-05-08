@@ -109,6 +109,15 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
         <div>주문/매매 기능은 없고, KIS credentials 등록 후 실시간 시세와 일봉 보강을 자동으로 관리합니다.</div>
       </div>
 
+      <div style={stepsStyle}>
+        <div style={stepsTitleStyle}>처음 시작 순서</div>
+        <ol style={stepsListStyle}>
+          <li>한국투자증권 OpenAPI 앱키와 앱시크릿을 준비합니다.</li>
+          <li>아래에 등록하면 Araon이 전체 종목 목록을 자동으로 준비합니다.</li>
+          <li>대시보드 검색창에서 종목명·코드로 관심종목을 추가합니다.</li>
+        </ol>
+      </div>
+
       <div style={hintStyle}>
         최대 40종목까지 통합 시세로 운영하며 REST 폴링 fallback은 계속 유지됩니다.
         문제가 있으면 설정에서 비상정지할 수 있습니다.
@@ -229,6 +238,29 @@ const noticeStyle: React.CSSProperties = {
   background: 'var(--bg-tint)',
   border: '1px solid var(--border-soft)',
   borderRadius: 8,
+};
+
+const stepsStyle: React.CSSProperties = {
+  marginBottom: 12,
+  padding: '10px 12px',
+  background: 'var(--bg-card)',
+  border: '1px solid var(--border-soft)',
+  borderRadius: 8,
+};
+
+const stepsTitleStyle: React.CSSProperties = {
+  marginBottom: 6,
+  fontSize: 12,
+  fontWeight: 800,
+  color: 'var(--text-primary)',
+};
+
+const stepsListStyle: React.CSSProperties = {
+  margin: 0,
+  paddingLeft: 18,
+  fontSize: 12,
+  lineHeight: 1.55,
+  color: 'var(--text-secondary)',
 };
 
 const hintStyle: React.CSSProperties = {

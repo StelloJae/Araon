@@ -2,8 +2,8 @@
  * SettingsModal — four-tab settings dialog.
  *
  *   [연결] — readonly KIS runtime status (no credential values shown).
- *   [알림] — notifications: master switch, threshold, sound, desktop push.
- *   [급상승] — surge threshold (live + today aggregator pick this up).
+ *   [알림] — user-facing notification delivery settings.
+ *   [급상승] — dashboard surge list/filter settings.
  *   [룰]   — alert rules CRUD (localStorage). Firing engine ships in Phase 6.
  *
  * Behaviors fixed by Phase 5 plan:
@@ -1786,7 +1786,7 @@ function formatSignedPct(value: number): string {
 
 // ---------- Notif tab ----------
 
-function NotifTab() {
+export function NotifTab() {
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const alertDeliveryEntries = useAlertDeliveryStore((s) => s.entries);
@@ -1922,8 +1922,8 @@ function NotifTab() {
         }}
       >
         <Field
-          label={`등락률 임계값 (±${settings.notifPctThreshold}%)`}
-          hint="즐겨찾기 종목이 이 % 이상 변동하면 토스트 알림이 표시됩니다. (Phase 6 발동)"
+          label={`즐겨찾기 알림 기준 (±${settings.notifPctThreshold}%)`}
+          hint="즐겨찾기 종목이 이 % 이상 움직이면 토스트·사운드·폰 알림을 보냅니다. 메인 급상승 목록에는 영향을 주지 않습니다."
         >
           <Slider
             value={settings.notifPctThreshold}
@@ -2098,15 +2098,15 @@ function NotifTab() {
 
 // ---------- Surge tab ----------
 
-function SurgeTab() {
+export function SurgeTab() {
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
 
   return (
     <div>
       <Field
-        label={`급상승 임계값 (${settings.surgeThreshold}% 이상)`}
-        hint="실시간 급상승 spawn 및 오늘 누적 / 전체 필터에 즉시 반영됩니다."
+        label={`메인 급상승 표시 기준 (${settings.surgeThreshold}% 이상)`}
+        hint="메인 화면의 최근 급상승·오늘 강세 목록에 종목을 표시하는 기준입니다. 알림을 보내지는 않습니다."
       >
         <Slider
           value={settings.surgeThreshold}

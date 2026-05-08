@@ -2,8 +2,9 @@
  * useMasterStore — full KRX universe loaded for client-side search.
  *
  * The master catalog (~2600 tickers) is fetched once via `GET /master/list`
- * and kept in memory only — no localStorage, no per-session refetch unless
- * the user clicks "지금 갱신" in the settings modal.
+ * and kept in memory only — no localStorage. If the first load finds an
+ * uninitialized empty catalog, the store triggers the guarded server refresh
+ * once so first-run search is usable after credentials are configured.
  *
  * Loading is lazy:
  *   - `App.tsx` schedules a `requestIdleCallback` preload after Dashboard
@@ -73,6 +74,13 @@ export const useMasterStore = create<MasterState>((set, get) => ({
           loadStatus: 'loaded',
           loadError: null,
         });
+        if (
+          payload.items.length === 0 &&
+          payload.rowCount === 0 &&
+          payload.refreshedAt === null
+        ) {
+          await get().triggerRefresh();
+        }
       } catch (err) {
         set({
           loadStatus: 'error',
