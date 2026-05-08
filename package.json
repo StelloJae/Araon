@@ -1,6 +1,6 @@
 {
   "name": "@stellojae/araon",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "private": false,
   "description": "A localhost-first Korean stock watchlist dashboard with KIS OpenAPI realtime support.",
   "license": "Apache-2.0",
@@ -36,6 +36,7 @@
     "docs/release-notes/v1.1.0.md",
     "docs/release-notes/v1.1.1.md",
     "docs/release-notes/v1.1.2.md",
+    "docs/release-notes/v1.1.3.md",
     "README.md",
     "README.ko.md",
     "INSTALL.md",
