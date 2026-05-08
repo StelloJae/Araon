@@ -15,7 +15,8 @@
  * click stops propagation and only toggles favorite.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { fmtPct, fmtPrice, krColor } from '../lib/format';
 import { StarIcon } from '../lib/icons';
 import { Sparkline } from './Sparkline';
@@ -123,7 +124,7 @@ export function FavoritesBlock({
         ) : (
           <>
             {visible.map((s, i) => (
-              <FavRow
+              <MemoFavRow
                 key={s.code}
                 stock={s}
                 onToggleFav={onToggleFav}
@@ -173,7 +174,6 @@ function FavRow({
   const color = krColor(changePct);
 
   const [flash, setFlash] = useState(false);
-  const [hover, setHover] = useState(false);
   const firstRender = useRef(true);
   useEffect(() => {
     if (firstRender.current) {
@@ -190,32 +190,38 @@ function FavRow({
     ? changePct >= 0
       ? 'var(--up-tint-1)'
       : 'var(--down-tint-1)'
-    : hover
-      ? 'var(--bg-tint)'
-      : 'transparent';
+    : null;
 
   const history = usePriceHistoryStore((s) => selectHistory(s, code));
   usePersistedPriceHistory(code, true);
 
+  const rowStyle: CSSProperties = {
+    position: 'relative',
+    padding: '8px 14px',
+    display: 'grid',
+    gridTemplateColumns: '18px 1fr auto',
+    gap: 8,
+    alignItems: 'center',
+    fontSize: 12,
+    borderTop: isFirst ? 'none' : '1px solid var(--border-soft)',
+    cursor: 'pointer',
+  };
+  (rowStyle as CSSProperties & { '--stock-row-transition': string })[
+    '--stock-row-transition'
+  ] = 'background 0.5s ease';
+  if (flashBg !== null) {
+    (rowStyle as CSSProperties & { '--stock-row-bg': string })[
+      '--stock-row-bg'
+    ] = flashBg;
+  }
+
   return (
     <div
+      className="stock-row-interactive"
       data-stock-row={code}
+      data-flashing={flash ? 'true' : undefined}
       onClick={() => onOpenDetail(code)}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        position: 'relative',
-        padding: '8px 14px',
-        display: 'grid',
-        gridTemplateColumns: '18px 1fr auto',
-        gap: 8,
-        alignItems: 'center',
-        fontSize: 12,
-        borderTop: isFirst ? 'none' : '1px solid var(--border-soft)',
-        background: flashBg,
-        transition: 'background 0.5s ease',
-        cursor: 'pointer',
-      }}
+      style={rowStyle}
     >
       <button
         type="button"
@@ -310,5 +316,21 @@ function FavRow({
         </span>
       </div>
     </div>
+  );
+}
+
+const MemoFavRow = memo(FavRow, areFavRowPropsEqual);
+MemoFavRow.displayName = 'FavRow';
+
+function areFavRowPropsEqual(prev: FavRowProps, next: FavRowProps): boolean {
+  return (
+    prev.flashSeed === next.flashSeed &&
+    prev.isFirst === next.isFirst &&
+    prev.onToggleFav === next.onToggleFav &&
+    prev.onOpenDetail === next.onOpenDetail &&
+    prev.stock.code === next.stock.code &&
+    prev.stock.name === next.stock.name &&
+    prev.stock.price === next.stock.price &&
+    prev.stock.changePct === next.stock.changePct
   );
 }

@@ -6,6 +6,7 @@
  * real local history is still unavailable.
  */
 
+import { memo, useMemo } from 'react';
 import { buildSparklineGeometry } from '../lib/sparkline';
 import type { PriceHistoryPoint } from '../stores/price-history-store';
 
@@ -19,14 +20,17 @@ interface SparklineProps {
   mini?: boolean;
 }
 
-export function Sparkline({
+function SparklineComponent({
   history,
   width = 80,
   height = 26,
   positive = true,
   mini = false,
 }: SparklineProps) {
-  const geom = buildSparklineGeometry(history, width, height);
+  const geom = useMemo(
+    () => buildSparklineGeometry(history, width, height),
+    [history, width, height],
+  );
   if (geom === null) return null;
 
   const color = positive ? 'var(--kr-up)' : 'var(--kr-down)';
@@ -54,3 +58,6 @@ export function Sparkline({
     </svg>
   );
 }
+
+export const Sparkline = memo(SparklineComponent);
+Sparkline.displayName = 'Sparkline';

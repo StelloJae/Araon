@@ -133,6 +133,15 @@ body {
   display: inline-flex;
 }
 
+.stock-row-interactive {
+  background: var(--stock-row-bg, transparent);
+  transition: var(--stock-row-transition, background 220ms ease);
+}
+
+.stock-row-interactive:not([data-flashing='true']):hover {
+  --stock-row-bg: var(--bg-tint);
+}
+
 @media (max-width: 960px) {
   .backfill-status-pill {
     display: none !important;

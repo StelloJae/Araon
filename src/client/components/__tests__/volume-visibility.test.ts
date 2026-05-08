@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { StockViewModel } from '../../lib/view-models';
 import { buildSignalExplanation } from '../../lib/signal-explainer';
-import { shouldPreloadRowPriceHistory, StockRow } from '../StockRow';
+import {
+  areStockRowRenderPropsEqual,
+  shouldPreloadRowPriceHistory,
+  StockRow,
+} from '../StockRow';
 import { StockDetailModal } from '../StockDetailModal';
 import { formatSurgeSubLabel, SurgeBlock, SurgeRow } from '../SurgeBlock';
 import { usePriceHistoryStore } from '../../stores/price-history-store';
@@ -42,6 +46,49 @@ describe('volume visibility', () => {
 
     expect(html).not.toContain('거래량');
     expect(html).not.toContain('123.5만');
+  });
+
+  it('uses CSS hover styling instead of React hover state on compact stock rows', () => {
+    const html = renderToStaticMarkup(
+      createElement(StockRow, {
+        stock: stock(),
+        rank: 1,
+        isFav: true,
+        onToggleFav: () => undefined,
+        onOpenDetail: () => undefined,
+        flashSeed: 0,
+        isFirst: true,
+      }),
+    );
+
+    expect(html).toContain('stock-row-interactive');
+    expect(html).not.toContain('--stock-row-bg');
+  });
+
+  it('keeps unchanged stock rows memoizable across parent quote flushes', () => {
+    const noop = () => undefined;
+    const base = {
+      stock: stock(),
+      rank: 1,
+      isFav: true,
+      onToggleFav: noop,
+      onOpenDetail: noop,
+      flashSeed: 0,
+      isFirst: true,
+    };
+
+    expect(
+      areStockRowRenderPropsEqual(base, {
+        ...base,
+        stock: stock(),
+      }),
+    ).toBe(true);
+    expect(
+      areStockRowRenderPropsEqual(base, {
+        ...base,
+        stock: stock({ price: 70_500 }),
+      }),
+    ).toBe(false);
   });
 
   it('renders an available row sparkline without waiting for hover', () => {

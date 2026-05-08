@@ -20,7 +20,8 @@
  * Transitions API.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { StockViewModel } from '../lib/view-models';
 import {
   fmtAbs,
@@ -52,7 +53,35 @@ export function shouldPreloadRowPriceHistory(_input: { readonly isFav: boolean }
   return true;
 }
 
-export function StockRow({
+export function areStockRowRenderPropsEqual(
+  prev: StockRowProps,
+  next: StockRowProps,
+): boolean {
+  return (
+    prev.rank === next.rank &&
+    prev.isFav === next.isFav &&
+    prev.flashSeed === next.flashSeed &&
+    prev.isFirst === next.isFirst &&
+    prev.onToggleFav === next.onToggleFav &&
+    prev.onOpenDetail === next.onOpenDetail &&
+    areStockRowsEqual(prev.stock, next.stock)
+  );
+}
+
+function areStockRowsEqual(a: StockViewModel, b: StockViewModel): boolean {
+  return (
+    a.code === b.code &&
+    a.name === b.name &&
+    a.price === b.price &&
+    a.changePct === b.changePct &&
+    a.changeAbs === b.changeAbs &&
+    a.market === b.market &&
+    a.effectiveSector.name === b.effectiveSector.name &&
+    a.effectiveSector.source === b.effectiveSector.source
+  );
+}
+
+function StockRowComponent({
   stock,
   rank,
   isFav,
@@ -77,7 +106,6 @@ export function StockRow({
       : 'var(--text-secondary)';
 
   const [flash, setFlash] = useState(false);
-  const [hover, setHover] = useState(false);
   const firstRender = useRef(true);
   useEffect(() => {
     if (firstRender.current) {
@@ -107,36 +135,39 @@ export function StockRow({
     ? changePct >= 0
       ? 'var(--up-tint-1)'
       : 'var(--down-tint-1)'
-    : hover
-      ? 'var(--bg-tint)'
-      : 'transparent';
+    : null;
 
   const history = usePriceHistoryStore((s) => selectHistory(s, code));
   usePersistedPriceHistory(code, shouldPreloadRowPriceHistory({ isFav }));
 
+  const rowStyle: CSSProperties = {
+    position: 'relative',
+    display: 'grid',
+    gridTemplateColumns:
+      rank !== null
+        ? '20px 16px minmax(0, 1fr) auto auto'
+        : '16px minmax(0, 1fr) auto auto',
+    gap: 8,
+    alignItems: 'center',
+    padding: '9px 12px',
+    borderTop: isFirst ? 'none' : '1px solid var(--border-soft)',
+    cursor: 'pointer',
+    viewTransitionName: `stock-${code}`,
+    fontVariantNumeric: 'tabular-nums',
+  };
+  if (flashBg !== null) {
+    (rowStyle as CSSProperties & { '--stock-row-bg': string })[
+      '--stock-row-bg'
+    ] = flashBg;
+  }
+
   return (
     <div
+      className="stock-row-interactive"
       data-stock-row={code}
+      data-flashing={flash ? 'true' : undefined}
       onClick={() => onOpenDetail(code)}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        position: 'relative',
-        display: 'grid',
-        gridTemplateColumns:
-          rank !== null
-            ? '20px 16px minmax(0, 1fr) auto auto'
-            : '16px minmax(0, 1fr) auto auto',
-        gap: 8,
-        alignItems: 'center',
-        padding: '9px 12px',
-        borderTop: isFirst ? 'none' : '1px solid var(--border-soft)',
-        cursor: 'pointer',
-        background: flashBg,
-        transition: 'background 220ms ease',
-        viewTransitionName: `stock-${code}`,
-        fontVariantNumeric: 'tabular-nums',
-      }}
+      style={rowStyle}
     >
       {/* depth bar */}
       <div
@@ -314,3 +345,6 @@ export function StockRow({
     </div>
   );
 }
+
+export const StockRow = memo(StockRowComponent, areStockRowRenderPropsEqual);
+StockRow.displayName = 'StockRow';

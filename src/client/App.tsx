@@ -23,7 +23,7 @@
  *   3. user toggles fav → optimistic store update + POST/DELETE /favorites
  */
 
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSSE } from './hooks/useSSE';
 import { useMarketStore } from './stores/market-store';
 import { useStocksStore, buildStockVM } from './stores/stocks-store';
@@ -103,9 +103,15 @@ export function App() {
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [kstTime, setKstTime] = useState(() => formatKstTime(new Date()));
   const [marketSummary, setMarketSummary] = useState<MarketTapeSummary | null>(null);
+  const openDetail = useCallback((code: string) => {
+    setDetailCode(code);
+  }, []);
+  const closeDetail = useCallback(() => {
+    setDetailCode(null);
+  }, []);
 
   // Alert pipeline (Phase 6): watches quotes, fires toasts/sound/desktop push.
-  useAlertEvaluator({ onPickStock: (ticker) => setDetailCode(ticker) });
+  useAlertEvaluator({ onPickStock: openDetail });
 
   useEffect(() => {
     const update = () => setKstTime(formatKstTime(new Date()));
@@ -216,7 +222,7 @@ export function App() {
     };
   }, [setCatalog, setThemes, setFavorites, pushError]);
 
-  async function onToggleFav(ticker: string): Promise<void> {
+  const onToggleFav = useCallback(async (ticker: string): Promise<void> => {
     const wasFav = favorites.has(ticker);
     toggleFavoriteLocal(ticker);
     try {
@@ -232,9 +238,9 @@ export function App() {
         detail: describeError(err),
       });
     }
-  }
+  }, [favorites, toggleFavoriteLocal, pushError]);
 
-  async function handleUntrack(ticker: string): Promise<void> {
+  const handleUntrack = useCallback(async (ticker: string): Promise<void> => {
     const meta = catalog[ticker];
     const display = meta !== undefined ? `${meta.name} (${ticker})` : ticker;
     const ok = window.confirm(
@@ -255,27 +261,30 @@ export function App() {
         detail: describeError(err),
       });
     }
-  }
+  }, [
+    catalog,
+    clearHistoryForTicker,
+    pushError,
+    removeFavoriteLocal,
+    removeStockLocal,
+  ]);
+
+  const toggleFavoriteFromRow = useCallback((ticker: string): void => {
+    void onToggleFav(ticker);
+  }, [onToggleFav]);
 
   /**
    * Header search picks open the detail modal directly. Surface bonus: also
    * scroll the matching row into view so closing the modal reveals it.
    */
-  function handlePickStock(stock: StockViewModel) {
-    setDetailCode(stock.code);
+  const handlePickStock = useCallback((stock: StockViewModel) => {
+    openDetail(stock.code);
     if (typeof document === 'undefined') return;
     const el = document.querySelector(`[data-stock-row="${stock.code}"]`);
     if (el instanceof HTMLElement) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }
-
-  function openDetail(code: string) {
-    setDetailCode(code);
-  }
-  function closeDetail() {
-    setDetailCode(null);
-  }
+  }, [openDetail]);
 
   const allStockVMs = useMemo<StockViewModel[]>(() => {
     const out: StockViewModel[] = [];
@@ -334,14 +343,14 @@ export function App() {
           <FavoritesBlock
             stocks={allStockVMs}
             favorites={favorites}
-            onToggleFav={(t) => void onToggleFav(t)}
+            onToggleFav={toggleFavoriteFromRow}
             onOpenDetail={openDetail}
             flashSeeds={flashSeeds}
           />
         </aside>
         <div className="col-sectors">
           <SectionStack
-            onToggleFav={(t) => void onToggleFav(t)}
+            onToggleFav={toggleFavoriteFromRow}
             onOpenDetail={openDetail}
           />
         </div>
@@ -362,7 +371,7 @@ export function App() {
           isFavorite={favorites.has(detailStock.code)}
           onClose={closeDetail}
           onNavigate={openDetail}
-          onToggleFav={(code) => void onToggleFav(code)}
+          onToggleFav={toggleFavoriteFromRow}
           onUntrack={(code) => void handleUntrack(code)}
         />
       )}
