@@ -585,6 +585,33 @@ describe('GET /stocks/:ticker/candles', () => {
     });
   });
 
+  it('skips daily coverage ensure while upstream KIS cooldown is active', async () => {
+    const backfillDailyCandles = vi.fn();
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      dailyBackfillService: { backfillDailyCandles },
+      isUpstreamCooldownActive: () => true,
+      now: () => new Date('2026-05-05T11:10:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload: { interval: '1D', range: '1m' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(backfillDailyCandles).not.toHaveBeenCalled();
+    expect(JSON.parse(res.body).data).toMatchObject({
+      state: 'skipped',
+      reason: 'UPSTREAM_COOLDOWN',
+      source: null,
+      requested: 0,
+    });
+  });
+
   it('auto-ensures intraday candle coverage from KIS historical minute data', async () => {
     const backfillHistoricalMinuteCandles = vi.fn().mockResolvedValue({
       ticker: '005930',
@@ -623,6 +650,36 @@ describe('GET /stocks/:ticker/candles', () => {
       state: 'backfilled',
       source: 'kis-time-daily',
       requested: 240,
+    });
+  });
+
+  it('skips intraday coverage ensure while upstream KIS cooldown is active', async () => {
+    const backfillHistoricalMinuteCandles = vi.fn();
+    const backfillTodayMinuteCandles = vi.fn();
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: new PriceCandleRepository(db),
+      todayMinuteBackfillService: { backfillTodayMinuteCandles },
+      historicalMinuteBackfillService: { backfillHistoricalMinuteCandles },
+      isUpstreamCooldownActive: () => true,
+      now: () => new Date('2026-05-05T11:10:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/candles/ensure-coverage',
+      payload: { interval: '5m', range: '1d' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(backfillTodayMinuteCandles).not.toHaveBeenCalled();
+    expect(backfillHistoricalMinuteCandles).not.toHaveBeenCalled();
+    expect(JSON.parse(res.body).data).toMatchObject({
+      state: 'skipped',
+      reason: 'UPSTREAM_COOLDOWN',
+      source: null,
+      requested: 0,
     });
   });
 

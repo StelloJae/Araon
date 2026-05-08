@@ -77,6 +77,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   newsFeedService?: StockNewsFeedService;
   disclosureRepo?: StockDisclosureRepository;
   dartDisclosureService?: DartDisclosureService;
+  isUpstreamCooldownActive?: () => boolean;
   now?: () => Date;
 }
 
@@ -481,6 +482,20 @@ export async function stockRoutes(
     const backfillAllowed = isBackfillAllowed(now, 'closed');
 
     if (dailyBaseInterval(parsed.data.interval)) {
+      if (opts.isUpstreamCooldownActive?.() === true) {
+        return reply.send({
+          success: true,
+          data: {
+            state: 'skipped',
+            reason: 'UPSTREAM_COOLDOWN',
+            source: null,
+            requested: 0,
+            inserted: 0,
+            updated: 0,
+            message: 'KIS 호출 제한 cooldown 중이라 일봉 자동 보강을 대기합니다.',
+          },
+        });
+      }
       if (!backfillAllowed) {
         return reply.send({
           success: true,
@@ -573,6 +588,21 @@ export async function stockRoutes(
           error: { code: 'DAILY_COVERAGE_ENSURE_FAILED' },
         });
       }
+    }
+
+    if (opts.isUpstreamCooldownActive?.() === true) {
+      return reply.send({
+        success: true,
+        data: {
+          state: 'skipped',
+          reason: 'UPSTREAM_COOLDOWN',
+          source: null,
+          requested: 0,
+          inserted: 0,
+          updated: 0,
+          message: 'KIS 호출 제한 cooldown 중이라 분봉 자동 보강을 대기합니다.',
+        },
+      });
     }
 
     if (!backfillAllowed) {

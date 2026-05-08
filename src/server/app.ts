@@ -287,6 +287,13 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     dailyBackfillService,
     todayMinuteBackfillService,
     historicalMinuteBackfillService,
+    isUpstreamCooldownActive: () => {
+      const state = runtimeRef.get();
+      return state.status === 'started'
+        && state.runtime.outboundLimiter
+          .snapshot()
+          .profiles.some((profile) => profile.cooldownActive);
+    },
   });
   await app.register(themeRoutes, { stockRepo });
   await app.register(settingsRoutes, { settingsStore });
