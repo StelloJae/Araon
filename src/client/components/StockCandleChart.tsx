@@ -34,9 +34,42 @@ const INTERVALS: CandleInterval[] = [
 const RANGES: CandleRange[] = ['1d', '1w', '1m', '3m', '6m', '1y'];
 
 type ChartStatus = 'loading' | 'ready' | 'empty' | 'error';
+type CoverageCheckResult = Awaited<ReturnType<typeof ensureStockCandleCoverage>>;
+
+const AUTO_COVERAGE_TIMEOUT_MS = 6_000;
+const REPAIR_COVERAGE_TIMEOUT_MS = 10_000;
 
 interface StockCandleChartProps {
   ticker: string;
+}
+
+export function resolveWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      settled = true;
+      resolve(fallback);
+    }, Math.max(0, timeoutMs));
+
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
 }
 
 export function StockCandleChart({ ticker }: StockCandleChartProps) {
@@ -51,6 +84,37 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [dataSourceText, setDataSourceText] = useState('로컬 저장 candle');
 
+  const applyCandleData = (data: Awaited<ReturnType<typeof getStockCandles>>) => {
+    setItems(data.items);
+    setCoverage(data.coverage);
+    setStatus(data.items.length === 0 ? 'empty' : 'ready');
+    const sources = data.coverage.sourceMix;
+    setDataSourceText(
+      sources.includes('kis-time-daily')
+        ? 'KIS 과거 분봉 포함'
+        : sources.includes('kis-time-today')
+          ? 'KIS 당일분봉 포함'
+        : data.coverage.backfilled
+          ? 'KIS 일봉 백필 포함'
+          : '로컬 저장 candle',
+    );
+  };
+
+  const refetchCandles = (options: { showLoading?: boolean } = {}) => {
+    if (options.showLoading ?? true) setStatus('loading');
+    return getStockCandles(ticker, { interval, range })
+      .then((data) => {
+        applyCandleData(data);
+        if (data.items.length === 0) setMessage(data.status.message);
+      })
+      .catch(() => {
+        setItems([]);
+        setCoverage(null);
+        setStatus('error');
+        setDataSourceText('로컬 저장 candle');
+      });
+  };
+
   useEffect(() => {
     let cancelled = false;
     let coverageMessage: string | null = null;
@@ -61,12 +125,37 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       : '과거 분봉 coverage 확인 중';
     setMessage(coverageMessage);
 
-    ensureStockCandleCoverage(ticker, { interval, range })
+    const loadStoredCandles = (showLoading: boolean) =>
+      getStockCandles(ticker, { interval, range })
+        .then((data) => {
+          if (cancelled) return;
+          if (showLoading) setStatus(data.items.length === 0 ? 'empty' : 'ready');
+          applyCandleData(data);
+          if (data.items.length === 0) setMessage(coverageMessage ?? data.status.message);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setItems([]);
+          setCoverage(null);
+          setStatus('error');
+          setDataSourceText('로컬 저장 candle');
+        });
+
+    void loadStoredCandles(true);
+
+    resolveWithTimeout<CoverageCheckResult | null>(
+      ensureStockCandleCoverage(ticker, { interval, range }),
+      AUTO_COVERAGE_TIMEOUT_MS,
+      null,
+    )
       .then((coverage) => {
         if (cancelled) return;
-        if (coverage.state === 'backfilled') {
+        if (coverage === null) {
+          coverageMessage = '보강 확인이 오래 걸려 저장된 candle을 먼저 표시합니다.';
+        } else if (coverage.state === 'backfilled') {
           const label = coverage.source === 'kis-daily' ? '일봉' : '분봉';
           coverageMessage = `${label} 자동 보강 완료: ${coverage.inserted + coverage.updated}개 candle 반영`;
+          void loadStoredCandles(false);
         } else if (coverage.state === 'current') {
           coverageMessage = '차트 coverage가 이미 준비되어 있습니다.';
         } else if (coverage.state === 'skipped') {
@@ -84,77 +173,32 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       .finally(() => {
         if (!cancelled) setCoveragePending(false);
       })
-      .then(() => getStockCandles(ticker, { interval, range }))
-      .then((data) => {
-        if (cancelled) return;
-        setItems(data.items);
-        setCoverage(data.coverage);
-        setStatus(data.items.length === 0 ? 'empty' : 'ready');
-        const sources = data.coverage.sourceMix;
-        setDataSourceText(
-          sources.includes('kis-time-daily')
-            ? 'KIS 과거 분봉 포함'
-            : sources.includes('kis-time-today')
-              ? 'KIS 당일분봉 포함'
-            : data.coverage.backfilled
-              ? 'KIS 일봉 백필 포함'
-              : '로컬 저장 candle',
-        );
-        if (data.items.length === 0) {
-          setMessage(coverageMessage ?? data.status.message);
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setItems([]);
-        setCoverage(null);
-        setStatus('error');
-        setDataSourceText('로컬 저장 candle');
-      });
+      .catch(() => undefined);
 
     return () => {
       cancelled = true;
     };
   }, [ticker, interval, range]);
 
-  const refetchCandles = () => {
-    setStatus('loading');
-    return getStockCandles(ticker, { interval, range })
-      .then((data) => {
-        setItems(data.items);
-        setCoverage(data.coverage);
-        setStatus(data.items.length === 0 ? 'empty' : 'ready');
-        const sources = data.coverage.sourceMix;
-        setDataSourceText(
-          sources.includes('kis-time-daily')
-            ? 'KIS 과거 분봉 포함'
-            : sources.includes('kis-time-today')
-              ? 'KIS 당일분봉 포함'
-            : data.coverage.backfilled
-              ? 'KIS 일봉 백필 포함'
-              : '로컬 저장 candle',
-        );
-        if (data.items.length === 0) setMessage(data.status.message);
-      })
-      .catch(() => {
-        setItems([]);
-        setCoverage(null);
-        setStatus('error');
-        setDataSourceText('로컬 저장 candle');
-      });
-  };
-
   const handleRepair = () => {
     setRepairPending(true);
     setMessage(dailyInterval(interval) ? '일봉 차트 재검사 중' : '분봉 차트 재검사 중');
-    ensureStockCandleCoverage(ticker, { interval, range, force: true })
+    resolveWithTimeout<CoverageCheckResult | null>(
+      ensureStockCandleCoverage(ticker, { interval, range, force: true }),
+      REPAIR_COVERAGE_TIMEOUT_MS,
+      null,
+    )
       .then((coverage) => {
-        setMessage(coverage.message);
+        setMessage(
+          coverage === null
+            ? '재검사가 오래 걸려 저장된 candle을 먼저 유지합니다.'
+            : coverage.message,
+        );
       })
       .catch(() => {
         setMessage('현재 범위 재보강을 시작하지 못했습니다.');
       })
-      .then(() => refetchCandles())
+      .then(() => refetchCandles({ showLoading: false }))
       .finally(() => {
         setRepairPending(false);
       });

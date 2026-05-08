@@ -11,6 +11,7 @@ import {
   formatCandleTooltipRows,
   getChartPalette,
   normalizeCandleRangeForInterval,
+  resolveWithTimeout,
   shouldReplaceCandleTooltipRows,
 } from '../StockCandleChart';
 
@@ -218,5 +219,25 @@ describe('StockCandleChart', () => {
     expect(normalizeCandleRangeForInterval('1M', '6m')).toBe('1y');
     expect(normalizeCandleRangeForInterval('1D', '3m')).toBe('3m');
     expect(normalizeCandleRangeForInterval('5m', '1d')).toBe('1d');
+  });
+
+  it('falls back when chart coverage checks stall', async () => {
+    const result = await resolveWithTimeout(
+      new Promise<string>(() => undefined),
+      0,
+      'timeout',
+    );
+
+    expect(result).toBe('timeout');
+  });
+
+  it('uses the coverage result when it resolves before timeout', async () => {
+    const result = await resolveWithTimeout(
+      Promise.resolve('ready'),
+      100,
+      'timeout',
+    );
+
+    expect(result).toBe('ready');
   });
 });
