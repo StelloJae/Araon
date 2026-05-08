@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { StockViewModel } from '../../lib/view-models';
 import { buildSignalExplanation } from '../../lib/signal-explainer';
-import { StockRow } from '../StockRow';
+import { shouldPreloadRowPriceHistory, StockRow } from '../StockRow';
 import { StockDetailModal } from '../StockDetailModal';
 import { formatSurgeSubLabel, SurgeBlock, SurgeRow } from '../SurgeBlock';
 import { usePriceHistoryStore } from '../../stores/price-history-store';
@@ -64,6 +64,10 @@ describe('volume visibility', () => {
     );
 
     expect(html).toContain('<svg');
+  });
+
+  it('preloads local sparkline history for non-favorite visible rows', () => {
+    expect(shouldPreloadRowPriceHistory({ isFav: false })).toBe(true);
   });
 
   it('shows current cumulative volume on surge row sublabels', () => {

@@ -8,10 +8,10 @@
  *   - Star click stops propagation and only fires `onToggleFav`.
  *
  * Sparkline: render whenever real persisted/session price history is available.
- * Favorite rows also pre-load the local day history so the mini chart can be
- * visible without hover. The Sparkline component itself returns `null` when
- * fewer than `MIN_POINTS_FOR_SPARKLINE` points exist, so no synthetic shape is
- * ever drawn.
+ * Visible rows pre-load local day history so the mini chart can render after a
+ * refresh without waiting for hover. The Sparkline component itself returns
+ * `null` when fewer than `MIN_POINTS_FOR_SPARKLINE` points exist, so no
+ * synthetic shape is ever drawn.
  *
  * Tick flash: when `flashSeed` increments, background tints to the sentiment
  * color for 280ms (suppressed on first mount).
@@ -46,6 +46,10 @@ interface StockRowProps {
   onOpenDetail: (code: string) => void;
   flashSeed: number;
   isFirst: boolean;
+}
+
+export function shouldPreloadRowPriceHistory(_input: { readonly isFav: boolean }): boolean {
+  return true;
 }
 
 export function StockRow({
@@ -108,7 +112,7 @@ export function StockRow({
       : 'transparent';
 
   const history = usePriceHistoryStore((s) => selectHistory(s, code));
-  usePersistedPriceHistory(code, isFav || hover);
+  usePersistedPriceHistory(code, shouldPreloadRowPriceHistory({ isFav }));
 
   return (
     <div

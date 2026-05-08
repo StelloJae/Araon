@@ -2,8 +2,8 @@
  * Sparkline — tiny line chart driven by real `usePriceHistoryStore` data.
  *
  * Returns `null` when fewer than `MIN_POINTS_FOR_SPARKLINE` points exist for
- * the ticker. We do NOT synthesize a placeholder shape; an empty hover state
- * is the correct UX when no live data has accumulated yet.
+ * the ticker. We do NOT synthesize a placeholder shape; an empty state means
+ * real local history is still unavailable.
  */
 
 import { buildSparklineGeometry } from '../lib/sparkline';
