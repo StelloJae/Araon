@@ -4,14 +4,14 @@ This runbook is the lightweight checklist for validating a public Araon install.
 It avoids live KIS credentials, WebSocket sessions, cap tests, and raw secret
 capture unless a separate validation explicitly asks for them.
 
-Current public baseline: `v1.1.0`.
+Current public baseline: `v1.1.3`.
 
 ## Acceptance Paths
 
 | Path | Required result |
 |---|---|
-| `npx @stellojae/araon` | `--help` and `--version` work; clean startup reaches first-run credentials screen. |
-| `npm install -g @stellojae/araon && araon` | Global CLI launches the local server and prints the local URL/data directory. |
+| `npx @stellojae/araon@latest` | `--help` and `--version` work; clean startup reaches first-run credentials screen. |
+| `npm install -g @stellojae/araon@latest && araon` | Global CLI launches the local server and prints the local URL/data directory. |
 | GitHub Release source archive | Archive extracts cleanly; package metadata matches the release. |
 | macOS desktop app | App opens to first-run credentials screen; unsigned/notarization warnings are recorded honestly. |
 | Windows desktop app | Installer or portable EXE opens to first-run credentials screen; SmartScreen warnings are recorded honestly. |

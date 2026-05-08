@@ -19,7 +19,7 @@ credentials and does not provide trading or order-entry features.
 The easiest path is one command:
 
 ```bash
-npx @stellojae/araon
+npx @stellojae/araon@latest
 ```
 
 Araon starts a local server, prints a `http://127.0.0.1:<port>` URL, and opens
@@ -28,7 +28,7 @@ your default browser.
 Or install the CLI globally:
 
 ```bash
-npm install -g @stellojae/araon
+npm install -g @stellojae/araon@latest
 araon
 ```
 
@@ -133,7 +133,7 @@ and SSE requests from `127.0.0.1:5173`.
 From npm:
 
 ```bash
-npx @stellojae/araon
+npx @stellojae/araon@latest
 ```
 
 From source, build Araon, then start the production localhost app from one
@@ -147,7 +147,7 @@ node dist/cli/araon.js
 If Araon is installed as a package, use:
 
 ```bash
-npm install -g @stellojae/araon
+npm install -g @stellojae/araon@latest
 araon
 ```
 
@@ -198,9 +198,9 @@ installation.
 Download the installers from the GitHub Release page:
 
 ```txt
-macOS:   Araon-1.1.2-arm64.dmg
-Windows: Araon-Setup-1.1.2-x64.exe
-Windows: Araon-1.1.2-x64-portable.exe
+macOS:   Araon-1.1.3-arm64.dmg
+Windows: Araon-Setup-1.1.3-x64.exe
+Windows: Araon-1.1.3-x64-portable.exe
 ```
 
 Build a local unpacked desktop app:
@@ -245,7 +245,7 @@ validated.
 
 ## First Run
 
-1. Start Araon with `npx @stellojae/araon`, `araon`, or a desktop app.
+1. Start Araon with `npx @stellojae/araon@latest`, `araon`, or a desktop app.
 2. Open the printed localhost URL if your browser did not open automatically.
 3. Use the local setup screen to enter your live KIS app key/app secret.
 4. Confirm the read-only setup copy, then let Araon start the KIS runtime.

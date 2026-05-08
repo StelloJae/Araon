@@ -16,13 +16,13 @@
   ·
   <a href="INSTALL.md">Install guide</a>
   ·
-  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.2">v1.1.2 release</a>
+  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.3">v1.1.3 release</a>
 </p>
 
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933">
-  <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.2-111827">
+  <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.3-111827">
 </p>
 
 Araon is a personal observation dashboard for Korean stock traders who want a
@@ -71,7 +71,7 @@ credentials.
 ## First Five Minutes
 
 ```txt
-1. Run npx @stellojae/araon
+1. Run npx @stellojae/araon@latest
 2. Open the localhost page
 3. Enter your KIS app key and app secret
 4. Add your first stock from search
@@ -88,7 +88,7 @@ You need Node.js 20 or newer.
 The quickest way to try Araon is:
 
 ```bash
-npx @stellojae/araon
+npx @stellojae/araon@latest
 ```
 
 Araon starts a local server and prints a `http://127.0.0.1:<port>` address. It
@@ -97,7 +97,7 @@ will also try to open the browser for you.
 If you plan to use it regularly:
 
 ```bash
-npm install -g @stellojae/araon
+npm install -g @stellojae/araon@latest
 araon
 ```
 
@@ -107,7 +107,7 @@ backfill remain inactive.
 
 ## First Setup
 
-1. Run `npx @stellojae/araon`.
+1. Run `npx @stellojae/araon@latest`.
 2. Open the localhost URL if the browser does not open automatically.
 3. Enter your KIS OpenAPI credentials.
 4. Add stocks through search.
@@ -179,10 +179,10 @@ credentials, access tokens, or approval keys.
 
 Desktop artifacts are attached to the GitHub release:
 
-- `Araon-1.1.2-arm64.dmg`
-- `Araon-1.1.2-arm64-mac.zip`
-- `Araon-Setup-1.1.2-x64.exe`
-- `Araon-1.1.2-x64-portable.exe`
+- `Araon-1.1.3-arm64.dmg`
+- `Araon-1.1.3-arm64-mac.zip`
+- `Araon-Setup-1.1.3-x64.exe`
+- `Araon-1.1.3-x64-portable.exe`
 
 The desktop build is still unsigned for public distribution, so macOS may show
 a Gatekeeper warning. For now, the npm/CLI path is the most reliable way to run
