@@ -16,13 +16,13 @@
   ·
   <a href="INSTALL.md">Install guide</a>
   ·
-  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.1">v1.1.1 release</a>
+  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.2">v1.1.2 release</a>
 </p>
 
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933">
-  <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.1-111827">
+  <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.2-111827">
 </p>
 
 Araon is a personal observation dashboard for Korean stock traders who want a
@@ -177,10 +177,12 @@ credentials, access tokens, or approval keys.
 
 ## Desktop App
 
-macOS desktop artifacts are attached to the GitHub release:
+Desktop artifacts are attached to the GitHub release:
 
-- `Araon-1.1.1-arm64.dmg`
-- `Araon-1.1.1-arm64-mac.zip`
+- `Araon-1.1.2-arm64.dmg`
+- `Araon-1.1.2-arm64-mac.zip`
+- `Araon-Setup-1.1.2-x64.exe`
+- `Araon-1.1.2-x64-portable.exe`
 
 The desktop build is still unsigned for public distribution, so macOS may show
 a Gatekeeper warning. For now, the npm/CLI path is the most reliable way to run

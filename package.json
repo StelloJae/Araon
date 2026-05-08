@@ -1,6 +1,6 @@
 {
   "name": "@stellojae/araon",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": false,
   "description": "A localhost-first Korean stock watchlist dashboard with KIS OpenAPI realtime support.",
   "license": "Apache-2.0",
@@ -35,6 +35,7 @@
     "docs/guides/**/*",
     "docs/release-notes/v1.1.0.md",
     "docs/release-notes/v1.1.1.md",
+    "docs/release-notes/v1.1.2.md",
     "README.md",
     "README.ko.md",
     "INSTALL.md",
@@ -54,7 +55,7 @@
     "build:electron": "node scripts/build-electron-main.mjs",
     "build:desktop": "npm run build && npm run build:electron && node scripts/run-electron-builder.mjs --dir",
     "dist:mac": "npm run build && npm run build:electron && node scripts/run-electron-builder.mjs --mac",
-    "dist:win": "npm run build && npm run build:electron && node scripts/run-electron-builder.mjs --win",
+    "dist:win": "npm run build && npm run build:electron && node scripts/run-electron-builder.mjs --win --x64",
     "electron:dev": "npm run build && npm run build:electron && electron .",
     "start:cli": "npm run build && node dist/cli/araon.js",
     "capture:live-assets": "node scripts/capture-araon-live-assets.mjs",
@@ -125,15 +126,29 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "public/favicon.ico"
     },
     "nsis": {
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-portable.${ext}"
     }
   }
 }

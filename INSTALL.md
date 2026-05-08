@@ -198,8 +198,9 @@ installation.
 Download the installers from the GitHub Release page:
 
 ```txt
-macOS:   Araon-1.1.1-arm64.dmg
-Windows: Araon.Setup.1.1.1.exe
+macOS:   Araon-1.1.2-arm64.dmg
+Windows: Araon-Setup-1.1.2-x64.exe
+Windows: Araon-1.1.2-x64-portable.exe
 ```
 
 Build a local unpacked desktop app:
@@ -218,9 +219,9 @@ npm run dist:mac
 npm run dist:win
 ```
 
-Run macOS packaging on macOS and Windows packaging on Windows. Araon uses the
-native `better-sqlite3` dependency, so cross-building desktop artifacts is not
-the safe path for release validation.
+The Windows release script builds x64 artifacts explicitly. Araon uses the
+native `better-sqlite3` dependency, so run the generated installer on Windows
+before treating a desktop release as fully validated.
 
 The desktop app stores credentials, settings, and SQLite state under the OS
 app user-data directory. It does not write runtime data into the app bundle.

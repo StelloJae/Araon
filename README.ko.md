@@ -16,13 +16,13 @@
   ·
   <a href="INSTALL.md">설치 가이드</a>
   ·
-  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.1">v1.1.1 릴리스</a>
+  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.2">v1.1.2 릴리스</a>
 </p>
 
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933">
-  <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.1-111827">
+  <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.2-111827">
 </p>
 
 아라온은 한국 주식 단타/스윙 투자자가 옆 모니터에 켜두는 개인용 관찰
@@ -172,10 +172,12 @@ token, approval key는 커밋하거나 공유하지 마세요.
 
 ## 데스크톱 앱
 
-GitHub Release에는 macOS용 desktop 파일도 올라가 있습니다.
+GitHub Release에는 desktop 파일도 올라가 있습니다.
 
-- `Araon-1.1.1-arm64.dmg`
-- `Araon-1.1.1-arm64-mac.zip`
+- `Araon-1.1.2-arm64.dmg`
+- `Araon-1.1.2-arm64-mac.zip`
+- `Araon-Setup-1.1.2-x64.exe`
+- `Araon-1.1.2-x64-portable.exe`
 
 다만 현재 desktop 빌드는 공개 배포용 Apple 서명과 notarization이 되어 있지
 않습니다. macOS에서 Gatekeeper 경고가 나올 수 있습니다. 지금은 npm/CLI로
