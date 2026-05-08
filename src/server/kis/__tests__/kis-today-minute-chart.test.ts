@@ -115,6 +115,7 @@ describe('KIS today minute chart mapper', () => {
       method: 'GET',
       path: '/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice',
       trId: 'FHKST03010200',
+      endpointClass: 'selected-minute',
       query: {
         FID_ETC_CLS_CODE: '',
         FID_COND_MRKT_DIV_CODE: 'J',

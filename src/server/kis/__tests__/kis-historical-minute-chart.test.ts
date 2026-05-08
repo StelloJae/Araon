@@ -101,6 +101,7 @@ describe('KIS historical minute daily chart mapper', () => {
       method: 'GET',
       path: '/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice',
       trId: 'FHKST03010230',
+      endpointClass: 'selected-minute',
       query: {
         FID_COND_MRKT_DIV_CODE: 'UN',
         FID_INPUT_ISCD: '005930',
