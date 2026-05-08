@@ -519,6 +519,15 @@ export function getChartPalette(colorScheme: ChartColorScheme) {
   };
 }
 
+type CandleTooltipRows = Array<[string, string]>;
+
+export function shouldReplaceCandleTooltipRows(
+  previousTime: number | null,
+  nextTime: number,
+): boolean {
+  return previousTime !== nextTime;
+}
+
 function LightweightCandleCanvas({
   items,
   colorScheme,
@@ -527,13 +536,13 @@ function LightweightCandleCanvas({
   colorScheme: ChartColorScheme;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const tooltipTimeRef = useRef<number | null>(null);
+  const tooltipVisibleRef = useRef(false);
+  const tooltipPositionRef = useRef<{ x: number; y: number } | null>(null);
   const palette = getChartPalette(colorScheme);
-  const [tooltip, setTooltip] = useState<{
-    x: number;
-    y: number;
-    rows: Array<[string, string]>;
-  } | null>(null);
-  const [pinnedRows, setPinnedRows] = useState<Array<[string, string]> | null>(null);
+  const [tooltipRows, setTooltipRows] = useState<CandleTooltipRows | null>(null);
+  const [pinnedRows, setPinnedRows] = useState<CandleTooltipRows | null>(null);
   const candleData = useMemo<CandlestickData[]>(
     () =>
       items.map((item) => ({
@@ -571,7 +580,40 @@ function LightweightCandleCanvas({
 
     let disposed = false;
     let removeChart: (() => void) | null = null;
-    setTooltip(null);
+    let tooltipFrameId: number | null = null;
+    let pendingTooltipPosition: { x: number; y: number } | null = null;
+
+    const scheduleTooltipPosition = (x: number, y: number) => {
+      const position = { x, y };
+      pendingTooltipPosition = position;
+      tooltipPositionRef.current = position;
+      if (tooltipFrameId !== null) return;
+
+      tooltipFrameId = window.requestAnimationFrame(() => {
+        tooltipFrameId = null;
+        const nextPosition = pendingTooltipPosition;
+        if (nextPosition === null || tooltipRef.current === null) return;
+        tooltipRef.current.style.transform = `translate(${nextPosition.x}px, ${nextPosition.y}px)`;
+      });
+    };
+
+    const hideTooltip = () => {
+      pendingTooltipPosition = null;
+      tooltipPositionRef.current = null;
+      tooltipTimeRef.current = null;
+      if (tooltipFrameId !== null) {
+        window.cancelAnimationFrame(tooltipFrameId);
+        tooltipFrameId = null;
+      }
+      if (!tooltipVisibleRef.current) return;
+      tooltipVisibleRef.current = false;
+      setTooltipRows(null);
+    };
+
+    setTooltipRows(null);
+    tooltipTimeRef.current = null;
+    tooltipVisibleRef.current = false;
+    tooltipPositionRef.current = null;
     setPinnedRows(null);
 
     void import('lightweight-charts').then(
@@ -623,19 +665,28 @@ function LightweightCandleCanvas({
             point.y > host.clientHeight ||
             param.time === undefined
           ) {
-            setTooltip(null);
+            hideTooltip();
             return;
           }
-          const item = itemByTime.get(Number(param.time));
+          const tooltipTime = Number(param.time);
+          const item = itemByTime.get(tooltipTime);
           if (item === undefined) {
-            setTooltip(null);
+            hideTooltip();
             return;
           }
-          setTooltip({
-            x: Math.min(point.x + 12, Math.max(12, host.clientWidth - 190)),
-            y: Math.min(point.y + 12, Math.max(12, host.clientHeight - 164)),
-            rows: formatCandleTooltipRows(item),
-          });
+          scheduleTooltipPosition(
+            Math.min(point.x + 12, Math.max(12, host.clientWidth - 190)),
+            Math.min(point.y + 12, Math.max(12, host.clientHeight - 164)),
+          );
+          if (
+            tooltipVisibleRef.current &&
+            !shouldReplaceCandleTooltipRows(tooltipTimeRef.current, tooltipTime)
+          ) {
+            return;
+          }
+          tooltipVisibleRef.current = true;
+          tooltipTimeRef.current = tooltipTime;
+          setTooltipRows(formatCandleTooltipRows(item));
         };
         const handleClick = (param: MouseEventParams) => {
           if (param.time === undefined) {
@@ -658,9 +709,18 @@ function LightweightCandleCanvas({
 
     return () => {
       disposed = true;
+      if (tooltipFrameId !== null) {
+        window.cancelAnimationFrame(tooltipFrameId);
+        tooltipFrameId = null;
+      }
       removeChart?.();
     };
   }, [candleData, itemByTime, palette.downColor, palette.upColor, volumeData]);
+
+  const tooltipTransform =
+    tooltipPositionRef.current === null
+      ? 'translate(12px, 12px)'
+      : `translate(${tooltipPositionRef.current.x}px, ${tooltipPositionRef.current.y}px)`;
 
   return (
     <div style={{ position: 'relative' }}>
@@ -678,12 +738,14 @@ function LightweightCandleCanvas({
           width: '100%',
         }}
       />
-      {tooltip !== null && (
+      {tooltipRows !== null && (
         <div
+          ref={tooltipRef}
           style={{
             position: 'absolute',
-            left: tooltip.x,
-            top: tooltip.y,
+            left: 0,
+            top: 0,
+            transform: tooltipTransform,
             width: 178,
             border: '1px solid var(--border)',
             borderRadius: 8,
@@ -696,7 +758,7 @@ function LightweightCandleCanvas({
             zIndex: 2,
           }}
         >
-          {tooltip.rows.map(([label, value]) => (
+          {tooltipRows.map(([label, value]) => (
             <div
               key={label}
               style={{

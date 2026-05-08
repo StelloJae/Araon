@@ -11,6 +11,7 @@ import {
   formatCandleTooltipRows,
   getChartPalette,
   normalizeCandleRangeForInterval,
+  shouldReplaceCandleTooltipRows,
 } from '../StockCandleChart';
 
 describe('StockCandleChart', () => {
@@ -140,6 +141,12 @@ describe('StockCandleChart', () => {
       ['거래량', '12.3만'],
       ['데이터', 'kis-daily'],
     ]);
+  });
+
+  it('updates crosshair tooltip rows only when the candle changes', () => {
+    expect(shouldReplaceCandleTooltipRows(null, 1777939200)).toBe(true);
+    expect(shouldReplaceCandleTooltipRows(1777939200, 1777939200)).toBe(false);
+    expect(shouldReplaceCandleTooltipRows(1777939200, 1777939260)).toBe(true);
   });
 
   it('renders automatic chart coverage status instead of manual fetch buttons', () => {
