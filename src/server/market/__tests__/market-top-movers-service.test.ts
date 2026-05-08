@@ -88,6 +88,41 @@ describe('market top movers service', () => {
     expect(fetchRanking).toHaveBeenCalledWith(expect.objectContaining({ count: 100 }));
   });
 
+  it('keeps a full top100 cache even when a smaller caller limit refreshes first', async () => {
+    let now = 1_000;
+    let fail = false;
+    const fetchRanking = vi.fn(async ({ direction }) => {
+      if (fail) throw new KisRestError('rate limited', 429, null, 'EGW00201', {});
+      return Array.from({ length: 100 }, (_, idx) => ({
+        rank: idx + 1,
+        ticker: String(idx + 1).padStart(6, '0'),
+        name: `${direction}-${idx + 1}`,
+        price: 1_000 + idx,
+        changeAbs: direction === 'gainers' ? idx : -idx,
+        changePct: direction === 'gainers' ? idx : -idx,
+        volume: idx,
+      }));
+    });
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      ttlMs: 1,
+      cooldownMs: 10_000,
+      fetchRanking,
+    });
+
+    const compact = await service.getTopMovers({ limit: 3 });
+    expect(compact.gainers).toHaveLength(3);
+    expect(fetchRanking).toHaveBeenCalledWith(expect.objectContaining({ count: 100 }));
+
+    now += 2;
+    fail = true;
+    const stale = await service.getTopMovers({ limit: 100 });
+
+    expect(stale.status).toBe('stale');
+    expect(stale.gainers).toHaveLength(100);
+    expect(stale.losers).toHaveLength(100);
+  });
+
   it('fails fast without duplicating ranking calls when KIS ranking hangs', async () => {
     vi.useFakeTimers();
     try {

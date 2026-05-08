@@ -122,7 +122,7 @@ function TopMoversColumn({
           borderBottom: '1px solid var(--border-soft)',
         }}
       >
-        {title}
+        {title} · {items.length}종목
       </div>
       {items.length === 0 ? (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>

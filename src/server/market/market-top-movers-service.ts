@@ -64,7 +64,7 @@ export function createMarketTopMoversService({
     }
 
     try {
-      const next = await refresh(current, limit);
+      const next = await refresh(current);
       return toResponse(current, next, 'ready', readyMessage, limit);
     } catch (err) {
       if (isCooldownError(err)) {
@@ -106,17 +106,17 @@ export function createMarketTopMoversService({
     }
   }
 
-  async function refresh(current: Date, limit: number): Promise<CacheEntry> {
+  async function refresh(current: Date): Promise<CacheEntry> {
     if (inflight !== null) return withTimeout(inflight, refreshTimeoutMs);
     const nextRefresh = (async () => {
       const [gainers, losers] = await Promise.all([
-        fetchRanking({ direction: 'gainers', count: limit, now: current }),
-        fetchRanking({ direction: 'losers', count: limit, now: current }),
+        fetchRanking({ direction: 'gainers', count: MAX_LIMIT, now: current }),
+        fetchRanking({ direction: 'losers', count: MAX_LIMIT, now: current }),
       ]);
       const next = {
         fetchedAt: current,
-        gainers: gainers.slice(0, limit),
-        losers: losers.slice(0, limit),
+        gainers: gainers.slice(0, MAX_LIMIT),
+        losers: losers.slice(0, MAX_LIMIT),
       };
       cache = next;
       return next;
