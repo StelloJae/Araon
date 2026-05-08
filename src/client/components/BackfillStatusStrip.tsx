@@ -143,6 +143,15 @@ export function describeDailyBackfillStatus(
     };
   }
   if (health.backfill.running) {
+    if (health.backfill.lastAttempted === 0) {
+      return {
+        label: '과거 일봉 자동 보강 확인 중',
+        detail: `${latestDaily} · 보강할 종목을 확인하는 중입니다 · 오늘 호출 ${calls}`,
+        compactLabel: '일봉 확인 중',
+        compactDetail: null,
+        tone: 'muted',
+      };
+    }
     return {
       label: '과거 일봉 자동 보강 실행 중',
       detail: `이번 실행 ${health.backfill.lastSucceeded}/${health.backfill.lastAttempted} 성공 · 오늘 호출 ${calls}`,

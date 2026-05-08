@@ -170,6 +170,54 @@ describe('createBackgroundDailyBackfillScheduler', () => {
     expect(backfillDailyCandles).toHaveBeenCalledTimes(2);
   });
 
+  it('updates the snapshot while a daily backfill run is still in flight', async () => {
+    let resolveBackfill: (() => void) | null = null;
+    const inFlight = new Promise<void>((resolve) => {
+      resolveBackfill = resolve;
+    });
+    const backfillDailyCandles = vi.fn(async (input: { ticker: string }) => {
+      await inFlight;
+      return {
+        ticker: input.ticker,
+        requested: 1,
+        inserted: 1,
+        updated: 0,
+        from: '2026-05-01T15:00:00.000Z',
+        to: '2026-05-01T15:00:00.000Z',
+        source: 'kis-daily' as const,
+        coverage: { backfilled: true, localOnly: false },
+      };
+    });
+    const scheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: { findAll: () => [stock('005930')] },
+      favoriteRepo: { findAll: () => [] },
+      dailyBackfillService: { backfillDailyCandles },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:05:00.000Z'),
+      requestGapMs: 0,
+    });
+
+    const run = scheduler.runOnce();
+    await vi.waitFor(() => {
+      expect(scheduler.snapshot()).toMatchObject({
+        running: true,
+        lastAttempted: 1,
+        lastSucceeded: 0,
+        lastFailed: 0,
+      });
+    });
+
+    resolveBackfill?.();
+    await expect(run).resolves.toMatchObject({ attempted: 1, succeeded: 1 });
+    expect(scheduler.snapshot()).toMatchObject({
+      running: false,
+      lastAttempted: 1,
+      lastSucceeded: 1,
+      lastFailed: 0,
+    });
+  });
+
   it('keeps a compact recent ticker history in the snapshot', async () => {
     const backfillDailyCandles = vi.fn(async (input: { ticker: string }) => ({
       ticker: input.ticker,

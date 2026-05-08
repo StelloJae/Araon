@@ -146,6 +146,11 @@ export function createBackgroundDailyBackfillScheduler(
 
   async function runOnceInner(runAt: Date): Promise<BackgroundBackfillRunResult> {
     lastRunAt = runAt.toISOString();
+    lastFinishedAt = null;
+    lastAttempted = 0;
+    lastSucceeded = 0;
+    lastFailed = 0;
+    lastSkippedReason = null;
     await loadStateIfNeeded();
     const budgetReset = resetBudgetIfNeeded(runAt);
     if (budgetReset) await persistState();
@@ -182,6 +187,7 @@ export function createBackgroundDailyBackfillScheduler(
       dailyCallCount += 1;
       await persistState();
       attempted += 1;
+      lastAttempted = attempted;
       try {
         const result = await options.dailyBackfillService.backfillDailyCandles({
           ticker,
@@ -195,6 +201,7 @@ export function createBackgroundDailyBackfillScheduler(
         } else {
           noWorkCooldowns.set(ticker, runAt.getTime() + noWorkTickerCooldownMs);
         }
+        lastSucceeded = results.length;
         pushRecentAttempt({
           ticker,
           status: changed ? 'success' : 'no_change',
@@ -207,6 +214,7 @@ export function createBackgroundDailyBackfillScheduler(
         });
       } catch (err: unknown) {
         failed += 1;
+        lastFailed = failed;
         cooldownUntilMs = runAt.getTime() + cooldownMsForError(err);
         await persistState();
         pushRecentAttempt({

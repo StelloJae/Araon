@@ -129,6 +129,17 @@ describe('BackfillStatusPill', () => {
     expect(html).not.toContain('과거 일봉 자동 보강 실행 중');
   });
 
+  it('does not show misleading 0/0 progress while a run is only waiting to start work', () => {
+    const status = describeDailyBackfillStatus(
+      health({ running: true, lastAttempted: 0, lastSucceeded: 0 }),
+    );
+    const html = renderToStaticMarkup(createElement(BackfillStatusPillView, { status }));
+
+    expect(status.compactLabel).toBe('일봉 확인 중');
+    expect(status.compactDetail).toBeNull();
+    expect(html).not.toContain('0/0');
+  });
+
   it('shows today call count without an artificial budget cap', () => {
     const status = describeDailyBackfillStatus(
       health({ dailyCallCount: 300, dailyCallBudget: null }),

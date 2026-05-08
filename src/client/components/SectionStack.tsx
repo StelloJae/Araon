@@ -83,6 +83,9 @@ export function SectionStack({
   if (view === 'top100') {
     return (
       <MarketTop100Block
+        stocks={Object.keys(catalog)
+          .map((ticker) => buildStockVM(ticker, catalog, quotes))
+          .filter((vm): vm is StockViewModel => vm !== null)}
         onOpenTicker={onOpenRankingTicker ?? onOpenDetail}
       />
     );
@@ -289,7 +292,13 @@ function ColumnAndDivider({
 
 // ---------- TOP100 live ranking ----------
 
-function MarketTop100Block({ onOpenTicker }: { onOpenTicker: (ticker: string) => void }) {
+function MarketTop100Block({
+  stocks,
+  onOpenTicker,
+}: {
+  stocks: StockViewModel[];
+  onOpenTicker: (ticker: string) => void;
+}) {
   const [data, setData] = useState<MarketTopMoversResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -346,10 +355,53 @@ function MarketTop100Block({ onOpenTicker }: { onOpenTicker: (ticker: string) =>
     );
   }
 
-  return <TopMoversBoard data={data} onOpenTicker={onOpenTicker} />;
+  return (
+    <TopMoversBoard
+      data={buildLocalTopMoversFallback(data, stocks)}
+      onOpenTicker={onOpenTicker}
+    />
+  );
 }
 
 // ---------- Helpers ----------
+
+export function buildLocalTopMoversFallback(
+  data: MarketTopMoversResponse,
+  stocks: StockViewModel[],
+): MarketTopMoversResponse {
+  if (data.gainers.length > 0 || data.losers.length > 0) return data;
+  const tradable = stocks.filter((stock) => stock.price > 0 && Number.isFinite(stock.changePct));
+  const gainers = tradable
+    .filter((stock) => stock.changePct > 0)
+    .sort((a, b) => b.changePct - a.changePct)
+    .slice(0, 100)
+    .map(stockToTopMover);
+  const losers = tradable
+    .filter((stock) => stock.changePct < 0)
+    .sort((a, b) => a.changePct - b.changePct)
+    .slice(0, 100)
+    .map(stockToTopMover);
+  if (gainers.length === 0 && losers.length === 0) return data;
+  return {
+    ...data,
+    status: data.status === 'ready' ? 'ready' : 'stale',
+    message: 'KIS 직접 랭킹 대기 중 · 현재 화면 종목 기준으로 표시합니다.',
+    gainers,
+    losers,
+  };
+}
+
+function stockToTopMover(stock: StockViewModel, index: number) {
+  return {
+    rank: index + 1,
+    ticker: stock.code,
+    name: stock.name,
+    price: stock.price,
+    changeAbs: stock.changeAbs,
+    changePct: stock.changePct,
+    volume: stock.volume,
+  };
+}
 
 function sortByChangeDesc(stocks: StockViewModel[]): StockViewModel[] {
   return [...stocks].sort((a, b) => b.changePct - a.changePct);
