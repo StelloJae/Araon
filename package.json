@@ -30,6 +30,7 @@
     "dist/cli/**/*",
     "src/server/db/migrations/**/*",
     "scripts/capture-araon-live-assets.mjs",
+    "scripts/live-capture-tools.mjs",
     "scripts/install-araon-live-capture-launchd.mjs",
     "docs/assets/**/*",
     "docs/guides/**/*",

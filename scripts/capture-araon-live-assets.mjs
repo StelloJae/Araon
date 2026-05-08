@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveFfmpegPath } from './live-capture-tools.mjs';
 
 const DEFAULT_URL = 'http://127.0.0.1:5173/';
 const DEFAULT_WIDTH = 1600;
@@ -307,8 +308,9 @@ async function runFfmpeg(dir, phase, files) {
   writeFileSync(listPath, `${list}\nfile '${files.at(-1).replaceAll("'", "'\\''")}'\n`);
   const mp4 = join(dir, `araon-${phase}-flow.mp4`);
   const gif = join(dir, `araon-${phase}-flow.gif`);
+  const ffmpeg = resolveFfmpegPath();
 
-  await runCommand('ffmpeg', [
+  await runCommand(ffmpeg, [
     '-y',
     '-f', 'concat',
     '-safe', '0',
@@ -317,7 +319,7 @@ async function runFfmpeg(dir, phase, files) {
     '-pix_fmt', 'yuv420p',
     mp4,
   ]);
-  await runCommand('ffmpeg', [
+  await runCommand(ffmpeg, [
     '-y',
     '-f', 'concat',
     '-safe', '0',
