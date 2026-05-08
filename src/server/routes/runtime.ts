@@ -13,9 +13,10 @@ import type {
   StockSignalOutcomeDashboard,
   VolumeBaselineStatus,
 } from '@shared/types.js';
+import { WS_MAX_SUBSCRIPTIONS } from '@shared/kis-constraints.js';
 import type { KisRuntimeRef, KisRuntimeState } from '../bootstrap-kis.js';
 import type { KisRuntime } from '../bootstrap-kis.js';
-import type { CredentialStore } from '../credential-store.js';
+import type { CredentialStore, KisCredentialProfileSummary } from '../credential-store.js';
 import type { SettingsStore } from '../settings-store.js';
 import type {
   BackgroundBackfillSchedulerSnapshot,
@@ -53,6 +54,10 @@ import {
   previewRealtimeCandidates,
   type RealtimeCandidatePreview,
 } from '../realtime/tier-manager.js';
+import {
+  planRealtimeSessionPool,
+  type RealtimeSessionPoolPlan,
+} from '../realtime/realtime-session-pool.js';
 import {
   createDisabledPhoneNotifier,
   type PhoneAlertInput,
@@ -121,6 +126,7 @@ export interface RuntimeRealtimeStatusPayload {
   readonly sessionEnabledAt: string | null;
   readonly sessionTickers: readonly string[];
   readonly session: RuntimeRealtimeSessionPayload;
+  readonly coverage: RuntimeRealtimeCoveragePayload;
   readonly readiness: {
     readonly cap1Ready: boolean;
     readonly cap3Ready: boolean;
@@ -143,6 +149,24 @@ export interface RuntimeRealtimeStatusPayload {
     readonly code: string;
     readonly message: string;
   };
+}
+
+export interface RuntimeRealtimeCoveragePayload {
+  readonly profileCount: number;
+  readonly enabledProfileCount: number;
+  readonly activeSessionCount: number;
+  readonly perSessionCap: number;
+  readonly totalCapacity: number;
+  readonly candidateCount: number;
+  readonly assignedTickerCount: number;
+  readonly fallbackTickerCount: number;
+  readonly sessions: readonly {
+    readonly profileId: string;
+    readonly label: string;
+    readonly cap: number;
+    readonly assignedTickerCount: number;
+    readonly state: 'active' | 'planned' | 'disabled';
+  }[];
 }
 
 export interface RuntimeRealtimeSessionPayload {
@@ -474,6 +498,7 @@ export async function runtimeRoutes(
     const configured = await isCredentialConfigured(opts.credentialStore);
     const runtimeState = opts.runtimeRef.get();
     const gates = opts.settingsStore.snapshot();
+    const credentialProfiles = await listCredentialProfiles(opts.credentialStore);
 
     if (runtimeState.status === 'started') {
       await enforceSessionLimits(runtimeState.runtime);
@@ -502,6 +527,7 @@ export async function runtimeRoutes(
           status,
           undefined,
           runtimeState.runtime.tierManager.listFavorites(),
+          credentialProfiles,
         ),
       });
     }
@@ -519,7 +545,14 @@ export async function runtimeRoutes(
 
     return reply.send({
       success: true,
-      data: toPayload(configured, runtimeState.status, status, runtimeError),
+      data: toPayload(
+        configured,
+        runtimeState.status,
+        status,
+        runtimeError,
+        [],
+        credentialProfiles,
+      ),
     });
   });
 
@@ -809,13 +842,27 @@ async function isCredentialConfigured(
   }
 }
 
+async function listCredentialProfiles(
+  credentialStore: CredentialStore,
+): Promise<KisCredentialProfileSummary[]> {
+  try {
+    return credentialStore.listCredentialProfiles !== undefined
+      ? await credentialStore.listCredentialProfiles()
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function toPayload(
   configured: boolean,
   runtimeStatus: KisRuntimeState['status'],
   status: RealtimeOperatorStatus,
   runtimeError?: RuntimeRealtimeStatusPayload['runtimeError'],
   favorites: readonly Favorite[] = [],
+  credentialProfiles: readonly KisCredentialProfileSummary[] = [],
 ): RuntimeRealtimeStatusPayload {
+  const coverage = buildRealtimeCoverage(status, favorites, credentialProfiles);
   const readiness = evaluateNxtRolloutReadiness({
     status,
     verifiedMaxRuntimeCap: 40,
@@ -855,6 +902,7 @@ function toPayload(
     sessionEnabledAt: status.session.sessionEnabledAt,
     sessionTickers: status.session.sessionTickers,
     session: toSessionPayload(status.session, status),
+    coverage,
     readiness: {
       ...readiness,
       cap20Preview: previewRealtimeCandidates({
@@ -863,6 +911,56 @@ function toPayload(
       }),
     },
     ...(runtimeError !== undefined ? { runtimeError } : {}),
+  };
+}
+
+function buildRealtimeCoverage(
+  status: RealtimeOperatorStatus,
+  favorites: readonly Favorite[],
+  credentialProfiles: readonly KisCredentialProfileSummary[],
+): RuntimeRealtimeCoveragePayload {
+  const profiles =
+    credentialProfiles.length > 0
+      ? credentialProfiles.map((profile) => ({
+          id: profile.id,
+          label: profile.label,
+          enabled: profile.enabled,
+        }))
+      : status.subscribedTickerCount > 0
+        ? [{ id: 'primary', label: 'Primary KIS', enabled: true }]
+        : [];
+  const candidates = favorites.map((favorite) => favorite.ticker);
+  const plan = planRealtimeSessionPool({
+    profiles,
+    candidates,
+    perSessionCap: WS_MAX_SUBSCRIPTIONS,
+  });
+  const activeProfileIds = new Set(
+    status.subscribedTickerCount > 0 ? ['primary'] : [],
+  );
+  return toCoveragePayload(plan, activeProfileIds);
+}
+
+function toCoveragePayload(
+  plan: RealtimeSessionPoolPlan,
+  activeProfileIds: ReadonlySet<string>,
+): RuntimeRealtimeCoveragePayload {
+  return {
+    profileCount: plan.profileCount,
+    enabledProfileCount: plan.enabledProfileCount,
+    activeSessionCount: plan.sessions.filter((session) => activeProfileIds.has(session.profileId)).length,
+    perSessionCap: plan.perSessionCap,
+    totalCapacity: plan.totalCapacity,
+    candidateCount: plan.candidateCount,
+    assignedTickerCount: plan.assignedTickerCount,
+    fallbackTickerCount: plan.fallbackTickerCount,
+    sessions: plan.sessions.map((session) => ({
+      profileId: session.profileId,
+      label: session.label,
+      cap: session.cap,
+      assignedTickerCount: session.tickers.length,
+      state: activeProfileIds.has(session.profileId) ? 'active' : 'planned',
+    })),
   };
 }
 

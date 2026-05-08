@@ -919,6 +919,38 @@ export function RealtimeSessionControl({
         <br />
         raw key / account / secret 정보는 표시하지 않습니다.
       </div>
+      {status?.coverage !== undefined && (
+        <div
+          data-testid="realtime-coverage-summary"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 8,
+            marginTop: 12,
+          }}
+        >
+          <Row
+            k="프로필"
+            v={`${status.coverage.enabledProfileCount}/${status.coverage.profileCount}`}
+            chipColor="var(--text-muted)"
+          />
+          <Row
+            k="커버리지"
+            v={`${status.coverage.assignedTickerCount}/${status.coverage.totalCapacity} 후보`}
+            chipColor="var(--gold-text)"
+          />
+          <Row
+            k="활성 세션"
+            v={`${status.coverage.activeSessionCount}개`}
+            chipColor={status.coverage.activeSessionCount > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
+          />
+          <Row
+            k="REST fallback"
+            v={`${status.coverage.fallbackTickerCount}종목`}
+            chipColor="var(--text-muted)"
+          />
+        </div>
+      )}
       <button
         type="button"
         onClick={onEmergencyDisable}

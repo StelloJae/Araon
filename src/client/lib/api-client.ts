@@ -447,6 +447,23 @@ export interface RealtimeStatusPayload {
       | 'operator_disabled'
       | null;
   };
+  coverage: {
+    profileCount: number;
+    enabledProfileCount: number;
+    activeSessionCount: number;
+    perSessionCap: number;
+    totalCapacity: number;
+    candidateCount: number;
+    assignedTickerCount: number;
+    fallbackTickerCount: number;
+    sessions: Array<{
+      profileId: string;
+      label: string;
+      cap: number;
+      assignedTickerCount: number;
+      state: 'active' | 'planned' | 'disabled';
+    }>;
+  };
   readiness: {
     cap1Ready: boolean;
     cap3Ready: boolean;

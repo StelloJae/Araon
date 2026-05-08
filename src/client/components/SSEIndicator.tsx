@@ -250,6 +250,12 @@ export function SSEIndicator({
               chipColor="var(--text-muted)"
             />
             <PanelRow
+              k="커버리지"
+              v={runtimeCoverageLabel(runtimeStatus)}
+              chip={runtimeStatus !== null ? `${runtimeStatus.coverage.profileCount} profiles` : 'profiles'}
+              chipColor="var(--gold-text)"
+            />
+            <PanelRow
               k="최근 tick"
               v={runtimeStatus?.lastTickAt !== undefined && runtimeStatus.lastTickAt !== null
                 ? fmtRelativeTime(new Date(runtimeStatus.lastTickAt), now)
@@ -361,6 +367,11 @@ function runtimeSessionLabel(status: RealtimeStatusPayload | null): string {
 function runtimeCountersLabel(status: RealtimeStatusPayload | null): string {
   if (status === null) return '0 / 0 / 0';
   return `${status.parsedTickCount} / ${status.appliedTickCount} / ${status.ignoredStaleTickCount}`;
+}
+
+function runtimeCoverageLabel(status: RealtimeStatusPayload | null): string {
+  if (status === null) return '대기';
+  return `${status.coverage.assignedTickerCount}/${status.coverage.totalCapacity} · fallback ${status.coverage.fallbackTickerCount}`;
 }
 
 function runtimeSessionLimitLabel(status: RealtimeStatusPayload | null): string {
