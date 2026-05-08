@@ -1,15 +1,14 @@
 /**
- * ViewToggle — segmented control for `섹터 / 태그 / 혼합` views.
+ * ViewToggle — segmented control for `섹터 / TOP100` views.
  *
  * Active pill: white card on snow track, soft shadow. Theme-aware via tokens.
  */
 
-export type ViewKind = 'sector' | 'tag' | 'mixed';
+export type ViewKind = 'sector' | 'top100';
 
 const OPTIONS: ReadonlyArray<{ id: ViewKind; label: string }> = [
   { id: 'sector', label: '섹터' },
-  { id: 'tag',    label: '태그' },
-  { id: 'mixed',  label: '혼합' },
+  { id: 'top100', label: 'TOP100' },
 ];
 
 interface ViewToggleProps {

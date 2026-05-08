@@ -15,6 +15,7 @@ import type {
   LocalRestoreResult,
   PriceHistoryApiResponse,
   MarketTapeSummary,
+  MarketTopMoversResponse,
   Stock,
   StockDisclosurePage,
   StockNewsPage,
@@ -81,6 +82,16 @@ export async function getStocks(): Promise<Stock[]> {
 export async function getMarketSummary(): Promise<MarketTapeSummary> {
   const res = await fetch('/market/summary');
   return unwrap<MarketTapeSummary>(res);
+}
+
+export async function getMarketTopMovers(
+  options: { limit?: number } = {},
+): Promise<MarketTopMoversResponse> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  const query = params.toString();
+  const res = await fetch(`/market/top-movers${query.length > 0 ? `?${query}` : ''}`);
+  return unwrap<MarketTopMoversResponse>(res);
 }
 
 /**

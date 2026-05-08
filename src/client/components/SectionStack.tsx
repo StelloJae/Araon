@@ -1,20 +1,19 @@
 /**
  * SectionStack — right column of the ARAON dashboard.
  *
- * Renders sector / tag / mixed views by routing on `useWatchlistStore.view`.
+ * Renders sector / TOP100 views by routing on `useWatchlistStore.view`.
  *
  *   'sector' → SectorsCombinedBlock: single card, internal 2-col grid splitting
  *              theme sectors by even/odd index. No collapse / sort (compact).
- *   'tag'    → TagView: KOSPI / KOSDAQ buckets with #pill headers (backend has
- *              no tag catalog yet — markets are the closest substitute).
- *   'mixed'  → MixedView: each sector as its own SectorBlock with header,
- *              sort dropdown, and collapse chevron.
+ *   'top100' → KIS 등락률 순위 기반 상승/하락 TOP100 board.
  *
  * Watchlist tickers without a manual theme or KIS official index industry fall
  * into a synthetic '미분류' sector at the end.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { MarketTopMoversResponse } from '@shared/types';
+import { getMarketTopMovers } from '../lib/api-client';
 import {
   buildStockVM,
   OTHERS_SECTOR_ID,
@@ -23,8 +22,8 @@ import {
 } from '../stores/stocks-store';
 import { useWatchlistStore } from '../stores/watchlist-store';
 import { StockRow } from './StockRow';
-import { SectionHeader } from './SectionHeader';
-import type { SortKey, StockViewModel } from '../lib/view-models';
+import type { StockViewModel } from '../lib/view-models';
+import { TopMoversBoard } from './TopMoversBoard';
 
 const OTHERS_META: SectorMeta = {
   id: OTHERS_SECTOR_ID,
@@ -35,9 +34,14 @@ const OTHERS_META: SectorMeta = {
 interface SectionStackProps {
   onToggleFav: (ticker: string) => void;
   onOpenDetail: (code: string) => void;
+  onOpenRankingTicker?: (ticker: string) => void;
 }
 
-export function SectionStack({ onToggleFav, onOpenDetail }: SectionStackProps) {
+export function SectionStack({
+  onToggleFav,
+  onOpenDetail,
+  onOpenRankingTicker,
+}: SectionStackProps) {
   const catalog = useStocksStore((s) => s.catalog);
   const sectors = useStocksStore((s) => s.sectors);
   const quotes = useStocksStore((s) => s.quotes);
@@ -45,10 +49,6 @@ export function SectionStack({ onToggleFav, onOpenDetail }: SectionStackProps) {
 
   const view = useWatchlistStore((s) => s.view);
   const favorites = useWatchlistStore((s) => s.favorites);
-  const collapsed = useWatchlistStore((s) => s.collapsed);
-  const sortKeys = useWatchlistStore((s) => s.sortKeys);
-  const toggleCollapsed = useWatchlistStore((s) => s.toggleCollapsed);
-  const setSortKey = useWatchlistStore((s) => s.setSortKey);
 
   const stocksBySector = useMemo<Record<string, StockViewModel[]>>(() => {
     const sectorByName = new Map<string, SectorMeta>();
@@ -80,6 +80,14 @@ export function SectionStack({ onToggleFav, onOpenDetail }: SectionStackProps) {
     0,
   );
 
+  if (view === 'top100') {
+    return (
+      <MarketTop100Block
+        onOpenTicker={onOpenRankingTicker ?? onOpenDetail}
+      />
+    );
+  }
+
   if (totalCount === 0) {
     return <EmptyState />;
   }
@@ -107,51 +115,6 @@ export function SectionStack({ onToggleFav, onOpenDetail }: SectionStackProps) {
     }
     return out;
   })();
-
-  if (view === 'tag') {
-    const allStocks = Object.values(stocksBySector).flat();
-    const buckets: Array<{ id: string; title: string; stocks: StockViewModel[] }> = [
-      { id: 'KOSPI',  title: 'KOSPI',  stocks: allStocks.filter((s) => s.market === 'KOSPI') },
-      { id: 'KOSDAQ', title: 'KOSDAQ', stocks: allStocks.filter((s) => s.market === 'KOSDAQ') },
-    ].filter((b) => b.stocks.length > 0);
-    return (
-      <>
-        {buckets.map((bucket) => (
-          <TagBlock
-            key={bucket.id}
-            tag={bucket.title}
-            stocks={bucket.stocks}
-            favorites={favorites}
-            onToggleFav={onToggleFav}
-            onOpenDetail={onOpenDetail}
-            flashSeeds={flashSeeds}
-          />
-        ))}
-      </>
-    );
-  }
-
-  if (view === 'mixed') {
-    return (
-      <>
-        {sectorList.map((sector) => (
-          <SectorBlock
-            key={sector.id}
-            sector={sector}
-            stocks={stocksBySector[sector.id] ?? []}
-            favorites={favorites}
-            onToggleFav={onToggleFav}
-            onOpenDetail={onOpenDetail}
-            flashSeeds={flashSeeds}
-            collapsed={collapsed[sector.id] === true}
-            onToggleCollapsed={() => toggleCollapsed(sector.id)}
-            sortKey={sortKeys[sector.id] ?? 'changeDesc'}
-            onSortChange={(k) => setSortKey(sector.id, k)}
-          />
-        ))}
-      </>
-    );
-  }
 
   // 'sector' (default) — 2-col combined card
   return (
@@ -324,178 +287,72 @@ function ColumnAndDivider({
   );
 }
 
-// ---------- SectorBlock (mixed view: header + body per sector) ----------
+// ---------- TOP100 live ranking ----------
 
-interface SectorBlockProps {
-  sector: SectorMeta;
-  stocks: StockViewModel[];
-  favorites: Set<string>;
-  onToggleFav: (code: string) => void;
-  onOpenDetail: (code: string) => void;
-  flashSeeds: Record<string, number>;
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
-  sortKey: SortKey;
-  onSortChange: (k: SortKey) => void;
-}
+function MarketTop100Block({ onOpenTicker }: { onOpenTicker: (ticker: string) => void }) {
+  const [data, setData] = useState<MarketTopMoversResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-function SectorBlock({
-  sector,
-  stocks,
-  favorites,
-  onToggleFav,
-  onOpenDetail,
-  flashSeeds,
-  collapsed,
-  onToggleCollapsed,
-  sortKey,
-  onSortChange,
-}: SectorBlockProps) {
-  const sorted = useMemo(() => sortStocks(stocks, sortKey), [stocks, sortKey]);
-  return (
-    <div className="section-block">
-      <SectionHeader
-        sector={{ name: sector.name, tagline: sector.tagline }}
-        count={stocks.length}
-        sortKey={sortKey}
-        onSortChange={(k) => transition(() => onSortChange(k))}
-        collapsed={collapsed}
-        onToggle={onToggleCollapsed}
-      />
-      {!collapsed && (
-        <SectionBody>
-          {sorted.map((s, i) => (
-            <StockRow
-              key={s.code}
-              stock={s}
-              rank={sortKey === 'name' ? null : i + 1}
-              isFav={favorites.has(s.code)}
-              onToggleFav={onToggleFav}
-              onOpenDetail={onOpenDetail}
-              flashSeed={flashSeeds[s.code] ?? 0}
-              isFirst={i === 0}
-            />
-          ))}
-        </SectionBody>
-      )}
-    </div>
-  );
-}
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-// ---------- Tag block (#pill header + sorted rows) ----------
+    async function load() {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        timer = setTimeout(load, 3_000);
+        return;
+      }
+      try {
+        const next = await getMarketTopMovers({ limit: 100 });
+        if (!cancelled) {
+          setData(next);
+          setError(null);
+        }
+        timer = setTimeout(load, next.refreshIntervalMs);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+        timer = setTimeout(load, 10_000);
+      }
+    }
 
-interface TagBlockProps {
-  tag: string;
-  stocks: StockViewModel[];
-  favorites: Set<string>;
-  onToggleFav: (code: string) => void;
-  onOpenDetail: (code: string) => void;
-  flashSeeds: Record<string, number>;
-}
+    void load();
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, []);
 
-function TagBlock({
-  tag,
-  stocks,
-  favorites,
-  onToggleFav,
-  onOpenDetail,
-  flashSeeds,
-}: TagBlockProps) {
-  const sorted = useMemo(() => sortByChangeDesc(stocks), [stocks]);
-  return (
-    <div className="section-block">
+  if (data === null) {
+    return (
       <div
         style={{
           background: 'var(--bg-card)',
           border: '1px solid var(--border)',
-          borderRadius: '12px 12px 0 0',
-          padding: '14px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
+          borderRadius: 12,
+          padding: 48,
+          textAlign: 'center',
+          color: 'var(--text-muted)',
+          fontSize: 13,
+          fontWeight: 600,
         }}
       >
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: 'var(--gold-text)',
-            background: 'var(--gold-soft)',
-            padding: '4px 10px',
-            borderRadius: 50,
-            letterSpacing: 0.3,
-          }}
-        >
-          #{tag}
-        </span>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
-          {stocks.length}종목
-        </span>
+        전체 종목 TOP100 랭킹을 불러오는 중
+        {error !== null && (
+          <div style={{ marginTop: 8, color: 'var(--gold-text)' }}>{error}</div>
+        )}
       </div>
-      <SectionBody>
-        {sorted.map((s, i) => (
-          <StockRow
-            key={s.code}
-            stock={s}
-            rank={i + 1}
-            isFav={favorites.has(s.code)}
-            onToggleFav={onToggleFav}
-            onOpenDetail={onOpenDetail}
-            flashSeed={flashSeeds[s.code] ?? 0}
-            isFirst={i === 0}
-          />
-        ))}
-      </SectionBody>
-    </div>
-  );
-}
+    );
+  }
 
-// ---------- Shared body wrapper ----------
-
-function SectionBody({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderTop: 'none',
-        borderRadius: '0 0 12px 12px',
-        overflow: 'hidden',
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <TopMoversBoard data={data} onOpenTicker={onOpenTicker} />;
 }
 
 // ---------- Helpers ----------
 
-function sortStocks(stocks: StockViewModel[], key: SortKey): StockViewModel[] {
-  const copy = [...stocks];
-  switch (key) {
-    case 'changeDesc':
-      return copy.sort((a, b) => b.changePct - a.changePct);
-    case 'changeAsc':
-      return copy.sort((a, b) => a.changePct - b.changePct);
-    case 'volume':
-      return copy.sort((a, b) => b.volume - a.volume);
-    case 'name':
-      return copy.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-  }
-}
-
 function sortByChangeDesc(stocks: StockViewModel[]): StockViewModel[] {
   return [...stocks].sort((a, b) => b.changePct - a.changePct);
-}
-
-function transition(fn: () => void): void {
-  type DocWithVT = Document & { startViewTransition?: (cb: () => void) => unknown };
-  const d = document as DocWithVT;
-  if (typeof d.startViewTransition === 'function') {
-    d.startViewTransition(fn);
-  } else {
-    fn();
-  }
 }
 
 function EmptyState() {

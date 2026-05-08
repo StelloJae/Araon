@@ -48,6 +48,9 @@ import { createDartDisclosureService } from './disclosures/dart-disclosure-servi
 import { createDataRetentionScheduler } from './maintenance/data-retention.js';
 import { createMasterStockService } from './services/master-stock-service.js';
 import { createMarketSummaryService } from './market/market-summary-service.js';
+import { createMarketTopMoversService } from './market/market-top-movers-service.js';
+import { fetchKisFluctuationRanking } from './kis/kis-fluctuation-ranking.js';
+import { KisRestError } from './kis/kis-rest-client.js';
 import { createCredentialSetupMutex, credentialsRoutes } from './routes/credentials.js';
 import { stockRoutes } from './routes/stocks.js';
 import { themeRoutes } from './routes/themes.js';
@@ -234,6 +237,24 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     signalEventRepo,
     newsRepo,
   });
+  const marketTopMoversService = createMarketTopMoversService({
+    fetchRanking: async ({ direction, count, now }) => {
+      const state = runtimeRef.get();
+      if (state.status !== 'started') {
+        throw new Error('KIS runtime is not started');
+      }
+      const limiterSnapshot = state.runtime.outboundLimiter.snapshot();
+      if (limiterSnapshot.profiles.some((profile) => profile.cooldownActive)) {
+        throw new KisRestError('KIS outbound limiter cooldown active', 429, null, 'EGW00201', null);
+      }
+      return fetchKisFluctuationRanking({
+        direction,
+        count,
+        now,
+        restClient: state.runtime.restClient,
+      });
+    },
+  });
 
   const setupMutex = createCredentialSetupMutex();
   const app = Fastify({ loggerInstance: logger });
@@ -265,7 +286,10 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(favoritesRoutes, { favoriteRepo, runtimeRef });
   await app.register(async (inner) => { importRoutes(inner, { stockRepo, runtimeRef }); });
   await app.register(masterRoutes, { service: masterService, masterRepo, stockRepo, credentialStore });
-  await app.register(marketRoutes, { service: marketSummaryService });
+  await app.register(marketRoutes, {
+    service: marketSummaryService,
+    topMoversService: marketTopMoversService,
+  });
   await app.register(eventsRoutes, { runtimeRef });
   await app.register(runtimeRoutes, {
     runtimeRef,

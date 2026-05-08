@@ -156,6 +156,32 @@ export interface MarketTapeSummary {
   indicators: MarketTapeIndicator[];
 }
 
+export type MarketTopMoverDirection = 'gainers' | 'losers';
+
+export interface MarketTopMoverItem {
+  rank: number;
+  ticker: string;
+  name: string;
+  price: number;
+  changeAbs: number | null;
+  changePct: number;
+  volume: number | null;
+}
+
+export interface MarketTopMoversResponse {
+  generatedAt: string;
+  fetchedAt: string | null;
+  cacheTtlMs: number;
+  refreshIntervalMs: number;
+  staleAfterMs: number;
+  source: 'kis-ranking-auto' | 'kis-ranking-fluctuation' | 'kis-ranking-overtime-fluctuation';
+  status: 'ready' | 'stale' | 'unconfigured' | 'cooldown' | 'error';
+  message: string;
+  cooldownUntil: string | null;
+  gainers: MarketTopMoverItem[];
+  losers: MarketTopMoverItem[];
+}
+
 export type VolumeBaselineStatus = 'collecting' | 'ready' | 'unavailable';
 
 /**

@@ -45,6 +45,7 @@ import { useMasterStore } from './stores/master-store';
 import { fmtClock } from './lib/format';
 import {
   ApiError,
+  addStockFromMaster,
   addFavorite,
   getFavorites,
   getMarketSummary,
@@ -53,6 +54,7 @@ import {
   removeFavorite,
   removeStock as removeStockApi,
 } from './lib/api-client';
+import { syncTrackedCatalogAfterMasterAdd } from './lib/tracked-catalog-sync';
 import type { StockViewModel } from './lib/view-models';
 import type { MarketTapeSummary } from './components/StatusBar';
 
@@ -286,6 +288,23 @@ export function App() {
     }
   }, [openDetail]);
 
+  const handlePickRankingTicker = useCallback(async (ticker: string): Promise<void> => {
+    if (catalog[ticker] !== undefined) {
+      openDetail(ticker);
+      return;
+    }
+    try {
+      await addStockFromMaster(ticker);
+      await syncTrackedCatalogAfterMasterAdd({ setCatalog, setThemes });
+      openDetail(ticker);
+    } catch (err) {
+      pushError({
+        title: 'TOP100 종목 열기 실패',
+        detail: describeError(err),
+      });
+    }
+  }, [catalog, openDetail, pushError, setCatalog, setThemes]);
+
   const allStockVMs = useMemo<StockViewModel[]>(() => {
     const out: StockViewModel[] = [];
     for (const ticker of Object.keys(catalog)) {
@@ -352,6 +371,7 @@ export function App() {
           <SectionStack
             onToggleFav={toggleFavoriteFromRow}
             onOpenDetail={openDetail}
+            onOpenRankingTicker={(ticker) => void handlePickRankingTicker(ticker)}
           />
         </div>
       </div>

@@ -3,6 +3,7 @@ import { KisRestError } from './kis-rest-client.js';
 export type KisEndpointClass =
   | 'foreground'
   | 'polling'
+  | 'ranking'
   | 'daily-backfill'
   | 'selected-minute'
   | 'maintenance'

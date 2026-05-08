@@ -5,7 +5,7 @@
  *                     server-side favorites list; sync via `setFavorites` on
  *                     initial load and on every successful POST/DELETE
  *                     /favorites round-trip.
- *   - view          : 'sector' | 'tag' | 'mixed' (active SectionStack mode)
+ *   - view          : 'sector' | 'top100' (active SectionStack mode)
  *   - collapsed     : Record<sectionId, boolean>
  *   - sortKeys      : Record<sectionId, SortKey>
  *
