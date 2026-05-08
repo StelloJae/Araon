@@ -17,6 +17,7 @@ import type { StockRepository, FavoriteRepository } from './db/repositories.js';
 import type { KisAuth } from './kis/kis-auth.js';
 import type { KisRestClient } from './kis/kis-rest-client.js';
 import type { KisWsClient } from './kis/kis-ws-client.js';
+import type { KisOutboundLimiter } from './kis/kis-outbound-limiter.js';
 import type { RealtimeBridge } from './realtime/realtime-bridge.js';
 import type { TierManager } from './realtime/tier-manager.js';
 import type { RealtimeSessionGate } from './realtime/runtime-operator.js';
@@ -33,6 +34,7 @@ const log = createChildLogger('bootstrap-kis');
 export interface KisRuntime {
   auth: KisAuth;
   restClient: KisRestClient;
+  outboundLimiter: KisOutboundLimiter;
   approvalIssuer: ApprovalIssuer;
   wsClient: KisWsClient;
   bridge: RealtimeBridge;
@@ -199,6 +201,7 @@ import type { Price } from '@shared/types.js';
 
 import { createKisAuth } from './kis/kis-auth.js';
 import { createKisRestClient } from './kis/kis-rest-client.js';
+import { createKisOutboundLimiter } from './kis/kis-outbound-limiter.js';
 import { createKisWsClient } from './kis/kis-ws-client.js';
 import {
   createRealtimeBridge,
@@ -330,13 +333,28 @@ export async function defaultActuallyStart(
   deps: KisRuntimeStaticDeps,
   credentials: KisCredentials,
 ): Promise<KisRuntime> {
-  const tokenRest = createKisRestClient({ isPaper: credentials.isPaper });
+  const rawRate = credentials.isPaper
+    ? REST_RATE_LIMIT_PER_SEC_PAPER
+    : REST_RATE_LIMIT_PER_SEC_LIVE;
+  const ratePerSec = rawRate * REST_RATE_LIMIT_SAFETY_FACTOR;
+  const outboundLimiter = createKisOutboundLimiter({
+    ratePerSec,
+    burst: Math.ceil(ratePerSec),
+  });
+  const tokenRest = createKisRestClient({
+    isPaper: credentials.isPaper,
+    outboundLimiter,
+  });
   const auth = createKisAuth({ store: deps.credentialStore, transport: tokenRest });
   await auth.getAccessToken();
 
   await primeStoreFromSnapshot(deps.priceStore, deps.snapshotStore);
 
-  const restClient = createKisRestClient({ isPaper: credentials.isPaper, auth });
+  const restClient = createKisRestClient({
+    isPaper: credentials.isPaper,
+    auth,
+    outboundLimiter,
+  });
 
   // KIS WebSocket requires a one-time approval key from POST /oauth2/Approval.
   // The issuer module enforces a Zod-validated response, the correct
@@ -422,11 +440,6 @@ export async function defaultActuallyStart(
     cap: WS_MAX_SUBSCRIPTIONS,
   });
 
-  const rawRate = credentials.isPaper
-    ? REST_RATE_LIMIT_PER_SEC_PAPER
-    : REST_RATE_LIMIT_PER_SEC_LIVE;
-  const ratePerSec = rawRate * REST_RATE_LIMIT_SAFETY_FACTOR;
-
   // burst = ceil(rate) = 15 live / 4 paper. Larger burst + concurrent workers
   // occasionally triggers KIS throttle, but kis-rest-client's built-in 3-attempt
   // backoff absorbs most (steady-state ~1/10 ticker fail rate observed live).
@@ -452,6 +465,7 @@ export async function defaultActuallyStart(
             const resp = await restClient.request<Record<string, unknown>>({
               method: 'GET',
               path: '/uapi/domestic-stock/v1/quotations/inquire-price',
+              endpointClass: 'polling',
               query: {
                 FID_COND_MRKT_DIV_CODE: marketDivCode,
                 FID_INPUT_ISCD: ticker,
@@ -527,6 +541,7 @@ export async function defaultActuallyStart(
   return {
     auth,
     restClient,
+    outboundLimiter,
     approvalIssuer,
     wsClient,
     bridge,

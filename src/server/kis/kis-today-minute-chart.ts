@@ -122,6 +122,7 @@ export async function fetchKisTodayMinuteCandles(
     method: 'GET',
     path: TODAY_MINUTE_CHART_PATH,
     trId: TODAY_MINUTE_CHART_TR_ID,
+    endpointClass: 'selected-minute',
     query: {
       FID_ETC_CLS_CODE: '',
       FID_COND_MRKT_DIV_CODE: 'J',

@@ -103,4 +103,32 @@ describe('createKisRestClient — authenticated header contract', () => {
     expect(headers['appsecret']).toBeUndefined();
     expect(headers['custtype']).toBeUndefined();
   });
+
+  it('uses the shared outbound limiter before KIS fetches', async () => {
+    const fetchFn = vi.fn(async () => (
+      new Response(JSON.stringify({ rt_cd: '0', output: {} }), { status: 200 })
+    )) as unknown as typeof fetch;
+    const acquire = vi.fn(async () => {});
+    const recordFailure = vi.fn();
+    const client = createKisRestClient({
+      isPaper: false,
+      auth: makeAuth(creds),
+      fetchFn,
+      outboundLimiter: {
+        acquire,
+        recordFailure,
+        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
+      },
+    });
+
+    await client.request({
+      method: 'GET',
+      path: '/uapi/domestic-stock/v1/quotations/inquire-price',
+      endpointClass: 'polling',
+    });
+
+    expect(acquire).toHaveBeenCalledWith({ endpointClass: 'polling' });
+    expect(fetchFn).toHaveBeenCalledOnce();
+    expect(recordFailure).not.toHaveBeenCalled();
+  });
 });

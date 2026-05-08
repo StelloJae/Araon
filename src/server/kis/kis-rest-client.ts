@@ -23,6 +23,10 @@ import {
 import { createChildLogger } from '@shared/logger.js';
 
 import type { KisAuth, KisTokenTransport } from './kis-auth.js';
+import type {
+  KisEndpointClass,
+  KisOutboundLimiter,
+} from './kis-outbound-limiter.js';
 
 const log = createChildLogger('kis-rest');
 
@@ -41,6 +45,8 @@ export interface KisRestRequest {
   query?: Record<string, string | number | boolean>;
   body?: unknown;
   headers?: Record<string, string>;
+  endpointClass?: KisEndpointClass;
+  profileId?: string;
   /** Skip bearer-token attachment — used by the token-issuance path itself. */
   unauthenticated?: boolean;
 }
@@ -88,6 +94,7 @@ export interface KisRestClientOptions {
   backoffMaxMs?: number;
   /** Per-request timeout (hard abort via AbortController). Default 10_000ms. */
   requestTimeoutMs?: number;
+  outboundLimiter?: KisOutboundLimiter;
 }
 
 export interface KisRestClient extends KisTokenTransport {
@@ -140,6 +147,7 @@ export function createKisRestClient(
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   async function performOnce<T>(req: KisRestRequest): Promise<T> {
+    await options.outboundLimiter?.acquire(limiterContext(req));
     const url = buildUrl(host, req.path, req.query);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json; charset=UTF-8',
@@ -247,6 +255,10 @@ export function createKisRestClient(
         return await performOnce<T>(req);
       } catch (err: unknown) {
         lastErr = err;
+        options.outboundLimiter?.recordFailure({
+          ...limiterContext(req),
+          error: err,
+        });
         if (attempt === maxAttempts || !isRetryable(err)) {
           break;
         }
@@ -278,7 +290,18 @@ export function createKisRestClient(
         path: TOKEN_ENDPOINT_PATH,
         body,
         unauthenticated: true,
+        endpointClass: 'token',
       });
     },
+  };
+}
+
+function limiterContext(req: KisRestRequest): {
+  profileId?: string;
+  endpointClass?: KisEndpointClass;
+} {
+  return {
+    ...(req.profileId !== undefined ? { profileId: req.profileId } : {}),
+    ...(req.endpointClass !== undefined ? { endpointClass: req.endpointClass } : {}),
   };
 }

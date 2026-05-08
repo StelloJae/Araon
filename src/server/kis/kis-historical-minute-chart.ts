@@ -130,6 +130,7 @@ export async function fetchKisHistoricalMinuteCandles(
     method: 'GET',
     path: HISTORICAL_MINUTE_CHART_PATH,
     trId: HISTORICAL_MINUTE_CHART_TR_ID,
+    endpointClass: 'selected-minute',
     query: {
       FID_COND_MRKT_DIV_CODE: 'UN',
       FID_INPUT_ISCD: options.ticker,

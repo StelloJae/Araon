@@ -104,6 +104,7 @@ export async function fetchKisDailyCandles(
     method: 'GET',
     path: DAILY_CHART_PATH,
     trId: DAILY_CHART_TR_ID,
+    endpointClass: 'daily-backfill',
     query: {
       FID_COND_MRKT_DIV_CODE: 'J',
       FID_INPUT_ISCD: options.ticker,
