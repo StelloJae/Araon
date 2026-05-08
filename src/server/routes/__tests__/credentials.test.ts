@@ -12,6 +12,26 @@ function makeFakes(initial?: { configured?: boolean; isPaper?: boolean; runtime?
   const credentialStore: CredentialStore = {
     load: vi.fn(async () => stored),
     saveCredentials: vi.fn(async () => {}),
+    listCredentialProfiles: vi.fn(async () => (
+      stored === null
+        ? []
+        : [{
+            id: 'primary',
+            label: 'Primary KIS',
+            isPaper: stored.credentials.isPaper,
+            enabled: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          }]
+    )),
+    addCredentialProfile: vi.fn(async (profile) => ({
+      id: 'profile-2',
+      label: profile.label.trim(),
+      isPaper: false,
+      enabled: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })),
     saveToken: vi.fn(async () => {}),
     clearToken: vi.fn(async () => {}),
     clearCredentials: vi.fn(async () => {}),
@@ -151,6 +171,64 @@ describe('POST /credentials', () => {
       applyTicksToPriceStore: false,
       backgroundDailyBackfillEnabled: false,
     });
+  });
+});
+
+describe('credential profiles', () => {
+  async function build(fakes: ReturnType<typeof makeFakes>) {
+    const app = Fastify();
+    await app.register(credentialsRoutes, { ...fakes, setupMutex: { run: <T>(fn: () => Promise<T>) => fn() } });
+    return app;
+  }
+
+  it('lists redacted credential profile summaries', async () => {
+    const fakes = makeFakes({ configured: true, isPaper: false });
+    const app = await build(fakes);
+    const res = await app.inject({ method: 'GET', url: '/credentials/profiles' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.profiles).toEqual([
+      expect.objectContaining({ id: 'primary', label: 'Primary KIS' }),
+    ]);
+    expect(JSON.stringify(res.json())).not.toContain('k'.repeat(10));
+    expect(JSON.stringify(res.json())).not.toContain('s'.repeat(10));
+  });
+
+  it('adds an extra profile only after the primary profile exists', async () => {
+    const fakes = makeFakes({ configured: true, isPaper: false });
+    const app = await build(fakes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/credentials/profiles',
+      payload: {
+        label: 'backup key',
+        appKey: 'a'.repeat(36),
+        appSecret: 'b'.repeat(180),
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().data).toEqual(expect.objectContaining({
+      id: 'profile-2',
+      label: 'backup key',
+      enabled: true,
+    }));
+    expect(fakes.credentialStore.addCredentialProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ isPaper: false, enabled: true }),
+    );
+  });
+
+  it('rejects extra profiles before first-run credentials exist', async () => {
+    const fakes = makeFakes({ configured: false });
+    const app = await build(fakes);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/credentials/profiles',
+      payload: {
+        label: 'backup key',
+        appKey: 'a'.repeat(36),
+        appSecret: 'b'.repeat(180),
+      },
+    });
+    expect(res.statusCode).toBe(409);
   });
 });
 

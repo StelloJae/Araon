@@ -291,6 +291,34 @@ export async function getServerSettings(): Promise<ServerRuntimeSettings> {
   return unwrap<ServerRuntimeSettings>(res);
 }
 
+export interface CredentialProfileSummary {
+  id: string;
+  label: string;
+  isPaper: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getCredentialProfiles(): Promise<CredentialProfileSummary[]> {
+  const res = await fetch('/credentials/profiles');
+  const data = await unwrap<{ profiles: CredentialProfileSummary[] }>(res);
+  return data.profiles;
+}
+
+export async function addCredentialProfile(input: {
+  label: string;
+  appKey: string;
+  appSecret: string;
+}): Promise<CredentialProfileSummary> {
+  const res = await fetch('/credentials/profiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, isPaper: false }),
+  });
+  return unwrap<CredentialProfileSummary>(res);
+}
+
 export async function updateServerSettings(
   settings: ServerRuntimeSettings,
 ): Promise<ServerRuntimeSettings> {

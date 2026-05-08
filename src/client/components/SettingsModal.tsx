@@ -42,11 +42,13 @@ import { Field, Slider, Toggle } from './ui/SettingsControls';
 import { ensureAudioUnlocked, playBleep } from '../lib/sound';
 import {
   ApiError,
+  addCredentialProfile,
   disableRealtimeSession,
   emergencyDisableRealtime,
   enableRealtimeSession,
   exportLocalBackup,
   getFavorites,
+  getCredentialProfiles,
   getPhoneNotificationStatus,
   getRealtimeStatus,
   getRuntimeDataHealth,
@@ -61,6 +63,7 @@ import {
   type RealtimeStatusPayload,
   type RuntimeDataHealthPayload,
   type ServerRuntimeSettings,
+  type CredentialProfileSummary,
   type PhoneNotificationStatusPayload,
 } from '../lib/api-client';
 import {
@@ -262,6 +265,12 @@ type BackupPhase =
   | { kind: 'success'; message: string }
   | { kind: 'error'; message: string };
 
+type ProfilePhase =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'success'; message: string }
+  | { kind: 'error'; message: string };
+
 function ConnectionTab() {
   const [status, setStatus] = useState<CredentialStatus | null>(null);
   const [realtimeStatus, setRealtimeStatus] =
@@ -277,6 +286,12 @@ function ConnectionTab() {
     useState<ServerSettingsPhase>({ kind: 'idle' });
   const [backupPhase, setBackupPhase] =
     useState<BackupPhase>({ kind: 'idle' });
+  const [credentialProfiles, setCredentialProfiles] =
+    useState<CredentialProfileSummary[]>([]);
+  const [profilePhase, setProfilePhase] = useState<ProfilePhase>({ kind: 'idle' });
+  const [profileLabel, setProfileLabel] = useState('');
+  const [profileAppKey, setProfileAppKey] = useState('');
+  const [profileAppSecret, setProfileAppSecret] = useState('');
   const [selectedCap, setSelectedCap] = useState<SessionRealtimeCap>(1);
   const [operatorConfirmed, setOperatorConfirmed] = useState(false);
 
@@ -360,6 +375,27 @@ function ConnectionTab() {
       });
     } catch (err) {
       setBackupPhase({ kind: 'error', message: operatorErrorMessage(err) });
+    }
+  }
+
+  async function handleAddCredentialProfile(): Promise<void> {
+    setProfilePhase({ kind: 'saving' });
+    try {
+      const profile = await addCredentialProfile({
+        label: profileLabel,
+        appKey: profileAppKey,
+        appSecret: profileAppSecret,
+      });
+      setCredentialProfiles(await getCredentialProfiles());
+      setProfileLabel('');
+      setProfileAppKey('');
+      setProfileAppSecret('');
+      setProfilePhase({
+        kind: 'success',
+        message: `${profile.label} 프로필을 추가했습니다`,
+      });
+    } catch (err) {
+      setProfilePhase({ kind: 'error', message: operatorErrorMessage(err) });
     }
   }
 
@@ -512,10 +548,12 @@ function ConnectionTab() {
           getServerSettings(),
           getRuntimeDataHealth(),
         ]);
+        const profiles = await getCredentialProfiles().catch(() => []);
         if (!cancelled) {
           setRealtimeStatus(realtime);
           setServerSettings(settings);
           setDataHealth(health);
+          setCredentialProfiles(profiles);
         }
       } catch (err) {
         if ((err as { name?: string } | null)?.name === 'AbortError') return;
@@ -634,6 +672,18 @@ function ConnectionTab() {
           );
         }}
       />
+      <CredentialProfilesPanel
+        configured={status.configured}
+        profiles={credentialProfiles}
+        phase={profilePhase}
+        label={profileLabel}
+        appKey={profileAppKey}
+        appSecret={profileAppSecret}
+        onLabelChange={setProfileLabel}
+        onAppKeyChange={setProfileAppKey}
+        onAppSecretChange={setProfileAppSecret}
+        onAdd={() => void handleAddCredentialProfile()}
+      />
       <DataHealthPanel health={dataHealth} />
       <LocalBackupPanel
         phase={backupPhase}
@@ -671,7 +721,7 @@ function ConnectionTab() {
       >
         보안을 위해 App Key / App Secret / 계좌번호는 표시하지 않습니다.
         <br />
-        자격증명 변경은 다음 버전에서 지원됩니다.
+        첫 KIS 키는 온보딩에서 등록하고, 추가 키는 이 화면에서 프로필로 더할 수 있습니다.
       </div>
 
       <MasterCatalogPanel />
@@ -1155,6 +1205,140 @@ export function DevModeControl({
   );
 }
 
+export function CredentialProfilesPanel({
+  configured,
+  profiles,
+  phase,
+  label,
+  appKey,
+  appSecret,
+  onLabelChange,
+  onAppKeyChange,
+  onAppSecretChange,
+  onAdd,
+}: {
+  configured: boolean;
+  profiles: readonly CredentialProfileSummary[];
+  phase: ProfilePhase;
+  label: string;
+  appKey: string;
+  appSecret: string;
+  onLabelChange: (value: string) => void;
+  onAppKeyChange: (value: string) => void;
+  onAppSecretChange: (value: string) => void;
+  onAdd: () => void;
+}) {
+  const canSubmit =
+    configured &&
+    phase.kind !== 'saving' &&
+    label.trim().length > 0 &&
+    appKey.trim().length >= 10 &&
+    appSecret.trim().length >= 10;
+  return (
+    <div
+      data-testid="credential-profiles-panel"
+      style={{
+        marginTop: 18,
+        padding: '12px 14px',
+        background: 'var(--bg-tint)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
+        KIS API 프로필
+      </div>
+      <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        온보딩에서 등록한 첫 키가 primary입니다. 추가 키는 여기서 저장해두고,
+        실시간 coverage allocator가 사용할 수 있는 프로필로 관리합니다.
+      </div>
+      <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+        {profiles.length === 0 ? (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            등록된 프로필이 없습니다.
+          </div>
+        ) : (
+          profiles.map((profile) => (
+            <div
+              key={profile.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '7px 9px',
+                borderRadius: 7,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-soft)',
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)' }}>
+                {profile.label}
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)' }}>
+                {profile.enabled ? 'enabled' : 'disabled'} · {profile.isPaper ? 'paper' : 'live'}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+      <div
+        style={{
+          marginTop: 12,
+          display: 'grid',
+          gridTemplateColumns: '1fr',
+          gap: 8,
+        }}
+      >
+        <input
+          value={label}
+          onChange={(event) => onLabelChange(event.currentTarget.value)}
+          placeholder="프로필 이름 예: KIS 2"
+          disabled={!configured}
+          data-testid="credential-profile-label"
+          style={credentialInputStyle}
+        />
+        <input
+          value={appKey}
+          onChange={(event) => onAppKeyChange(event.currentTarget.value)}
+          placeholder="App Key"
+          disabled={!configured}
+          data-testid="credential-profile-app-key"
+          style={credentialInputStyle}
+        />
+        <input
+          value={appSecret}
+          onChange={(event) => onAppSecretChange(event.currentTarget.value)}
+          placeholder="App Secret"
+          type="password"
+          disabled={!configured}
+          data-testid="credential-profile-app-secret"
+          style={credentialInputStyle}
+        />
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={!canSubmit}
+          data-testid="credential-profile-add"
+          style={operatorButtonStyle(canSubmit)}
+        >
+          {phase.kind === 'saving' ? '저장 중…' : '프로필 추가'}
+        </button>
+      </div>
+      {phase.kind === 'success' && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-up)' }}>
+          {phase.message}
+        </div>
+      )}
+      {phase.kind === 'error' && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-down)' }}>
+          저장 실패: {phase.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BackgroundBackfillControl({
   settings,
   phase,
@@ -1501,6 +1685,17 @@ function operatorButtonStyle(enabled: boolean): CSSProperties {
     cursor: enabled ? 'pointer' : 'not-allowed',
   };
 }
+
+const credentialInputStyle: CSSProperties = {
+  width: '100%',
+  padding: '8px 10px',
+  borderRadius: 7,
+  border: '1px solid var(--border)',
+  background: 'var(--bg-card)',
+  color: 'var(--text-primary)',
+  fontFamily: 'inherit',
+  fontSize: 12,
+};
 
 function operatorMessageStyle(background: string): CSSProperties {
   return {

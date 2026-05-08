@@ -36,6 +36,13 @@ const postBodySchema = z.object({
   isPaper: z.boolean(),
 });
 
+const profileBodySchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  appKey: z.string().min(10),
+  appSecret: z.string().min(10),
+  isPaper: z.boolean().optional().default(false),
+});
+
 export async function credentialsRoutes(app: FastifyInstance, opts: CredentialsRoutesOptions): Promise<void> {
   const { credentialStore, settingsStore, runtimeRef, setupMutex, onCredentialsConfigured } = opts;
 
@@ -50,6 +57,46 @@ export async function credentialsRoutes(app: FastifyInstance, opts: CredentialsR
       return reply.send({ success: true, data: { ...base, error: rs.error } });
     }
     return reply.send({ success: true, data: base });
+  });
+
+  app.get('/credentials/profiles', async (_req, reply) => {
+    const profiles =
+      credentialStore.listCredentialProfiles !== undefined
+        ? await credentialStore.listCredentialProfiles()
+        : [];
+    return reply.send({ success: true, data: { profiles } });
+  });
+
+  app.post('/credentials/profiles', async (request, reply) => {
+    if (credentialStore.addCredentialProfile === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'CREDENTIAL_PROFILES_NOT_SUPPORTED' },
+      });
+    }
+    const configured = await credentialStore.load();
+    if (configured === null) {
+      return reply.status(409).send({
+        success: false,
+        error: {
+          code: 'PRIMARY_CREDENTIAL_REQUIRED',
+          message: '첫 KIS 자격증명을 먼저 등록해야 합니다.',
+        },
+      });
+    }
+    const parsed = profileBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        success: false,
+        error: { code: 'INVALID_BODY', issues: parsed.error.issues },
+      });
+    }
+    const profile = await credentialStore.addCredentialProfile({
+      ...parsed.data,
+      isPaper: false,
+      enabled: true,
+    });
+    return reply.status(201).send({ success: true, data: profile });
   });
 
   app.post('/credentials', async (request, reply) => {

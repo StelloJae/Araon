@@ -18,6 +18,7 @@ import { dirname } from 'node:path';
 import {
   createCipheriv,
   createDecipheriv,
+  randomUUID,
   randomBytes,
   scryptSync,
 } from 'node:crypto';
@@ -37,6 +38,34 @@ export interface KisCredentials {
   appKey: string;
   appSecret: string;
   isPaper: boolean;
+}
+
+export interface KisCredentialProfile {
+  id: string;
+  label: string;
+  appKey: string;
+  appSecret: string;
+  isPaper: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KisCredentialProfileInput {
+  label: string;
+  appKey: string;
+  appSecret: string;
+  isPaper?: boolean;
+  enabled?: boolean;
+}
+
+export interface KisCredentialProfileSummary {
+  id: string;
+  label: string;
+  isPaper: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -60,12 +89,24 @@ export interface PersistedToken {
 export interface StoredPayload {
   credentials: KisCredentials;
   token?: PersistedToken;
+  profiles?: KisCredentialProfile[];
 }
 
 const credentialsSchema = z.object({
   appKey: z.string().min(1),
   appSecret: z.string().min(1),
   isPaper: z.boolean(),
+});
+
+const credentialProfileSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1).max(80),
+  appKey: z.string().min(1),
+  appSecret: z.string().min(1),
+  isPaper: z.boolean(),
+  enabled: z.boolean(),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
 });
 
 const tokenSchema = z.object({
@@ -78,6 +119,7 @@ const tokenSchema = z.object({
 const payloadSchema = z.object({
   credentials: credentialsSchema,
   token: tokenSchema.optional(),
+  profiles: z.array(credentialProfileSchema).optional(),
 });
 
 function getDefaultStorePath(): string {
@@ -181,6 +223,8 @@ function decryptPayload(blob: Buffer): Buffer {
 export interface CredentialStore {
   load(): Promise<StoredPayload | null>;
   saveCredentials(credentials: KisCredentials): Promise<void>;
+  listCredentialProfiles?(): Promise<KisCredentialProfileSummary[]>;
+  addCredentialProfile?(profile: KisCredentialProfileInput): Promise<KisCredentialProfileSummary>;
   saveToken(token: PersistedToken): Promise<void>;
   clearToken(): Promise<void>;
   clearCredentials(): Promise<void>;
@@ -220,9 +264,11 @@ export function createFileCredentialStore(
     const validated = payloadSchema.parse(parsed);
     // Re-shape to satisfy `exactOptionalPropertyTypes` — omit `token` when
     // absent rather than carrying an explicit `undefined`.
-    return validated.token !== undefined
-      ? { credentials: validated.credentials, token: validated.token }
-      : { credentials: validated.credentials };
+    return {
+      credentials: validated.credentials,
+      ...(validated.token !== undefined ? { token: validated.token } : {}),
+      ...(validated.profiles !== undefined ? { profiles: validated.profiles } : {}),
+    };
   }
 
   async function writePayload(payload: StoredPayload): Promise<void> {
@@ -254,14 +300,52 @@ export function createFileCredentialStore(
 
     async saveCredentials(credentials: KisCredentials): Promise<void> {
       const existing = await readPayload();
-      const next: StoredPayload =
-        existing === null
-          ? { credentials }
-          : existing.token !== undefined
-            ? { credentials, token: existing.token }
-            : { credentials };
+      const profiles = upsertPrimaryProfile(existing?.profiles, credentials);
+      const next: StoredPayload = {
+        credentials,
+        ...(existing?.token !== undefined ? { token: existing.token } : {}),
+        profiles,
+      };
       await writePayload(next);
       log.info({ isPaper: credentials.isPaper }, 'credentials persisted');
+    },
+
+    async listCredentialProfiles(): Promise<KisCredentialProfileSummary[]> {
+      const existing = await readPayload();
+      if (existing === null) return [];
+      return upsertPrimaryProfile(existing.profiles, existing.credentials)
+        .map(toCredentialProfileSummary);
+    },
+
+    async addCredentialProfile(
+      profile: KisCredentialProfileInput,
+    ): Promise<KisCredentialProfileSummary> {
+      const existing = await readPayload();
+      if (existing === null) {
+        throw new Error('cannot add credential profile before primary credentials are stored');
+      }
+      const nowIso = new Date().toISOString();
+      const nextProfile: KisCredentialProfile = {
+        id: randomUUID(),
+        label: sanitizeProfileLabel(profile.label),
+        appKey: profile.appKey,
+        appSecret: profile.appSecret,
+        isPaper: profile.isPaper ?? false,
+        enabled: profile.enabled ?? true,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      const profiles = [
+        ...upsertPrimaryProfile(existing.profiles, existing.credentials),
+        nextProfile,
+      ];
+      await writePayload({
+        credentials: existing.credentials,
+        ...(existing.token !== undefined ? { token: existing.token } : {}),
+        profiles,
+      });
+      log.info({ profileId: nextProfile.id, isPaper: nextProfile.isPaper }, 'credential profile persisted');
+      return toCredentialProfileSummary(nextProfile);
     },
 
     async saveToken(token: PersistedToken): Promise<void> {
@@ -271,7 +355,11 @@ export function createFileCredentialStore(
           'cannot persist token before credentials are stored',
         );
       }
-      await writePayload({ credentials: existing.credentials, token });
+      await writePayload({
+        credentials: existing.credentials,
+        token,
+        ...(existing.profiles !== undefined ? { profiles: existing.profiles } : {}),
+      });
       log.debug(
         { expiresAtMs: token.expiresAtMs },
         'access token persisted',
@@ -283,7 +371,10 @@ export function createFileCredentialStore(
       if (existing === null) {
         return;
       }
-      await writePayload({ credentials: existing.credentials });
+      await writePayload({
+        credentials: existing.credentials,
+        ...(existing.profiles !== undefined ? { profiles: existing.profiles } : {}),
+      });
       log.debug('access token cleared');
     },
 
@@ -303,5 +394,44 @@ export function createFileCredentialStore(
         }
       }
     },
+  };
+}
+
+function sanitizeProfileLabel(label: string): string {
+  const trimmed = label.trim().replace(/\s+/g, ' ');
+  return trimmed.length > 0 ? trimmed.slice(0, 80) : 'KIS Profile';
+}
+
+function upsertPrimaryProfile(
+  profiles: readonly KisCredentialProfile[] | undefined,
+  credentials: KisCredentials,
+): KisCredentialProfile[] {
+  const nowIso = new Date().toISOString();
+  const existing = profiles ?? [];
+  const primaryIndex = existing.findIndex((profile) => profile.id === 'primary');
+  const primary: KisCredentialProfile = {
+    id: 'primary',
+    label: 'Primary KIS',
+    appKey: credentials.appKey,
+    appSecret: credentials.appSecret,
+    isPaper: credentials.isPaper,
+    enabled: true,
+    createdAt: primaryIndex >= 0 ? existing[primaryIndex]!.createdAt : nowIso,
+    updatedAt: nowIso,
+  };
+  if (primaryIndex < 0) return [primary, ...existing];
+  return existing.map((profile, idx) => (idx === primaryIndex ? primary : profile));
+}
+
+function toCredentialProfileSummary(
+  profile: KisCredentialProfile,
+): KisCredentialProfileSummary {
+  return {
+    id: profile.id,
+    label: profile.label,
+    isPaper: profile.isPaper,
+    enabled: profile.enabled,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
   };
 }

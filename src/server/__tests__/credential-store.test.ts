@@ -30,4 +30,27 @@ describe('credentialStore.clearCredentials', () => {
     const store = createFileCredentialStore({ path: tmpPath });
     await expect(store.clearCredentials()).resolves.toBeUndefined();
   });
+
+  it('stores additional credential profiles without exposing secret material in summaries', async () => {
+    const store = createFileCredentialStore({ path: tmpPath });
+    await store.saveCredentials({
+      appKey: 'primary-key'.repeat(4),
+      appSecret: 'primary-secret'.repeat(12),
+      isPaper: false,
+    });
+    const added = await store.addCredentialProfile?.({
+      label: '  second   key  ',
+      appKey: 'secondary-key'.repeat(4),
+      appSecret: 'secondary-secret'.repeat(12),
+    });
+    expect(added).toMatchObject({
+      label: 'second key',
+      isPaper: false,
+      enabled: true,
+    });
+    const summaries = await store.listCredentialProfiles?.();
+    expect(summaries).toHaveLength(2);
+    expect(JSON.stringify(summaries)).not.toContain('secondary-key');
+    expect(JSON.stringify(summaries)).not.toContain('secondary-secret');
+  });
 });
