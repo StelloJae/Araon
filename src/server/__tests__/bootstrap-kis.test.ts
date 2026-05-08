@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   connectRealtimeFavoritesOnWarmup,
   createKisRuntimeRef,
+  shouldPollRuntimeTicker,
   type KisRuntimeStaticDeps,
 } from '../bootstrap-kis.js';
 
@@ -199,5 +200,68 @@ describe('bootstrap realtime warmup', () => {
 
     expect(bridge.connect).toHaveBeenCalledTimes(1);
     expect(bridge.applyDiff).not.toHaveBeenCalled();
+  });
+});
+
+describe('shouldPollRuntimeTicker', () => {
+  const gates = { websocketEnabled: true, applyTicksToPriceStore: true };
+  const realtimeTickers = new Set(['129920']);
+
+  it('keeps REST polling for realtime-tier tickers until a valid WS quote arrives', () => {
+    expect(shouldPollRuntimeTicker({
+      ticker: '129920',
+      settings: gates,
+      wsConnected: true,
+      realtimeTickers,
+      currentPrice: undefined,
+    })).toBe(true);
+
+    expect(shouldPollRuntimeTicker({
+      ticker: '129920',
+      settings: gates,
+      wsConnected: true,
+      realtimeTickers,
+      currentPrice: {
+        ticker: '129920',
+        price: 0,
+        changeRate: 0,
+        volume: 0,
+        updatedAt: '2026-05-08T00:00:00.000Z',
+        isSnapshot: false,
+        source: 'rest',
+      },
+    })).toBe(true);
+
+    expect(shouldPollRuntimeTicker({
+      ticker: '129920',
+      settings: gates,
+      wsConnected: true,
+      realtimeTickers,
+      currentPrice: {
+        ticker: '129920',
+        price: 9200,
+        changeRate: 1.1,
+        volume: 1000,
+        updatedAt: '2026-05-08T00:01:00.000Z',
+        isSnapshot: false,
+        source: 'rest',
+      },
+    })).toBe(true);
+
+    expect(shouldPollRuntimeTicker({
+      ticker: '129920',
+      settings: gates,
+      wsConnected: true,
+      realtimeTickers,
+      currentPrice: {
+        ticker: '129920',
+        price: 9300,
+        changeRate: 1.2,
+        volume: 1200,
+        updatedAt: '2026-05-08T00:02:00.000Z',
+        isSnapshot: false,
+        source: 'ws-integrated',
+      },
+    })).toBe(false);
   });
 });

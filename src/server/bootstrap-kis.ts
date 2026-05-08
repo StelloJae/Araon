@@ -215,6 +215,7 @@ import { createMarketHoursScheduler } from './lifecycle/market-hours-scheduler.j
 import { primeStoreFromSnapshot } from './price/cold-start-loader.js';
 import { mapKisInquirePriceToPrice } from './kis/kis-price-mapper.js';
 import { parseKisTickFrame } from './kis/kis-tick-parser.js';
+import { isRealtimePriceSource } from '@shared/price-source.js';
 import { createApprovalIssuer, type ApprovalRequest } from './kis/kis-approval.js';
 import {
   createRealtimeSessionGate,
@@ -269,6 +270,34 @@ export async function connectRealtimeFavoritesOnWarmup(deps: {
     subscribe: realtimeTickers,
     unsubscribe: [],
   });
+}
+
+export function shouldPollRuntimeTicker(input: {
+  readonly ticker: string;
+  readonly settings: Pick<
+    ReturnType<SettingsStore['snapshot']>,
+    'websocketEnabled' | 'applyTicksToPriceStore'
+  >;
+  readonly wsConnected: boolean;
+  readonly realtimeTickers: ReadonlySet<string>;
+  readonly currentPrice: Price | undefined;
+}): boolean {
+  if (!input.settings.websocketEnabled || !input.settings.applyTicksToPriceStore) {
+    return true;
+  }
+  if (!input.wsConnected) return true;
+  if (!input.realtimeTickers.has(input.ticker)) return true;
+
+  const current = input.currentPrice;
+  if (
+    current === undefined ||
+    !Number.isFinite(current.price) ||
+    current.price <= 0
+  ) {
+    return true;
+  }
+
+  return !isRealtimePriceSource(current.source);
 }
 
 export async function defaultActuallyStart(
@@ -407,9 +436,13 @@ export async function defaultActuallyStart(
     settings: deps.settingsStore,
     shouldPollTicker: (stock) => {
       const settings = deps.settingsStore.snapshot();
-      if (!settings.websocketEnabled || !settings.applyTicksToPriceStore) return true;
-      if (bridge.wsState() !== 'connected') return true;
-      return !new Set(tierManager.getAssignment().realtimeTickers).has(stock.ticker);
+      return shouldPollRuntimeTicker({
+        ticker: stock.ticker,
+        settings,
+        wsConnected: bridge.wsState() === 'connected',
+        realtimeTickers: new Set(tierManager.getAssignment().realtimeTickers),
+        currentPrice: deps.priceStore.getPrice(stock.ticker),
+      });
     },
   });
 

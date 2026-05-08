@@ -148,6 +148,13 @@ export function createPollingScheduler(
     const startedAt = now();
     try {
       const price = await deps.restClient.fetchPrice(ticker);
+      if (!isUsablePollingPrice(price)) {
+        log.warn(
+          { ticker, price: price.price, source: price.source ?? null },
+          'polling returned a non-positive quote; keeping previous price',
+        );
+        return;
+      }
       deps.priceStore.setPrice(price);
       latencySamples.push(now() - startedAt);
     } catch (err: unknown) {
@@ -322,4 +329,8 @@ export function createPollingScheduler(
   }
 
   return { start, stop, getStatus };
+}
+
+function isUsablePollingPrice(price: Price): boolean {
+  return Number.isFinite(price.price) && price.price > 0;
 }

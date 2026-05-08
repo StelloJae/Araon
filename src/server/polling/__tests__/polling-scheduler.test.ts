@@ -352,4 +352,46 @@ describe('polling-scheduler', () => {
     expect(writes.find((p) => p.ticker === failingTicker)).toBeUndefined();
     expect(scheduler.getStatus().errorCount).toBe(1);
   });
+
+  it('6. does not write non-positive REST quotes into the live price store', async () => {
+    const stocks = makeStocks(2);
+    const calls: string[] = [];
+    const client: PollingRestClient = {
+      async fetchPrice(ticker: string): Promise<Price> {
+        calls.push(ticker);
+        return {
+          ticker,
+          price: ticker === stocks[0]!.ticker ? 0 : 12000,
+          changeRate: ticker === stocks[0]!.ticker ? 0 : 1.2,
+          volume: ticker === stocks[0]!.ticker ? 0 : 500,
+          updatedAt: new Date().toISOString(),
+          isSnapshot: false,
+          source: 'rest',
+        };
+      },
+    };
+    const { store: priceStore, writes } = makePriceStore();
+    const rateLimiter = createRateLimiter({ ratePerSec: 1000, burst: 10 });
+
+    const settingsPath = await uniqueTempPath('invalid-rest-quote');
+    const settings = await makeSettingsStore(settingsPath, {
+      pollingCycleDelayMs: 1000,
+    });
+
+    const scheduler = createPollingScheduler({
+      restClient: client,
+      stockRepo: makeStockRepo(stocks),
+      priceStore,
+      rateLimiter,
+      settings,
+    });
+
+    scheduler.start();
+    await vi.advanceTimersByTimeAsync(100);
+    await scheduler.stop();
+
+    expect(calls).toEqual(stocks.map((stock) => stock.ticker));
+    expect(writes.map((price) => price.ticker)).toEqual([stocks[1]!.ticker]);
+    expect(scheduler.getStatus().errorCount).toBe(0);
+  });
 });
