@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createKisRestClient } from '../kis-rest-client.js';
+import { createKisRestClient, KisRestError } from '../kis-rest-client.js';
 import type { KisAuth } from '../kis-auth.js';
 import type { KisCredentials, PersistedToken } from '../../credential-store.js';
 
@@ -130,6 +130,82 @@ describe('createKisRestClient — authenticated header contract', () => {
     expect(acquire).toHaveBeenCalledWith({ endpointClass: 'polling' });
     expect(fetchFn).toHaveBeenCalledOnce();
     expect(recordFailure).not.toHaveBeenCalled();
+  });
+
+  it('does not retry when the local outbound limiter is already cooling down', async () => {
+    const fetchFn = vi.fn(async () => (
+      new Response(JSON.stringify({ rt_cd: '0', output: {} }), { status: 200 })
+    )) as unknown as typeof fetch;
+    const cooldownError = new KisRestError(
+      'KIS outbound limiter cooldown active',
+      429,
+      null,
+      'EGW00201',
+      null,
+    );
+    const acquire = vi.fn(async () => {
+      throw cooldownError;
+    });
+    const recordFailure = vi.fn();
+    const client = createKisRestClient({
+      isPaper: false,
+      auth: makeAuth(creds),
+      fetchFn,
+      maxAttempts: 3,
+      backoffBaseMs: 1,
+      outboundLimiter: {
+        acquire,
+        recordFailure,
+        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 0, profiles: [] }),
+      },
+    });
+
+    await expect(client.request({
+      method: 'GET',
+      path: '/uapi/domestic-stock/v1/quotations/inquire-price',
+      endpointClass: 'polling',
+    })).rejects.toBe(cooldownError);
+
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(recordFailure).toHaveBeenCalledOnce();
+  });
+
+  it('does not retry KIS throttle envelopes even when KIS returns HTTP 500', async () => {
+    const fetchFn = vi.fn(async () => (
+      new Response(JSON.stringify({
+        rt_cd: '1',
+        msg_cd: 'EGW00201',
+        msg1: '초당 거래건수를 초과하였습니다.',
+      }), { status: 500 })
+    )) as unknown as typeof fetch;
+    const acquire = vi.fn(async () => {});
+    const recordFailure = vi.fn();
+    const client = createKisRestClient({
+      isPaper: false,
+      auth: makeAuth(creds),
+      fetchFn,
+      maxAttempts: 3,
+      backoffBaseMs: 1,
+      outboundLimiter: {
+        acquire,
+        recordFailure,
+        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
+      },
+    });
+
+    await expect(client.request({
+      method: 'GET',
+      path: '/uapi/domestic-stock/v1/quotations/inquire-price',
+      endpointClass: 'polling',
+    })).rejects.toMatchObject({
+      status: 500,
+      msgCd: 'EGW00201',
+    });
+
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(fetchFn).toHaveBeenCalledOnce();
+    expect(recordFailure).toHaveBeenCalledOnce();
   });
 
   it('exposes the KIS tr_cont response header for continuation pagination', async () => {

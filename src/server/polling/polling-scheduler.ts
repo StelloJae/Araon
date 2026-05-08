@@ -91,6 +91,7 @@ export function createPollingScheduler(
   let lastCycleP95Ms = 0;
   let cycleInFlight = false;
   let wakeWaiter: (() => void) | null = null;
+  let throttlePauseUntilMs = 0;
 
   // Per-cycle latency samples used to compute p95. Reset per cycle.
   let latencySamples: number[] = [];
@@ -132,7 +133,17 @@ export function createPollingScheduler(
 
   function isThrottleError(err: unknown): boolean {
     const msg = err instanceof Error ? err.message : String(err);
-    return /초당 거래건수를 초과|EGW00201|rate.*limit/i.test(msg);
+    return /초당 거래건수를 초과|EGW00201|rate.*limit|outbound limiter cooldown active/i.test(msg);
+  }
+
+  function cooldownUntilFromError(err: unknown): number | null {
+    if (!(err instanceof Error)) return null;
+    const payload = (err as { payload?: unknown }).payload;
+    if (typeof payload !== 'object' || payload === null) return null;
+    const cooldownUntilMs = (payload as Record<string, unknown>)['cooldownUntilMs'];
+    return typeof cooldownUntilMs === 'number' && Number.isFinite(cooldownUntilMs)
+      ? cooldownUntilMs
+      : null;
   }
 
   function p95(samples: readonly number[]): number {
@@ -142,7 +153,7 @@ export function createPollingScheduler(
     return Math.round(sorted[Math.max(0, idx)] ?? 0);
   }
 
-  async function pollTicker(ticker: string): Promise<void> {
+  async function pollTicker(ticker: string): Promise<'continue' | 'stop-cycle'> {
     await pacerWait();
     await deps.rateLimiter.acquire();
     const startedAt = now();
@@ -153,15 +164,22 @@ export function createPollingScheduler(
           { ticker, price: price.price, source: price.source ?? null },
           'polling returned a non-positive quote; keeping previous price',
         );
-        return;
+        return 'continue';
       }
       deps.priceStore.setPrice(price);
       latencySamples.push(now() - startedAt);
+      return 'continue';
     } catch (err: unknown) {
       errorCount += 1;
       latencySamples.push(now() - startedAt);
       const throttled = isThrottleError(err);
-      if (throttled) throttledCount += 1;
+      if (throttled) {
+        throttledCount += 1;
+        throttlePauseUntilMs = Math.max(
+          throttlePauseUntilMs,
+          cooldownUntilFromError(err) ?? now() + 10_000,
+        );
+      }
       log.warn(
         {
           ticker,
@@ -170,12 +188,21 @@ export function createPollingScheduler(
         },
         'polling fetch failed — skipping ticker',
       );
+      return throttled ? 'stop-cycle' : 'continue';
     }
   }
 
   async function runCycle(): Promise<void> {
     cycleInFlight = true;
     const cycleStartedAt = now();
+    if (throttlePauseUntilMs > cycleStartedAt) {
+      lastCycleMs = 0;
+      tickersInCycle = 0;
+      lastCycleP95Ms = 0;
+      cycleCount += 1;
+      cycleInFlight = false;
+      return;
+    }
     const stocks = deps.shouldPollTicker === undefined
       ? deps.stockRepo.findAll()
       : deps.stockRepo.findAll().filter(deps.shouldPollTicker);
@@ -196,18 +223,27 @@ export function createPollingScheduler(
       stocks.length,
     );
     let nextIndex = 0;
+    let abortCycle = false;
+    let attempted = 0;
     const errorsBefore = errorCount;
 
     async function worker(): Promise<void> {
-      while (running) {
+      while (running && !abortCycle) {
         const i = nextIndex;
         nextIndex += 1;
         if (i >= stocks.length) {
           return;
         }
-        // pollTicker swallows its own errors and bumps errorCount, so each
-        // ticker failure is isolated from the others.
-        await pollTicker(stocks[i]!.ticker);
+        attempted += 1;
+        // pollTicker swallows ordinary errors and bumps errorCount, so each
+        // ticker failure is isolated. Throttling is different: once KIS or the
+        // local limiter says the endpoint is cooling down, the rest of this
+        // cycle would only create noise and UI pressure.
+        const result = await pollTicker(stocks[i]!.ticker);
+        if (result === 'stop-cycle') {
+          abortCycle = true;
+          return;
+        }
       }
     }
 
@@ -222,9 +258,9 @@ export function createPollingScheduler(
     cycleCount += 1;
     const failures = errorCount - errorsBefore;
     const cycleThrottled = throttledCount - throttledBefore;
-    const succeeded = tickersInCycle - failures;
+    const succeeded = attempted - failures;
     const effectiveRps = lastCycleMs > 0
-      ? Number(((tickersInCycle * 1000) / lastCycleMs).toFixed(2))
+      ? Number(((attempted * 1000) / lastCycleMs).toFixed(2))
       : 0;
     lastCycleP95Ms = p95(latencySamples);
     log.debug(
@@ -233,6 +269,7 @@ export function createPollingScheduler(
         lastCycleMs,
         lastCycleP95Ms,
         tickersInCycle,
+        attempted,
         succeeded,
         failures,
         cycleThrottled,
@@ -282,7 +319,11 @@ export function createPollingScheduler(
         break;
       }
       await yieldEventLoop();
-      const delayMs = deps.settings.snapshot().pollingCycleDelayMs;
+      const throttleDelayMs = Math.max(0, throttlePauseUntilMs - now());
+      const delayMs = Math.max(
+        deps.settings.snapshot().pollingCycleDelayMs,
+        throttleDelayMs,
+      );
       if (delayMs > 0) {
         await wait(delayMs);
       }

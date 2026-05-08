@@ -25,7 +25,11 @@ import type {
 import { parseStockCsv } from '../parsers/csv-parser.js';
 import { createChildLogger } from '@shared/logger.js';
 import { isRealtimePriceSource } from '@shared/price-source.js';
-import { aggregateCandles } from '../price/candle-aggregation.js';
+import {
+  aggregateCandles,
+  bucketAtForInterval,
+  sessionForTimestamp,
+} from '../price/candle-aggregation.js';
 import { isBackfillAllowed } from '../chart/backfill-policy.js';
 import { shouldBackfillDailyTicker } from '../chart/daily-backfill-coverage.js';
 import { planSelectedTickerMinuteBackfill } from '../chart/minute-backfill-strategy.js';
@@ -37,6 +41,8 @@ import type {
   CandleInterval,
   PriceCandle,
   PriceCandleSource,
+  Price,
+  PriceHistoryPoint,
   PriceHistoryApiItem,
   StockDisclosureItem,
   StockDisclosurePage,
@@ -77,6 +83,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   newsFeedService?: StockNewsFeedService;
   disclosureRepo?: StockDisclosureRepository;
   dartDisclosureService?: DartDisclosureService;
+  refreshQuote?: (ticker: string) => Promise<Price>;
   isUpstreamCooldownActive?: () => boolean;
   now?: () => Date;
 }
@@ -182,6 +189,35 @@ export async function stockRoutes(
   opts: StockRoutesOptions,
 ): Promise<void> {
   const { service } = opts;
+
+  app.post<{ Params: { ticker: string } }>('/stocks/:ticker/quote/refresh', async (request, reply) => {
+    const ticker = request.params.ticker;
+    if (!/^\d{6}$/.test(ticker)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_TICKER' },
+      });
+    }
+    if (opts.refreshQuote === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'FOREGROUND_QUOTE_REFRESH_NOT_WIRED' },
+      });
+    }
+    try {
+      const price = await opts.refreshQuote(ticker);
+      return reply.send({ success: true, data: price });
+    } catch (err: unknown) {
+      log.warn(
+        { ticker, err: err instanceof Error ? err.message : String(err) },
+        'foreground quote refresh failed',
+      );
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'FOREGROUND_QUOTE_REFRESH_FAILED' },
+      });
+    }
+  });
 
   app.post<{
     Params: { ticker: string };
@@ -920,7 +956,16 @@ export async function stockRoutes(
     });
     const base =
       baseInterval === '1m'
-        ? rawBase.filter(isDisplayableIntradayCandle)
+        ? mergeObservedPriceHistoryCandles(
+            rawBase.filter(isDisplayableIntradayCandle),
+            opts.priceHistoryRepo?.listPoints({
+              ticker,
+              from: window.from,
+              to: window.to,
+              limit: parsed.data.limit ?? 20_000,
+            }) ?? [],
+            ticker,
+          )
         : rawBase;
     const candles = aggregateCandles(base, parsed.data.interval);
     const items = candles.map(toCandleApiItem);
@@ -1176,6 +1221,77 @@ function isDisplayableIntradayCandle(candle: PriceCandle): boolean {
     return false;
   }
   return true;
+}
+
+function mergeObservedPriceHistoryCandles(
+  candles: readonly PriceCandle[],
+  points: readonly PriceHistoryPoint[],
+  ticker: string,
+): PriceCandle[] {
+  const byBucket = new Map<string, PriceCandle>();
+  const storedBuckets = new Set<string>();
+  for (const candle of candles) {
+    byBucket.set(candle.bucketAt, candle);
+    storedBuckets.add(candle.bucketAt);
+  }
+
+  for (const point of points) {
+    if (point.ticker !== ticker) continue;
+    if (!isObservedPriceHistoryPoint(point)) continue;
+    const bucketAt = bucketAtForInterval(point.bucketAt, '1m');
+    if (storedBuckets.has(bucketAt)) continue;
+    const existing = byBucket.get(bucketAt);
+    if (existing === undefined) {
+      byBucket.set(bucketAt, {
+        ticker,
+        interval: '1m',
+        bucketAt,
+        session: sessionForTimestamp(point.bucketAt),
+        open: point.price,
+        high: point.price,
+        low: point.price,
+        close: point.price,
+        volume: 0,
+        sampleCount: Math.max(1, point.sampleCount),
+        source: point.source,
+        isPartial: true,
+        createdAt: point.createdAt,
+        updatedAt: point.updatedAt,
+      });
+      continue;
+    }
+    byBucket.set(bucketAt, {
+      ...existing,
+      high: Math.max(existing.high, point.price),
+      low: Math.min(existing.low, point.price),
+      close: point.price,
+      sampleCount: existing.sampleCount + Math.max(1, point.sampleCount),
+      source: mergeCandleSource(existing.source, point.source),
+      isPartial: true,
+      updatedAt: point.updatedAt,
+    });
+  }
+
+  return Array.from(byBucket.values()).sort((a, b) => a.bucketAt.localeCompare(b.bucketAt));
+}
+
+function isObservedPriceHistoryPoint(point: PriceHistoryPoint): boolean {
+  return (
+    Number.isFinite(point.price) &&
+    point.price > 0 &&
+    isKnownCandleSource(point.source) &&
+    point.source !== null &&
+    !Number.isNaN(new Date(point.bucketAt).getTime())
+  );
+}
+
+function mergeCandleSource(
+  previous: PriceCandleSource | null,
+  next: PriceCandleSource | null,
+): PriceCandleSource | null {
+  if (previous === null) return next;
+  if (next === null) return previous;
+  return previous === next ? previous : 'mixed';
 }
 
 function isKnownCandleSource(

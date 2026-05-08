@@ -35,10 +35,16 @@ import { createDailyBackfillService } from './chart/daily-backfill-service.js';
 import { createHistoricalMinuteBackfillService } from './chart/historical-minute-backfill-service.js';
 import { createTodayMinuteBackfillService } from './chart/today-minute-backfill-service.js';
 import { createVolumeBaselineEnricher } from './volume/volume-baseline-service.js';
-import { createKisRuntimeRef, defaultActuallyStart } from './bootstrap-kis.js';
+import {
+  createKisRuntimeRef,
+  defaultActuallyStart,
+  fetchRuntimeRestQuoteWithFallback,
+} from './bootstrap-kis.js';
 import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
 import { fetchKisHistoricalMinuteCandles } from './kis/kis-historical-minute-chart.js';
 import { fetchKisTodayMinuteCandles } from './kis/kis-today-minute-chart.js';
+import { mapKisInquirePriceToPrice } from './kis/kis-price-mapper.js';
+import type { KisEndpointClass } from './kis/kis-outbound-limiter.js';
 import { createStockService } from './services/stock-service.js';
 import {
   createNaverSearchNewsProvider,
@@ -51,6 +57,10 @@ import { createMarketSummaryService } from './market/market-summary-service.js';
 import { createMarketTopMoversService } from './market/market-top-movers-service.js';
 import { fetchKisFluctuationRanking } from './kis/kis-fluctuation-ranking.js';
 import { KisRestError } from './kis/kis-rest-client.js';
+import {
+  resolveRestQuoteMarketDivCode,
+  type RestQuoteMarketDivCode,
+} from './realtime/realtime-feed-route.js';
 import { createCredentialSetupMutex, credentialsRoutes } from './routes/credentials.js';
 import { stockRoutes } from './routes/stocks.js';
 import { themeRoutes } from './routes/themes.js';
@@ -168,6 +178,49 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     { db, settingsStore, credentialStore, priceStore, snapshotStore, stockRepo, favoriteRepo },
     { actuallyStart: defaultActuallyStart },
   );
+  const backfillCooldownEndpointClasses = new Set<KisEndpointClass>([
+    'daily-backfill',
+    'selected-minute',
+  ]);
+  const rankingCooldownEndpointClasses = new Set<KisEndpointClass>(['ranking']);
+  const hasActiveOutboundCooldown = (
+    endpointClasses: ReadonlySet<KisEndpointClass>,
+  ): boolean => {
+    const state = runtimeRef.get();
+    return state.status === 'started'
+      && state.runtime.outboundLimiter
+        .snapshot()
+        .profiles.some((profile) =>
+          profile.cooldownActive
+          && profile.endpointClass !== null
+          && endpointClasses.has(profile.endpointClass),
+        );
+  };
+  const refreshForegroundQuote = async (ticker: string) => {
+    const state = runtimeRef.get();
+    if (state.status !== 'started') {
+      throw new Error('KIS runtime is not started');
+    }
+    const trId = 'FHKST01010100';
+    const price = await fetchRuntimeRestQuoteWithFallback({
+      primaryMarketDivCode: resolveRestQuoteMarketDivCode(),
+      fetchByMarketDivCode: async (marketDivCode: RestQuoteMarketDivCode) => {
+        const resp = await state.runtime.restClient.request<Record<string, unknown>>({
+          method: 'GET',
+          path: '/uapi/domestic-stock/v1/quotations/inquire-price',
+          endpointClass: 'foreground',
+          query: {
+            FID_COND_MRKT_DIV_CODE: marketDivCode,
+            FID_INPUT_ISCD: ticker,
+          },
+          trId,
+        });
+        return mapKisInquirePriceToPrice(ticker, resp);
+      },
+    });
+    priceStore.setPrice(price);
+    return priceStore.getPrice(ticker) ?? price;
+  };
   const dailyBackfillService = createDailyBackfillService({
     repo: candleRepo,
     fetchDailyCandles: async ({ ticker, fromYmd, toYmd, now }) => {
@@ -230,13 +283,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     },
     shouldBackfillTicker: ({ ticker, range, now }) =>
       shouldBackfillDailyTicker({ ticker, range, now, repo: candleRepo }),
-    isUpstreamCooldownActive: () => {
-      const state = runtimeRef.get();
-      return state.status === 'started'
-        && state.runtime.outboundLimiter
-          .snapshot()
-          .profiles.some((profile) => profile.cooldownActive);
-    },
+    isUpstreamCooldownActive: () => hasActiveOutboundCooldown(backfillCooldownEndpointClasses),
   });
   const dataRetention = createDataRetentionScheduler({
     candleRepo,
@@ -250,8 +297,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       if (state.status !== 'started') {
         throw new Error('KIS runtime is not started');
       }
-      const limiterSnapshot = state.runtime.outboundLimiter.snapshot();
-      if (limiterSnapshot.profiles.some((profile) => profile.cooldownActive)) {
+      if (hasActiveOutboundCooldown(rankingCooldownEndpointClasses)) {
         throw new KisRestError('KIS outbound limiter cooldown active', 429, null, 'EGW00201', null);
       }
       return fetchKisFluctuationRanking({
@@ -287,13 +333,8 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     dailyBackfillService,
     todayMinuteBackfillService,
     historicalMinuteBackfillService,
-    isUpstreamCooldownActive: () => {
-      const state = runtimeRef.get();
-      return state.status === 'started'
-        && state.runtime.outboundLimiter
-          .snapshot()
-          .profiles.some((profile) => profile.cooldownActive);
-    },
+    refreshQuote: refreshForegroundQuote,
+    isUpstreamCooldownActive: () => hasActiveOutboundCooldown(backfillCooldownEndpointClasses),
   });
   await app.register(themeRoutes, { stockRepo });
   await app.register(settingsRoutes, { settingsStore });

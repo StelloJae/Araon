@@ -16,6 +16,7 @@ import type {
   PriceHistoryApiResponse,
   MarketTapeSummary,
   MarketTopMoversResponse,
+  Price,
   Stock,
   StockDisclosurePage,
   StockNewsPage,
@@ -160,6 +161,13 @@ export async function refreshStockDisclosures(ticker: string): Promise<StockDisc
     method: 'POST',
   });
   return unwrap<StockDisclosurePage>(res);
+}
+
+export async function refreshStockQuote(ticker: string): Promise<Price> {
+  const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/quote/refresh`, {
+    method: 'POST',
+  });
+  return unwrap<Price>(res);
 }
 
 export type CandleRange = '1d' | '1w' | '1m' | '3m' | '6m' | '1y';

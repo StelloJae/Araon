@@ -20,6 +20,7 @@ export interface KisOutboundLimiterFailureInput extends KisOutboundLimiterAcquir
 
 export interface KisOutboundLimiterProfileSnapshot {
   profileId: string;
+  endpointClass: KisEndpointClass | null;
   cooldownUntilMs: number;
   cooldownActive: boolean;
 }
@@ -41,6 +42,7 @@ export interface CreateKisOutboundLimiterOptions {
   ratePerSec: number;
   burst: number;
   cooldownMs?: number;
+  cooldownMsByEndpointClass?: Partial<Record<KisEndpointClass, number>>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -58,25 +60,30 @@ export function createKisOutboundLimiter(
   const ratePerSec = Math.max(0.1, options.ratePerSec);
   const burst = Math.max(1, Math.trunc(options.burst));
   const cooldownMs = Math.max(1, options.cooldownMs ?? DEFAULT_COOLDOWN_MS);
+  const cooldownMsByEndpointClass = options.cooldownMsByEndpointClass ?? {};
   const now = options.now ?? (() => Date.now());
   const sleep = options.sleep ?? defaultSleep;
   let tokens = burst;
   let lastRefillAtMs = now();
-  const cooldownUntilByProfile = new Map<string, number>();
+  const cooldownUntilByKey = new Map<string, number>();
 
   async function acquire(input: KisOutboundLimiterAcquireInput = {}): Promise<void> {
     const profileId = input.profileId ?? DEFAULT_PROFILE_ID;
+    const cooldownKey = cooldownMapKey(profileId, input.endpointClass);
     refill();
-    const cooldownUntilMs = cooldownUntilByProfile.get(profileId) ?? 0;
+    const cooldownUntilMs = cooldownUntilByKey.get(cooldownKey) ?? 0;
     const current = now();
     if (cooldownUntilMs > current) {
-      if (input.endpointClass === 'daily-backfill') {
+      if (shouldFailFastOnCooldown(input.endpointClass)) {
         throw new KisRestError(
           'KIS outbound limiter cooldown active',
           429,
           null,
           'EGW00201',
-          null,
+          {
+            localCooldown: true,
+            cooldownUntilMs,
+          },
         );
       }
       await sleep(cooldownUntilMs - current);
@@ -97,9 +104,15 @@ export function createKisOutboundLimiter(
   function recordFailure(input: KisOutboundLimiterFailureInput): void {
     if (!isRateLimited(input.error)) return;
     const profileId = input.profileId ?? DEFAULT_PROFILE_ID;
-    cooldownUntilByProfile.set(
-      profileId,
-      Math.max(cooldownUntilByProfile.get(profileId) ?? 0, now() + cooldownMs),
+    const cooldownKey = cooldownMapKey(profileId, input.endpointClass);
+    const endpointCooldownMs = cooldownMsForEndpoint(
+      cooldownMs,
+      cooldownMsByEndpointClass,
+      input.endpointClass,
+    );
+    cooldownUntilByKey.set(
+      cooldownKey,
+      Math.max(cooldownUntilByKey.get(cooldownKey) ?? 0, now() + endpointCooldownMs),
     );
   }
 
@@ -109,10 +122,19 @@ export function createKisOutboundLimiter(
       ratePerSec,
       burst,
       tokens,
-      profiles: Array.from(cooldownUntilByProfile.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([profileId, cooldownUntilMs]) => ({
+      profiles: Array.from(cooldownUntilByKey.entries())
+        .map(([key, cooldownUntilMs]) => ({
+          ...parseCooldownMapKey(key),
+          cooldownUntilMs,
+        }))
+        .sort((a, b) => {
+          const profileOrder = a.profileId.localeCompare(b.profileId);
+          if (profileOrder !== 0) return profileOrder;
+          return String(a.endpointClass ?? '').localeCompare(String(b.endpointClass ?? ''));
+        })
+        .map(({ profileId, endpointClass, cooldownUntilMs }) => ({
           profileId,
+          endpointClass,
           cooldownUntilMs,
           cooldownActive: cooldownUntilMs > current,
         })),
@@ -130,10 +152,48 @@ export function createKisOutboundLimiter(
   return { acquire, recordFailure, snapshot };
 }
 
+function cooldownMapKey(profileId: string, endpointClass: KisEndpointClass | undefined): string {
+  return `${profileId}\u0000${endpointClass ?? ''}`;
+}
+
+function parseCooldownMapKey(key: string): {
+  profileId: string;
+  endpointClass: KisEndpointClass | null;
+} {
+  const [profileId = DEFAULT_PROFILE_ID, endpointClass = ''] = key.split('\u0000');
+  return {
+    profileId,
+    endpointClass: endpointClass.length > 0 ? (endpointClass as KisEndpointClass) : null,
+  };
+}
+
+function shouldFailFastOnCooldown(endpointClass: KisEndpointClass | undefined): boolean {
+  return endpointClass !== undefined;
+}
+
+function cooldownMsForEndpoint(
+  defaultCooldownMs: number,
+  overrides: Partial<Record<KisEndpointClass, number>>,
+  endpointClass: KisEndpointClass | undefined,
+): number {
+  if (endpointClass === undefined) return defaultCooldownMs;
+  return Math.max(1, overrides[endpointClass] ?? defaultCooldownMs);
+}
+
 function isRateLimited(error: unknown): boolean {
   if (error instanceof KisRestError) {
+    if (isLocalCooldownError(error)) return false;
     return error.status === 429 || error.msgCd === 'EGW00201';
   }
   const message = error instanceof Error ? error.message : String(error);
   return /429|EGW00201|rate.?limit|throttle|초당/.test(message);
+}
+
+function isLocalCooldownError(error: KisRestError): boolean {
+  const payload = error.payload;
+  return (
+    typeof payload === 'object'
+    && payload !== null
+    && (payload as Record<string, unknown>)['localCooldown'] === true
+  );
 }

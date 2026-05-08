@@ -340,6 +340,11 @@ export async function defaultActuallyStart(
   const outboundLimiter = createKisOutboundLimiter({
     ratePerSec,
     burst: Math.ceil(ratePerSec),
+    cooldownMsByEndpointClass: {
+      foreground: 30_000,
+      polling: 30_000,
+      ranking: 60_000,
+    },
   });
   const tokenRest = createKisRestClient({
     isPaper: credentials.isPaper,

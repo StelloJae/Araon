@@ -353,6 +353,91 @@ describe('polling-scheduler', () => {
     expect(scheduler.getStatus().errorCount).toBe(1);
   });
 
+  it('5b. classifies local outbound cooldown as throttled and stops the cycle early', async () => {
+    const stocks = makeStocks(20);
+    const calls: string[] = [];
+    const client: PollingRestClient = {
+      async fetchPrice(ticker: string): Promise<Price> {
+        calls.push(ticker);
+        throw new Error('KIS outbound limiter cooldown active');
+      },
+    };
+    const { store: priceStore, writes } = makePriceStore();
+    const rateLimiter = createRateLimiter({ ratePerSec: 1000, burst: 10 });
+
+    const settingsPath = await uniqueTempPath('local-cooldown');
+    const settings = await makeSettingsStore(settingsPath, {
+      pollingCycleDelayMs: 1000,
+      pollingMaxInFlight: 3,
+    });
+
+    const scheduler = createPollingScheduler({
+      restClient: client,
+      stockRepo: makeStockRepo(stocks),
+      priceStore,
+      rateLimiter,
+      settings,
+    });
+
+    scheduler.start();
+    await vi.advanceTimersByTimeAsync(100);
+    await scheduler.stop();
+
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.length).toBeLessThanOrEqual(3);
+    expect(writes).toHaveLength(0);
+    expect(scheduler.getStatus().errorCount).toBe(calls.length);
+    expect(scheduler.getStatus().throttledCount).toBe(calls.length);
+  });
+
+  it('5c. pauses polling cycles until a local cooldown expires', async () => {
+    const stocks = makeStocks(10);
+    const calls: string[] = [];
+    const cooldownUntilMs = Date.now() + 60_000;
+    const cooldownError = Object.assign(
+      new Error('KIS outbound limiter cooldown active'),
+      {
+        payload: {
+          localCooldown: true,
+          cooldownUntilMs,
+        },
+      },
+    );
+    const client: PollingRestClient = {
+      async fetchPrice(ticker: string): Promise<Price> {
+        calls.push(ticker);
+        throw cooldownError;
+      },
+    };
+    const { store: priceStore } = makePriceStore();
+    const rateLimiter = createRateLimiter({ ratePerSec: 1000, burst: 10 });
+
+    const settingsPath = await uniqueTempPath('local-cooldown-pause');
+    const settings = await makeSettingsStore(settingsPath, {
+      pollingCycleDelayMs: 100,
+      pollingMaxInFlight: 1,
+    });
+
+    const scheduler = createPollingScheduler({
+      restClient: client,
+      stockRepo: makeStockRepo(stocks),
+      priceStore,
+      rateLimiter,
+      settings,
+      now: () => Date.now(),
+    });
+
+    scheduler.start();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(calls).toHaveLength(1);
+    expect(scheduler.getStatus().throttledCount).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls).toHaveLength(1);
+
+    await scheduler.stop();
+  });
+
   it('6. does not write non-positive REST quotes into the live price store', async () => {
     const stocks = makeStocks(2);
     const calls: string[] = [];

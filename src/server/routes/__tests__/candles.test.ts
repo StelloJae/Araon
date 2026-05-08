@@ -5,11 +5,12 @@ import { migrateUp } from '../../db/migrator.js';
 import {
   CandleCoverageRepository,
   PriceCandleRepository,
+  PriceHistoryPointRepository,
   StockRepository,
 } from '../../db/repositories.js';
 import { stockRoutes } from '../stocks.js';
 import type { StockService } from '../../services/stock-service.js';
-import type { PriceCandle } from '@shared/types.js';
+import type { PriceCandle, PriceHistoryPoint } from '@shared/types.js';
 
 function openMemoryDb(): Database.Database {
   const db = new Database(':memory:');
@@ -48,6 +49,19 @@ function candle(bucketAt: string, overrides: Partial<PriceCandle> = {}): PriceCa
     createdAt: bucketAt,
     updatedAt: bucketAt,
     ...overrides,
+  };
+}
+
+function pricePoint(bucketAt: string, price: number): PriceHistoryPoint {
+  return {
+    ticker: '005930',
+    bucketAt,
+    price,
+    changeRate: 0,
+    sampleCount: 1,
+    source: 'rest',
+    createdAt: bucketAt,
+    updatedAt: bucketAt,
   };
 }
 
@@ -143,6 +157,66 @@ describe('GET /stocks/:ticker/candles', () => {
         isPartial: false,
       }),
     ]);
+  });
+
+  it('fills missing intraday candles from stored price history observations', async () => {
+    const candleRepo = new PriceCandleRepository(db);
+    const priceHistoryRepo = new PriceHistoryPointRepository(db);
+    await candleRepo.bulkUpsertCandles([
+      candle('2026-05-05T00:00:00.000Z', {
+        open: 100,
+        high: 102,
+        low: 99,
+        close: 101,
+        volume: 10,
+        source: 'kis-time-today',
+      }),
+    ]);
+    await priceHistoryRepo.bulkUpsertPoints([
+      pricePoint('2026-05-05T00:01:05.000Z', 102),
+      pricePoint('2026-05-05T00:01:20.000Z', 105),
+      pricePoint('2026-05-05T00:01:55.000Z', 101),
+      pricePoint('2026-05-05T00:02:05.000Z', 106),
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo,
+      priceHistoryRepo,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/candles?interval=1m&from=2026-05-05T00:00:00.000Z&to=2026-05-05T00:03:00.000Z',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.items).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-05T00:00:00.000Z',
+        source: 'kis-time-today',
+      }),
+      expect.objectContaining({
+        bucketAt: '2026-05-05T00:01:00.000Z',
+        open: 102,
+        high: 105,
+        low: 101,
+        close: 101,
+        volume: 0,
+        sampleCount: 3,
+        source: 'rest',
+      }),
+      expect.objectContaining({
+        bucketAt: '2026-05-05T00:02:00.000Z',
+        open: 106,
+        high: 106,
+        low: 106,
+        close: 106,
+        source: 'rest',
+      }),
+    ]);
+    expect(body.data.coverage.sourceMix).toEqual(['kis-time-today', 'rest']);
   });
 
   it('reports visible candle gaps in coverage metadata', async () => {

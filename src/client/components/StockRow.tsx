@@ -33,7 +33,7 @@ import {
 import { StarIcon } from '../lib/icons';
 import { Sparkline } from './Sparkline';
 import {
-  selectHistory,
+  selectSparklineHistory,
   usePriceHistoryStore,
 } from '../stores/price-history-store';
 import { describeSectorSource } from '../lib/effective-sector';
@@ -137,7 +137,7 @@ function StockRowComponent({
       : 'var(--down-tint-1)'
     : null;
 
-  const history = usePriceHistoryStore((s) => selectHistory(s, code));
+  const history = usePriceHistoryStore((s) => selectSparklineHistory(s, code));
   usePersistedPriceHistory(code, shouldPreloadRowPriceHistory({ isFav }));
 
   const rowStyle: CSSProperties = {

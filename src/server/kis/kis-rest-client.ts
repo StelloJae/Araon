@@ -35,6 +35,7 @@ const DEFAULT_BACKOFF_BASE_MS = 250;
 const DEFAULT_BACKOFF_MAX_MS = 4_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+const LOCAL_OUTBOUND_COOLDOWN_MESSAGE = 'KIS outbound limiter cooldown active';
 
 export type KisHttpMethod = 'GET' | 'POST' | 'DELETE';
 
@@ -255,6 +256,9 @@ export function createKisRestClient(
 
   function isRetryable(err: unknown): boolean {
     if (err instanceof KisRestError) {
+      if (isLocalOutboundLimiterCooldown(err) || isKisThrottleError(err)) {
+        return false;
+      }
       return RETRYABLE_STATUS.has(err.status);
     }
     // Network-level failures (fetch TypeError, AbortError, etc.)
@@ -313,6 +317,18 @@ export function createKisRestClient(
       });
     },
   };
+}
+
+function isLocalOutboundLimiterCooldown(err: KisRestError): boolean {
+  return (
+    err.status === 429
+    && err.msgCd === 'EGW00201'
+    && err.message === LOCAL_OUTBOUND_COOLDOWN_MESSAGE
+  );
+}
+
+function isKisThrottleError(err: KisRestError): boolean {
+  return err.msgCd === 'EGW00201';
 }
 
 function limiterContext(req: KisRestRequest): {

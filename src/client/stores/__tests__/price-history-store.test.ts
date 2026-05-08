@@ -230,6 +230,30 @@ describe('usePriceHistoryStore', () => {
     expect(selectHistory(usePriceHistoryStore.getState(), 'ZZZ')).toEqual([]);
   });
 
+  it('selectSparklineHistory returns a stable sampled history for row charts', async () => {
+    const mod = await import('../price-history-store');
+    const s = mod.usePriceHistoryStore.getState();
+    const count = mod.SPARKLINE_SELECTOR_MAX_POINTS + 80;
+    s.seedTicker(
+      '005930',
+      Array.from({ length: count }, (_, i) => ({
+        price: 70_000 + i,
+        changePct: i / 100,
+        ts: 1_000 + i * mod.PRICE_HISTORY_BUCKET_MS,
+      })),
+    );
+
+    const state = mod.usePriceHistoryStore.getState();
+    const sampled = mod.selectSparklineHistory(state, '005930');
+    const sampledAgain = mod.selectSparklineHistory(state, '005930');
+    const full = mod.selectHistory(state, '005930');
+
+    expect(sampled).toHaveLength(mod.SPARKLINE_SELECTOR_MAX_POINTS);
+    expect(sampledAgain).toBe(sampled);
+    expect(sampled[0]).toBe(full[0]);
+    expect(sampled[sampled.length - 1]).toBe(full[full.length - 1]);
+  });
+
   it('clearTicker removes points and lastTouch for a single ticker', async () => {
     const { usePriceHistoryStore } = await import('../price-history-store');
     const s = usePriceHistoryStore.getState();

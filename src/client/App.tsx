@@ -53,6 +53,7 @@ import {
   getThemesWithStocks,
   removeFavorite,
   removeStock as removeStockApi,
+  refreshStockQuote,
 } from './lib/api-client';
 import { syncTrackedCatalogAfterMasterAdd } from './lib/tracked-catalog-sync';
 import type { StockViewModel } from './lib/view-models';
@@ -100,6 +101,7 @@ export function App() {
   const settingsOpen = useSettingsStore((s) => s.settingsOpen);
   const openSettings = useSettingsStore((s) => s.openSettings);
   const closeSettings = useSettingsStore((s) => s.closeSettings);
+  const applyPriceUpdate = useStocksStore((s) => s.applyPriceUpdate);
 
   // Detail modal: a single open ticker code, or null when closed.
   const [detailCode, setDetailCode] = useState<string | null>(null);
@@ -332,6 +334,22 @@ export function App() {
       setDetailCode(null);
     }
   }, [detailCode, detailStock]);
+
+  useEffect(() => {
+    if (detailCode === null) return;
+    let cancelled = false;
+    void refreshStockQuote(detailCode)
+      .then((price) => {
+        if (!cancelled) applyPriceUpdate(price);
+      })
+      .catch(() => {
+        // Foreground quote refresh is opportunistic. Polling/SSE still keep the
+        // dashboard honest if KIS is throttled or credentials are unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyPriceUpdate, detailCode]);
 
   return (
     <div className="app-shell" data-screen-label="01 Dashboard">

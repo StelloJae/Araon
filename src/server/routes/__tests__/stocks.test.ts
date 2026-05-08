@@ -5,9 +5,10 @@
  * in-memory SQLite instance migrated fresh for each test suite.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify from 'fastify';
 import Database from 'better-sqlite3';
+import type { Price } from '@shared/types.js';
 import { migrateUp } from '../../db/migrator.js';
 import {
   StockRepository,
@@ -46,6 +47,29 @@ function makeCsv(count: number): string {
   const header = '종목코드,종목명,market';
   const rows = Array.from({ length: count }, (_, i) => makeCsvRow(i));
   return [header, ...rows].join('\n');
+}
+
+function price(ticker: string): Price {
+  return {
+    ticker,
+    price: 10_000,
+    changeRate: 1.2,
+    changeAbs: 120,
+    volume: 123_456,
+    openPrice: 9_900,
+    highPrice: 10_100,
+    lowPrice: 9_850,
+    marketCapKrw: 1_000_000_000_000,
+    per: 10.5,
+    pbr: 1.2,
+    foreignOwnershipRate: 12.3,
+    week52High: 15_000,
+    week52Low: 7_000,
+    dividendYield: null,
+    updatedAt: '2026-05-08T06:00:00.000Z',
+    isSnapshot: false,
+    source: 'rest',
+  };
 }
 
 // === Test suites ==============================================================
@@ -96,6 +120,44 @@ describe('POST /stocks — single add', () => {
     const listBody = listRes.json<{ data: Array<{ ticker: string; name: string }> }>();
     const entry = listBody.data.find((s) => s.ticker === '005930');
     expect(entry?.name).toBe('삼성전자 (updated)');
+  });
+});
+
+describe('POST /stocks/:ticker/quote/refresh', () => {
+  let db: Database.Database;
+  let app: ReturnType<typeof Fastify>;
+
+  beforeEach(() => {
+    db = openMemoryDb();
+    migrateUp(db);
+    const stockRepo = new StockRepository(db);
+    const sectorRepo = new SectorRepository(db);
+    const masterRepo = new MasterStockRepository(db);
+    const service = createStockService({ stockRepo, sectorRepo, masterRepo });
+    app = Fastify({ logger: false });
+    app.register(stockRoutes, {
+      service,
+      refreshQuote: vi.fn(async (ticker: string) => price(ticker)),
+    });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it('refreshes one ticker with the foreground quote path', async () => {
+    const res = await app.inject({ method: 'POST', url: '/stocks/005930/quote/refresh' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: Price }>().data).toMatchObject({
+      ticker: '005930',
+      price: 10_000,
+      source: 'rest',
+      openPrice: 9_900,
+      highPrice: 10_100,
+      lowPrice: 9_850,
+    });
   });
 });
 

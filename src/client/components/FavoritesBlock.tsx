@@ -21,7 +21,7 @@ import { fmtPct, fmtPrice, krColor } from '../lib/format';
 import { StarIcon } from '../lib/icons';
 import { Sparkline } from './Sparkline';
 import {
-  selectHistory,
+  selectSparklineHistory,
   usePriceHistoryStore,
 } from '../stores/price-history-store';
 import type { StockViewModel } from '../lib/view-models';
@@ -192,7 +192,7 @@ function FavRow({
       : 'var(--down-tint-1)'
     : null;
 
-  const history = usePriceHistoryStore((s) => selectHistory(s, code));
+  const history = usePriceHistoryStore((s) => selectSparklineHistory(s, code));
   usePersistedPriceHistory(code, true);
 
   const rowStyle: CSSProperties = {

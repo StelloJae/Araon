@@ -40,6 +40,7 @@ export const MAX_POINTS_PER_TICKER =
   Math.ceil(HISTORY_TTL_MS / PRICE_HISTORY_BUCKET_MS) + 1;
 export const MAX_TRACKED_TICKERS = 200;
 export const MIN_POINTS_FOR_SPARKLINE = 2;
+export const SPARKLINE_SELECTOR_MAX_POINTS = 180;
 
 interface PriceHistoryState {
   byTicker: Record<string, PriceHistoryPoint[]>;
@@ -141,6 +142,10 @@ export const usePriceHistoryStore = create<PriceHistoryState>((set, get) => ({
  * re-render loop in any component that subscribes via this selector.
  */
 const EMPTY_HISTORY: ReadonlyArray<PriceHistoryPoint> = Object.freeze([]);
+const sparklineHistoryCache = new WeakMap<
+  ReadonlyArray<PriceHistoryPoint>,
+  ReadonlyArray<PriceHistoryPoint>
+>();
 
 /** Selector convenience — returns the same EMPTY_HISTORY for unknown tickers. */
 export function selectHistory(
@@ -148,6 +153,20 @@ export function selectHistory(
   ticker: string,
 ): ReadonlyArray<PriceHistoryPoint> {
   return state.byTicker[ticker] ?? EMPTY_HISTORY;
+}
+
+export function selectSparklineHistory(
+  state: PriceHistoryState,
+  ticker: string,
+): ReadonlyArray<PriceHistoryPoint> {
+  const history = selectHistory(state, ticker);
+  if (history.length <= SPARKLINE_SELECTOR_MAX_POINTS) return history;
+  const cached = sparklineHistoryCache.get(history);
+  if (cached !== undefined) return cached;
+
+  const sampled = sampleHistory(history, SPARKLINE_SELECTOR_MAX_POINTS);
+  sparklineHistoryCache.set(history, sampled);
+  return sampled;
 }
 
 function normalizeTickerHistory(
@@ -179,6 +198,20 @@ function normalizeTickerHistory(
   return sorted.length > MAX_POINTS_PER_TICKER
     ? sorted.slice(sorted.length - MAX_POINTS_PER_TICKER)
     : sorted;
+}
+
+function sampleHistory(
+  points: ReadonlyArray<PriceHistoryPoint>,
+  maxPoints: number,
+): ReadonlyArray<PriceHistoryPoint> {
+  if (points.length <= maxPoints) return points;
+  const sampled: PriceHistoryPoint[] = [];
+  const step = (points.length - 1) / (maxPoints - 1);
+  for (let i = 0; i < maxPoints; i += 1) {
+    const point = points[Math.min(points.length - 1, Math.round(i * step))];
+    if (point !== undefined) sampled.push(point);
+  }
+  return sampled;
 }
 
 function appendTickerHistory(

@@ -97,6 +97,21 @@ describe('TOP100 view chrome', () => {
     expect(fallback.gainers.map((item) => item.ticker)).toEqual(['005930']);
     expect(fallback.losers.map((item) => item.ticker)).toEqual(['000660']);
   });
+
+  it('merges local tracked movers into partial KIS ranking rows', () => {
+    const fallback = buildLocalTopMoversFallback(
+      topMovers(),
+      [
+        vm('439090', '마녀공장', 18_110, 20.17, 3_050),
+        vm('036010', '아비코전자', 10_460, -13.77, -1_670),
+      ],
+    );
+
+    expect(fallback.message).toContain('보강');
+    expect(fallback.gainers.map((item) => item.ticker)).toEqual(['439090', '005930']);
+    expect(fallback.losers.map((item) => item.ticker)).toEqual(['036010', '000660']);
+    expect(fallback.gainers.map((item) => item.rank)).toEqual([1, 2]);
+  });
 });
 
 function vm(
