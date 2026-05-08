@@ -7,10 +7,11 @@
  *   - Row click → `onOpenDetail(code)` (parent opens StockDetailModal).
  *   - Star click stops propagation and only fires `onToggleFav`.
  *
- * Hover: while the cursor is over the row, render a Sparkline of the
- * ticker's recent SSE price history. The Sparkline component itself returns
- * `null` when fewer than `MIN_POINTS_FOR_SPARKLINE` points exist, so no
- * synthetic shape is ever drawn.
+ * Sparkline: render whenever real persisted/session price history is available.
+ * Favorite rows also pre-load the local day history so the mini chart can be
+ * visible without hover. The Sparkline component itself returns `null` when
+ * fewer than `MIN_POINTS_FOR_SPARKLINE` points exist, so no synthetic shape is
+ * ever drawn.
  *
  * Tick flash: when `flashSeed` increments, background tints to the sentiment
  * color for 280ms (suppressed on first mount).
@@ -107,7 +108,7 @@ export function StockRow({
       : 'transparent';
 
   const history = usePriceHistoryStore((s) => selectHistory(s, code));
-  usePersistedPriceHistory(code, hover);
+  usePersistedPriceHistory(code, isFav || hover);
 
   return (
     <div
@@ -253,7 +254,7 @@ export function StockRow({
         </div>
       </div>
 
-      {hover && history.length >= 2 && (
+      {history.length >= 2 && (
         <div
           style={{
             position: 'absolute',

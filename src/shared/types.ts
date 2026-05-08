@@ -138,6 +138,24 @@ export type MarketStatus = 'pre-open' | 'open' | 'closed' | 'snapshot';
 
 export type PriceSource = 'rest' | 'ws-krx' | 'ws-integrated' | 'ws-nxt';
 
+export type MarketTapeIndicatorId = 'kospi' | 'kosdaq' | 'usdkrw' | 'wti';
+
+export interface MarketTapeIndicator {
+  id: MarketTapeIndicatorId;
+  label: string;
+  value: number | null;
+  change: number | null;
+  changePct: number | null;
+  unit: 'pt' | '원' | '$';
+  status: 'ready' | 'unavailable';
+}
+
+export interface MarketTapeSummary {
+  generatedAt: string;
+  source: 'naver-finance';
+  indicators: MarketTapeIndicator[];
+}
+
 export type VolumeBaselineStatus = 'collecting' | 'ready' | 'unavailable';
 
 /**

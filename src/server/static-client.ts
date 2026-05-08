@@ -14,6 +14,7 @@ const API_PREFIXES = [
   '/runtime',
   '/import',
   '/master',
+  '/market',
   '/events',
 ];
 
@@ -21,7 +22,7 @@ function pathFromRequestUrl(url: string): string {
   return new URL(url, 'http://127.0.0.1').pathname;
 }
 
-function isApiPath(pathname: string): boolean {
+export function isApiPath(pathname: string): boolean {
   return API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 

@@ -107,6 +107,27 @@ describe('useStocksStore.removeStock', () => {
       });
   });
 
+  it('derives an honest EPS estimate from current price and PER', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+    store.setCatalog([STOCK_A]);
+    store.applyPriceUpdate({
+      ...PRICE_A,
+      price: 78_900,
+      per: 15,
+    });
+
+    expect(
+      buildStockVM(
+        '005930',
+        useStocksStore.getState().catalog,
+        useStocksStore.getState().quotes,
+      ),
+    ).toMatchObject({
+      estimatedEps: 5260,
+    });
+  });
+
   it('keeps manual sectors ahead of instrument grouping', async () => {
     const { buildStockVM, useStocksStore } = await import('../stocks-store');
     const store = useStocksStore.getState();

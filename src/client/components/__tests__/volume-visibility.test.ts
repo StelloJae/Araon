@@ -7,6 +7,7 @@ import { buildSignalExplanation } from '../../lib/signal-explainer';
 import { StockRow } from '../StockRow';
 import { StockDetailModal } from '../StockDetailModal';
 import { formatSurgeSubLabel, SurgeBlock, SurgeRow } from '../SurgeBlock';
+import { usePriceHistoryStore } from '../../stores/price-history-store';
 
 function stock(overrides: Partial<StockViewModel> = {}): StockViewModel {
   return {
@@ -41,6 +42,28 @@ describe('volume visibility', () => {
 
     expect(html).not.toContain('거래량');
     expect(html).not.toContain('123.5만');
+  });
+
+  it('renders an available row sparkline without waiting for hover', () => {
+    usePriceHistoryStore.getState().clear();
+    usePriceHistoryStore.getState().seedTicker('005930', [
+      { price: 70_000, changePct: 3.1, ts: 1_700_000_000_000, source: 'rest' },
+      { price: 70_500, changePct: 3.8, ts: 1_700_000_005_000, source: 'ws-integrated' },
+    ]);
+
+    const html = renderToStaticMarkup(
+      createElement(StockRow, {
+        stock: stock(),
+        rank: 1,
+        isFav: true,
+        onToggleFav: () => undefined,
+        onOpenDetail: () => undefined,
+        flashSeed: 0,
+        isFirst: true,
+      }),
+    );
+
+    expect(html).toContain('<svg');
   });
 
   it('shows current cumulative volume on surge row sublabels', () => {

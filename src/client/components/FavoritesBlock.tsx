@@ -7,9 +7,9 @@
  *   ── scrollable list of FavRow (no rank, no market badge)
  *
  * Sorted by changePct desc. Capped at 30 visible rows + "+N개 더" footer.
- * Each row has a 600ms tinted-background flash on incoming tick. Hovering a
- * row shows a Sparkline of that ticker's recent SSE price history (rendered
- * only when ≥2 real points exist; never synthesized).
+ * Each row has a 600ms tinted-background flash on incoming tick. Rows show a
+ * Sparkline whenever real persisted/session price history is available
+ * (rendered only when ≥2 real points exist; never synthesized).
  *
  * Click rules: row click opens StockDetailModal via `onOpenDetail`; star
  * click stops propagation and only toggles favorite.
@@ -195,7 +195,7 @@ function FavRow({
       : 'transparent';
 
   const history = usePriceHistoryStore((s) => selectHistory(s, code));
-  usePersistedPriceHistory(code, hover);
+  usePersistedPriceHistory(code, true);
 
   return (
     <div
@@ -261,7 +261,7 @@ function FavRow({
           {code}
         </span>
       </div>
-      {hover && history.length >= 2 && (
+      {history.length >= 2 && (
         <div
           style={{
             position: 'absolute',

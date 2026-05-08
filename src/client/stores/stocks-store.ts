@@ -239,6 +239,7 @@ export function buildStockVM(
     marketCapKrw: q?.marketCapKrw ?? null,
     marketCapSize: meta.marketCapSize,
     per: q?.per ?? null,
+    estimatedEps: estimateEps(q?.price ?? 0, q?.per ?? null),
     pbr: q?.pbr ?? null,
     foreignOwnershipRate: q?.foreignOwnershipRate ?? null,
     week52High: q?.week52High ?? null,
@@ -257,6 +258,12 @@ export function buildStockVM(
       meta.instrumentType,
     ),
   };
+}
+
+function estimateEps(price: number, per: number | null): number | null {
+  if (!Number.isFinite(price) || price <= 0) return null;
+  if (per === null || !Number.isFinite(per) || per <= 0) return null;
+  return Math.round(price / per);
 }
 
 const QUOTE_DETAIL_KEYS = [

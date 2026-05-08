@@ -47,12 +47,14 @@ import {
   ApiError,
   addFavorite,
   getFavorites,
+  getMarketSummary,
   getStocks,
   getThemesWithStocks,
   removeFavorite,
   removeStock as removeStockApi,
 } from './lib/api-client';
 import type { StockViewModel } from './lib/view-models';
+import type { MarketTapeSummary } from './components/StatusBar';
 
 const REALTIME_CAP = 40;
 const IS_DEV_BUILD =
@@ -99,9 +101,38 @@ export function App() {
 
   // Detail modal: a single open ticker code, or null when closed.
   const [detailCode, setDetailCode] = useState<string | null>(null);
+  const [kstTime, setKstTime] = useState(() => formatKstTime(new Date()));
+  const [marketSummary, setMarketSummary] = useState<MarketTapeSummary | null>(null);
 
   // Alert pipeline (Phase 6): watches quotes, fires toasts/sound/desktop push.
   useAlertEvaluator({ onPickStock: (ticker) => setDetailCode(ticker) });
+
+  useEffect(() => {
+    const update = () => setKstTime(formatKstTime(new Date()));
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const summary = await getMarketSummary();
+        if (!cancelled) setMarketSummary(summary);
+      } catch {
+        if (!cancelled) setMarketSummary(null);
+      }
+    }
+    void load();
+    const timer = setInterval(() => {
+      void load();
+    }, 5 * 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   // Lazy-preload the master KRX universe so the search box has it ready
   // without blocking initial render. The master-store is the single source
@@ -320,6 +351,8 @@ export function App() {
         favCount={favCount}
         pollingCount={pollingCount}
         lastUpdate={lastUpdateStr}
+        kstTime={kstTime}
+        marketSummary={marketSummary}
         onOpenSettings={openSettings}
       />
       {detailStock !== null && (
@@ -342,6 +375,16 @@ export function App() {
       <ToastStack onPickStock={openDetail} />
     </div>
   );
+}
+
+function formatKstTime(date: Date): string {
+  return `${new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)} KST`;
 }
 
 function describeError(err: unknown): string {

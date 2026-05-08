@@ -14,6 +14,7 @@ import type {
   LocalBackupPayload,
   LocalRestoreResult,
   PriceHistoryApiResponse,
+  MarketTapeSummary,
   Stock,
   StockDisclosurePage,
   StockNewsPage,
@@ -75,6 +76,11 @@ async function unwrap<T>(res: Response): Promise<T> {
 export async function getStocks(): Promise<Stock[]> {
   const res = await fetch('/stocks');
   return unwrap<Stock[]>(res);
+}
+
+export async function getMarketSummary(): Promise<MarketTapeSummary> {
+  const res = await fetch('/market/summary');
+  return unwrap<MarketTapeSummary>(res);
 }
 
 /**

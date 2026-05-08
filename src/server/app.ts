@@ -47,6 +47,7 @@ import {
 import { createDartDisclosureService } from './disclosures/dart-disclosure-service.js';
 import { createDataRetentionScheduler } from './maintenance/data-retention.js';
 import { createMasterStockService } from './services/master-stock-service.js';
+import { createMarketSummaryService } from './market/market-summary-service.js';
 import { createCredentialSetupMutex, credentialsRoutes } from './routes/credentials.js';
 import { stockRoutes } from './routes/stocks.js';
 import { themeRoutes } from './routes/themes.js';
@@ -55,6 +56,7 @@ import { favoritesRoutes } from './routes/favorites.js';
 import { registerRoutes as importRoutes } from './routes/import.js';
 import { eventsRoutes } from './routes/events.js';
 import { masterRoutes } from './routes/master.js';
+import { marketRoutes } from './routes/market.js';
 import { runtimeRoutes } from './routes/runtime.js';
 import { createTelegramPhoneNotifier } from './notifications/phone-notifier.js';
 import { launcherRoutes, type LauncherRoutesOptions } from './routes/launcher.js';
@@ -157,6 +159,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     repo: masterRepo,
     meta: masterMetaRepo,
   });
+  const marketSummaryService = createMarketSummaryService();
 
   const runtimeRef = createKisRuntimeRef(
     { db, settingsStore, credentialStore, priceStore, snapshotStore, stockRepo, favoriteRepo },
@@ -262,6 +265,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(favoritesRoutes, { favoriteRepo, runtimeRef });
   await app.register(async (inner) => { importRoutes(inner, { stockRepo, runtimeRef }); });
   await app.register(masterRoutes, { service: masterService, masterRepo, stockRepo, credentialStore });
+  await app.register(marketRoutes, { service: marketSummaryService });
   await app.register(eventsRoutes, { runtimeRef });
   await app.register(runtimeRoutes, {
     runtimeRef,

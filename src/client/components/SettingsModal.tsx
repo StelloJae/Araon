@@ -1,8 +1,9 @@
 /**
- * SettingsModal — four-tab settings dialog.
+ * SettingsModal — five-tab settings dialog.
  *
  *   [연결] — readonly KIS runtime status (no credential values shown).
  *   [알림] — user-facing notification delivery settings.
+ *   [차트] — chart color and candle data display settings.
  *   [급상승] — dashboard surge list/filter settings.
  *   [룰]   — alert rules CRUD (localStorage). Firing engine ships in Phase 6.
  *
@@ -21,7 +22,7 @@
  *     cancelled when the modal closes or a different tab is opened.
  */
 
-import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react';
 import { CloseIcon } from '../lib/icons';
 import {
   ALERT_RULE_KIND_LABEL,
@@ -86,7 +87,7 @@ import { AlertDeliveryLogPanel } from './AlertDeliveryLogPanel';
 const IS_DEV_BUILD =
   (import.meta as ImportMeta & { env: { DEV?: boolean } }).env.DEV === true;
 
-const TABS = ['연결', '알림', '급상승', '룰'] as const;
+const TABS = ['연결', '알림', '차트', '급상승', '룰'] as const;
 type TabId = (typeof TABS)[number];
 
 interface SettingsModalProps {
@@ -219,6 +220,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <div style={{ overflowY: 'auto', padding: '20px 22px', flex: 1 }}>
           {tab === '연결' && <ConnectionTab />}
           {tab === '알림' && <NotifTab />}
+          {tab === '차트' && <ChartSettingsTab />}
           {tab === '급상승' && <SurgeTab />}
           {tab === '룰' && <RulesTab />}
         </div>
@@ -1844,7 +1846,12 @@ export function NotifTab() {
       return;
     }
     setSoundMsg(null);
-    playBleep(settings.soundVolume, 'up');
+    const played = playBleep(settings.soundVolume, 'up');
+    setSoundMsg(
+      played
+        ? '테스트음을 재생했습니다.'
+        : '이 환경에서 사운드를 시작하지 못했습니다. Windows 볼륨 믹서와 앱 출력 장치를 확인해 주세요.',
+    );
   }
 
   async function handleDesktopToggle(next: boolean) {
@@ -2151,6 +2158,80 @@ export function SurgeTab() {
         </div>
       </Field>
     </div>
+  );
+}
+
+export function ChartSettingsTab() {
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
+
+  return (
+    <div>
+      <Field
+        label="차트 색상"
+        hint="한국 주식 화면에 맞춰 기본값은 빨강=상승, 파랑=하락입니다. 미국식 색상도 선택할 수 있습니다."
+      >
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <ChoiceButton
+            active={settings.chartColorScheme === 'kr'}
+            onClick={() => update({ chartColorScheme: 'kr' })}
+          >
+            한국식 · 빨강 상승
+          </ChoiceButton>
+          <ChoiceButton
+            active={settings.chartColorScheme === 'us'}
+            onClick={() => update({ chartColorScheme: 'us' })}
+          >
+            미국식 · 초록 상승
+          </ChoiceButton>
+        </div>
+      </Field>
+      <Field label="분봉 차트 기준">
+        <div
+          style={{
+            padding: '10px 12px',
+            background: 'var(--bg-tint)',
+            border: '1px solid var(--border-soft)',
+            borderRadius: 8,
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            lineHeight: 1.6,
+          }}
+        >
+          1m/3m/5m 차트는 저장된 1분봉으로 그립니다. 과거 intraday는 저장된
+          candle이 있을 때만 표시하고, 1D/1W/1M은 KIS 일봉을 기준으로 보강합니다.
+        </div>
+      </Field>
+    </div>
+  );
+}
+
+function ChoiceButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+        background: active ? 'var(--accent-soft)' : 'var(--bg-card)',
+        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+        borderRadius: 8,
+        padding: '8px 10px',
+        fontSize: 12,
+        fontWeight: 800,
+        cursor: 'pointer',
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

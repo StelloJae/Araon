@@ -706,6 +706,11 @@ function MetricsGrid({ stock, lastUpdated }: MetricsGridProps) {
     makeOptionalMetric('저가', formatOptionalPrice(stock.lowPrice)),
     makeOptionalMetric('시가총액', formatOptionalKrw(stock.marketCapKrw)),
     makeOptionalMetric('PER', formatOptionalMultiple(stock.per)),
+    makeOptionalMetric(
+      'EPS(추정)',
+      formatOptionalPrice(stock.estimatedEps),
+      'KIS 현재가 시세에 EPS 원본이 없을 때 현재가/PER로 계산한 참고값입니다.',
+    ),
     makeOptionalMetric('PBR', formatOptionalMultiple(stock.pbr)),
     makeOptionalMetric('외인 보유', formatOptionalPercent(stock.foreignOwnershipRate)),
     makeOptionalMetric('52주 최고', formatOptionalPrice(stock.week52High)),

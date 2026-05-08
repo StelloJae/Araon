@@ -35,6 +35,8 @@ export interface StockViewModel {
   marketCapKrw?: number | null;
   marketCapSize?: MarketCapSize | null;
   per?: number | null;
+  /** Derived from current price / PER when KIS does not provide EPS directly. */
+  estimatedEps?: number | null;
   pbr?: number | null;
   foreignOwnershipRate?: number | null;
   week52High?: number | null;

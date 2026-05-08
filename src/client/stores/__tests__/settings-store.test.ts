@@ -46,6 +46,7 @@ describe('useSettingsStore', () => {
     expect(useSettingsStore.getState().settings.surgeFilter).toBe('live');
     expect(useSettingsStore.getState().settings.surgeMarketCapFilter).toBe('all');
     expect(useSettingsStore.getState().settings.devModeEnabled).toBe(false);
+    expect(useSettingsStore.getState().settings.chartColorScheme).toBe('kr');
   });
 
   it('persists notif update and reloads it on next import', async () => {
@@ -92,6 +93,16 @@ describe('useSettingsStore', () => {
     expect(reloaded.useSettingsStore.getState().settings.devModeEnabled).toBe(true);
   });
 
+  it('persists chart color scheme and reloads it on next import', async () => {
+    const mod = await import('../settings-store');
+    mod.useSettingsStore.getState().update({ chartColorScheme: 'us' });
+    expect(mod.useSettingsStore.getState().settings.chartColorScheme).toBe('us');
+
+    vi.resetModules();
+    const reloaded = await import('../settings-store');
+    expect(reloaded.useSettingsStore.getState().settings.chartColorScheme).toBe('us');
+  });
+
   it('rejects unknown surgeFilter values from storage', async () => {
     globalThis.localStorage.setItem(
       STORAGE_KEY,
@@ -108,6 +119,15 @@ describe('useSettingsStore', () => {
     );
     const { useSettingsStore } = await import('../settings-store');
     expect(useSettingsStore.getState().settings.surgeMarketCapFilter).toBe('all');
+  });
+
+  it('rejects unknown chart color scheme values from storage', async () => {
+    globalThis.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ chartColorScheme: 'rainbow' }),
+    );
+    const { useSettingsStore } = await import('../settings-store');
+    expect(useSettingsStore.getState().settings.chartColorScheme).toBe('kr');
   });
 
   it('falls back to defaults on malformed JSON', async () => {

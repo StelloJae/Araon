@@ -9,6 +9,7 @@ import {
   CandleDataInspector,
   PinnedCandlePanel,
   formatCandleTooltipRows,
+  getChartPalette,
   normalizeCandleRangeForInterval,
 } from '../StockCandleChart';
 
@@ -55,6 +56,17 @@ describe('StockCandleChart', () => {
     expect(html).toContain('1m');
     expect(html).toContain('마우스를 올리면 OHLCV 표시');
     expect(html).toContain('클릭하면 봉 고정');
+  });
+
+  it('supports Korean and US candlestick color conventions', () => {
+    expect(getChartPalette('kr')).toMatchObject({
+      upColor: '#F6465D',
+      downColor: '#1EAEDB',
+    });
+    expect(getChartPalette('us')).toMatchObject({
+      upColor: '#0ECB81',
+      downColor: '#F6465D',
+    });
   });
 
   it('renders a compact chart data inspector from coverage metadata', () => {

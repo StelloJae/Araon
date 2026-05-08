@@ -28,6 +28,7 @@ export default defineConfig({
       '/runtime': SERVER_ORIGIN,
       '/import': SERVER_ORIGIN,
       '/master': SERVER_ORIGIN,
+      '/market': SERVER_ORIGIN,
       '/events': {
         target: SERVER_ORIGIN,
         changeOrigin: true,

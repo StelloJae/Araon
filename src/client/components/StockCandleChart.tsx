@@ -12,6 +12,7 @@ import {
   getStockCandles,
   type CandleRange,
 } from '../lib/api-client';
+import { useSettingsStore, type ChartColorScheme } from '../stores/settings-store';
 
 const INTERVALS: CandleInterval[] = [
   '1m',
@@ -39,6 +40,7 @@ interface StockCandleChartProps {
 }
 
 export function StockCandleChart({ ticker }: StockCandleChartProps) {
+  const chartColorScheme = useSettingsStore((s) => s.settings.chartColorScheme);
   const [interval, setInterval] = useState<CandleInterval>('1m');
   const [range, setRange] = useState<CandleRange>('1d');
   const [status, setStatus] = useState<ChartStatus>('loading');
@@ -209,6 +211,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
         coverage={coverage}
         interval={interval}
         range={range}
+        colorScheme={chartColorScheme}
       />
     </div>
   );
@@ -385,12 +388,14 @@ export function CandleChartView({
   coverage,
   interval,
   range,
+  colorScheme = 'kr',
 }: {
   status: ChartStatus;
   items: readonly CandleApiItem[];
   coverage?: CandleApiCoverage | null;
   interval: CandleInterval;
   range: CandleRange;
+  colorScheme?: ChartColorScheme;
 }) {
   if (status === 'loading') {
     return <ChartMessage title="차트 불러오는 중" detail="로컬 candle 저장소를 확인하고 있습니다." />;
@@ -437,7 +442,7 @@ export function CandleChartView({
       {coverage !== undefined && coverage !== null && (
         <CandleDataInspector coverage={coverage} />
       )}
-      <LightweightCandleCanvas items={items} />
+      <LightweightCandleCanvas items={items} colorScheme={colorScheme} />
     </div>
   );
 }
@@ -497,8 +502,32 @@ function ChartMessage({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] }) {
+export function getChartPalette(colorScheme: ChartColorScheme) {
+  if (colorScheme === 'us') {
+    return {
+      upColor: '#0ECB81',
+      downColor: '#F6465D',
+      volumeUpColor: 'rgba(14, 203, 129, 0.35)',
+      volumeDownColor: 'rgba(246, 70, 93, 0.35)',
+    };
+  }
+  return {
+    upColor: '#F6465D',
+    downColor: '#1EAEDB',
+    volumeUpColor: 'rgba(246, 70, 93, 0.35)',
+    volumeDownColor: 'rgba(30, 174, 219, 0.35)',
+  };
+}
+
+function LightweightCandleCanvas({
+  items,
+  colorScheme,
+}: {
+  items: readonly CandleApiItem[];
+  colorScheme: ChartColorScheme;
+}) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const palette = getChartPalette(colorScheme);
   const [tooltip, setTooltip] = useState<{
     x: number;
     y: number;
@@ -523,10 +552,10 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
         value: item.volume,
         color:
           item.close >= item.open
-            ? 'rgba(14, 203, 129, 0.35)'
-            : 'rgba(246, 70, 93, 0.35)',
+            ? palette.volumeUpColor
+            : palette.volumeDownColor,
       })),
-    [items],
+    [items, palette.volumeDownColor, palette.volumeUpColor],
   );
   const itemByTime = useMemo(() => {
     const map = new Map<number, CandleApiItem>();
@@ -568,11 +597,11 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
           },
         });
         const candleSeries = chart.addSeries(CandlestickSeries, {
-          upColor: '#0ECB81',
-          downColor: '#F6465D',
+          upColor: palette.upColor,
+          downColor: palette.downColor,
           borderVisible: false,
-          wickUpColor: '#0ECB81',
-          wickDownColor: '#F6465D',
+          wickUpColor: palette.upColor,
+          wickDownColor: palette.downColor,
         });
         candleSeries.setData(candleData);
 
@@ -631,7 +660,7 @@ function LightweightCandleCanvas({ items }: { items: readonly CandleApiItem[] })
       disposed = true;
       removeChart?.();
     };
-  }, [candleData, itemByTime, volumeData]);
+  }, [candleData, itemByTime, palette.downColor, palette.upColor, volumeData]);
 
   return (
     <div style={{ position: 'relative' }}>

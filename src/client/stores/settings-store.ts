@@ -14,6 +14,7 @@ import { create } from 'zustand';
 /** Surge block first-row filter — see `lib/surge-aggregator.ts`. */
 export type SurgeFilter = 'live' | 'today' | 'all';
 export type SurgeMarketCapFilter = 'all' | 'large' | 'mid' | 'small';
+export type ChartColorScheme = 'kr' | 'us';
 
 export interface ClientSettings {
   /** Master switch for all client-generated alert/toast/sound output. */
@@ -24,6 +25,8 @@ export interface ClientSettings {
   surgeMarketCapFilter: SurgeMarketCapFilter;
   /** Client-only developer tools switch. Hidden by default for normal use. */
   devModeEnabled: boolean;
+  /** Candlestick colors: Korean style (red up/blue down) or US style. */
+  chartColorScheme: ChartColorScheme;
 
   // Alerts ---------------------------------------------------------------
   /** Threshold for "큰 변동" generic toast (favorites). |%|. */
@@ -51,6 +54,7 @@ const DEFAULTS: ClientSettings = {
   surgeFilter: 'live',
   surgeMarketCapFilter: 'all',
   devModeEnabled: false,
+  chartColorScheme: 'kr',
 
   notifPctThreshold: 5,
   phoneNotifEnabled: false,
@@ -70,6 +74,8 @@ const VALID_SURGE_FILTERS: ReadonlySet<SurgeFilter> = new Set([
 ]);
 const VALID_SURGE_MARKET_CAP_FILTERS: ReadonlySet<SurgeMarketCapFilter> =
   new Set(['all', 'large', 'mid', 'small']);
+const VALID_CHART_COLOR_SCHEMES: ReadonlySet<ChartColorScheme> =
+  new Set(['kr', 'us']);
 
 const STORAGE_KEY = 'araon-settings-v1';
 
@@ -114,6 +120,12 @@ function loadSettings(): ClientSettings {
     }
     if (typeof obj.devModeEnabled === 'boolean') {
       merged.devModeEnabled = obj.devModeEnabled;
+    }
+    if (
+      typeof obj.chartColorScheme === 'string' &&
+      VALID_CHART_COLOR_SCHEMES.has(obj.chartColorScheme as ChartColorScheme)
+    ) {
+      merged.chartColorScheme = obj.chartColorScheme as ChartColorScheme;
     }
     merged.notifPctThreshold = clampNumber(
       obj.notifPctThreshold,
