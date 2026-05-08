@@ -99,6 +99,14 @@ export interface KisRestClientOptions {
 
 export interface KisRestClient extends KisTokenTransport {
   request<T>(req: KisRestRequest): Promise<T>;
+  requestWithMeta<T>(req: KisRestRequest): Promise<KisRestResponse<T>>;
+}
+
+export interface KisRestResponse<T> {
+  payload: T;
+  headers: {
+    trCont: string | null;
+  };
 }
 
 function buildUrl(
@@ -146,7 +154,7 @@ export function createKisRestClient(
   const backoffMaxMs = options.backoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
-  async function performOnce<T>(req: KisRestRequest): Promise<T> {
+  async function performOnce<T>(req: KisRestRequest): Promise<KisRestResponse<T>> {
     await options.outboundLimiter?.acquire(limiterContext(req));
     const url = buildUrl(host, req.path, req.query);
     const headers: Record<string, string> = {
@@ -237,7 +245,12 @@ export function createKisRestClient(
       );
     }
 
-    return payload as T;
+    return {
+      payload: payload as T,
+      headers: {
+        trCont: response.headers.get('tr_cont') ?? response.headers.get('tr-cont'),
+      },
+    };
   }
 
   function isRetryable(err: unknown): boolean {
@@ -248,7 +261,7 @@ export function createKisRestClient(
     return err instanceof Error;
   }
 
-  async function request<T>(req: KisRestRequest): Promise<T> {
+  async function requestWithMeta<T>(req: KisRestRequest): Promise<KisRestResponse<T>> {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
@@ -282,8 +295,14 @@ export function createKisRestClient(
     throw lastErr;
   }
 
+  async function request<T>(req: KisRestRequest): Promise<T> {
+    const response = await requestWithMeta<T>(req);
+    return response.payload;
+  }
+
   return {
     request,
+    requestWithMeta,
     async postToken(body): Promise<unknown> {
       return request<unknown>({
         method: 'POST',

@@ -131,4 +131,27 @@ describe('createKisRestClient — authenticated header contract', () => {
     expect(fetchFn).toHaveBeenCalledOnce();
     expect(recordFailure).not.toHaveBeenCalled();
   });
+
+  it('exposes the KIS tr_cont response header for continuation pagination', async () => {
+    const fetchFn = vi.fn(async () => (
+      new Response(JSON.stringify({ rt_cd: '0', output: [] }), {
+        status: 200,
+        headers: { tr_cont: 'M' },
+      })
+    )) as unknown as typeof fetch;
+    const client = createKisRestClient({
+      isPaper: false,
+      auth: makeAuth(creds),
+      fetchFn,
+    });
+
+    const response = await client.requestWithMeta<{ output: unknown[] }>({
+      method: 'GET',
+      path: '/uapi/domestic-stock/v1/ranking/fluctuation',
+      endpointClass: 'ranking',
+    });
+
+    expect(response.payload.output).toEqual([]);
+    expect(response.headers.trCont).toBe('M');
+  });
 });

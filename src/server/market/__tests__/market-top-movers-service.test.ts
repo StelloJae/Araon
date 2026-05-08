@@ -140,13 +140,13 @@ describe('market top movers service', () => {
       expect(result.status).toBe('error');
       expect(result.gainers).toEqual([]);
       expect(result.losers).toEqual([]);
-      expect(fetchRanking).toHaveBeenCalledTimes(2);
+      expect(fetchRanking).toHaveBeenCalledTimes(1);
 
       const second = service.getTopMovers({ limit: 100 });
       await vi.advanceTimersByTimeAsync(101);
       await second;
 
-      expect(fetchRanking).toHaveBeenCalledTimes(2);
+      expect(fetchRanking).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

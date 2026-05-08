@@ -57,7 +57,7 @@ describe('TOP100 view chrome', () => {
     expect(html).not.toContain('혼합');
   });
 
-  it('renders gainers and losers side by side with refresh status', () => {
+  it('renders gainers and losers in the compact section-card style', () => {
     const html = renderToStaticMarkup(
       createElement(TopMoversBoard, {
         data: topMovers(),
@@ -67,7 +67,7 @@ describe('TOP100 view chrome', () => {
 
     expect(html).toContain('상승 TOP100');
     expect(html).toContain('하락 TOP100');
-    expect(html).toContain('1종목');
+    expect(html).toContain('1/100');
     expect(html).toContain('3초');
     expect(html).toContain('삼성전자');
     expect(html).toContain('SK하이닉스');

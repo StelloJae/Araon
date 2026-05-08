@@ -88,28 +88,33 @@ describe('KIS fluctuation ranking mapper', () => {
 
 describe('fetchKisFluctuationRanking', () => {
   it('calls the official KIS fluctuation ranking endpoint for gainers', async () => {
-    const request = vi.fn(async () => ({
-      output: [
-        {
-          data_rank: '1',
-          stck_shrn_iscd: '005930',
-          hts_kor_isnm: '삼성전자',
-          stck_prpr: '70000',
-          prdy_vrss: '2500',
-          prdy_ctrt: '3.70',
-          acml_vol: '1234567',
+    const restClient = createMockRestClient([
+      {
+        payload: {
+          output: [
+            {
+              data_rank: '1',
+              stck_shrn_iscd: '005930',
+              hts_kor_isnm: '삼성전자',
+              stck_prpr: '70000',
+              prdy_vrss: '2500',
+              prdy_ctrt: '3.70',
+              acml_vol: '1234567',
+            },
+          ],
         },
-      ],
-    }));
+        trCont: null,
+      },
+    ]);
 
     const items = await fetchKisFluctuationRanking({
       direction: 'gainers',
       count: 100,
       now: new Date('2026-05-08T01:00:00.000Z'),
-      restClient: { request },
+      restClient,
     });
 
-    expect(request).toHaveBeenCalledWith({
+    expect(restClient.requestWithMeta).toHaveBeenCalledWith({
       method: 'GET',
       path: '/uapi/domestic-stock/v1/ranking/fluctuation',
       trId: 'FHPST01700000',
@@ -126,16 +131,16 @@ describe('fetchKisFluctuationRanking', () => {
   });
 
   it('uses the KIS previous-day decline direction code for losers', async () => {
-    const request = vi.fn(async () => ({ output: [] }));
+    const restClient = createMockRestClient([{ payload: { output: [] }, trCont: null }]);
 
     await fetchKisFluctuationRanking({
       direction: 'losers',
       count: 100,
       now: new Date('2026-05-08T01:00:00.000Z'),
-      restClient: { request },
+      restClient,
     });
 
-    expect(request).toHaveBeenCalledWith(
+    expect(restClient.requestWithMeta).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.objectContaining({
           fid_rank_sort_cls_code: '1',
@@ -146,28 +151,33 @@ describe('fetchKisFluctuationRanking', () => {
   });
 
   it('keeps TOP100 on the full-day fluctuation endpoint during NXT after-hours', async () => {
-    const request = vi.fn(async () => ({
-      output: [
-        {
-          data_rank: '1',
-          stck_shrn_iscd: '277810',
-          hts_kor_isnm: '레인보우로보틱스',
-          stck_prpr: '782000',
-          prdy_vrss: '86000',
-          prdy_ctrt: '12.20',
-          acml_vol: '12345',
+    const restClient = createMockRestClient([
+      {
+        payload: {
+          output: [
+            {
+              data_rank: '1',
+              stck_shrn_iscd: '277810',
+              hts_kor_isnm: '레인보우로보틱스',
+              stck_prpr: '782000',
+              prdy_vrss: '86000',
+              prdy_ctrt: '12.20',
+              acml_vol: '12345',
+            },
+          ],
         },
-      ],
-    }));
+        trCont: null,
+      },
+    ]);
 
     const items = await fetchKisFluctuationRanking({
       direction: 'gainers',
       count: 100,
       now: new Date('2026-05-08T10:30:00.000Z'),
-      restClient: { request },
+      restClient,
     });
 
-    expect(request).toHaveBeenCalledWith({
+    expect(restClient.requestWithMeta).toHaveBeenCalledWith({
       method: 'GET',
       path: '/uapi/domestic-stock/v1/ranking/fluctuation',
       trId: 'FHPST01700000',
@@ -185,16 +195,16 @@ describe('fetchKisFluctuationRanking', () => {
   });
 
   it('keeps loser TOP100 on the full-day fluctuation endpoint during NXT after-hours', async () => {
-    const request = vi.fn(async () => ({ output: [] }));
+    const restClient = createMockRestClient([{ payload: { output: [] }, trCont: null }]);
 
     await fetchKisFluctuationRanking({
       direction: 'losers',
       count: 100,
       now: new Date('2026-05-08T10:30:00.000Z'),
-      restClient: { request },
+      restClient,
     });
 
-    expect(request).toHaveBeenCalledWith(
+    expect(restClient.requestWithMeta).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.objectContaining({
           fid_rank_sort_cls_code: '1',
@@ -205,42 +215,47 @@ describe('fetchKisFluctuationRanking', () => {
   });
 
   it('filters and re-ranks mixed KIS rows by requested direction', async () => {
-    const request = vi.fn(async () => ({
-      output: [
-        {
-          data_rank: '1',
-          stck_shrn_iscd: '000001',
-          hts_kor_isnm: '깨진상승목록음수',
-          stck_prpr: '1000',
-          prdy_vrss: '-10',
-          prdy_ctrt: '-1.00',
-          acml_vol: '100',
+    const restClient = createMockRestClient([
+      {
+        payload: {
+          output: [
+            {
+              data_rank: '1',
+              stck_shrn_iscd: '000001',
+              hts_kor_isnm: '깨진상승목록음수',
+              stck_prpr: '1000',
+              prdy_vrss: '-10',
+              prdy_ctrt: '-1.00',
+              acml_vol: '100',
+            },
+            {
+              data_rank: '2',
+              stck_shrn_iscd: '000002',
+              hts_kor_isnm: '상승이',
+              stck_prpr: '2000',
+              prdy_vrss: '100',
+              prdy_ctrt: '5.00',
+              acml_vol: '200',
+            },
+            {
+              data_rank: '3',
+              stck_shrn_iscd: '000003',
+              hts_kor_isnm: '상승일',
+              stck_prpr: '3000',
+              prdy_vrss: '300',
+              prdy_ctrt: '10.00',
+              acml_vol: '300',
+            },
+          ],
         },
-        {
-          data_rank: '2',
-          stck_shrn_iscd: '000002',
-          hts_kor_isnm: '상승이',
-          stck_prpr: '2000',
-          prdy_vrss: '100',
-          prdy_ctrt: '5.00',
-          acml_vol: '200',
-        },
-        {
-          data_rank: '3',
-          stck_shrn_iscd: '000003',
-          hts_kor_isnm: '상승일',
-          stck_prpr: '3000',
-          prdy_vrss: '300',
-          prdy_ctrt: '10.00',
-          acml_vol: '300',
-        },
-      ],
-    }));
+        trCont: null,
+      },
+    ]);
 
     const items = await fetchKisFluctuationRanking({
       direction: 'gainers',
       count: 10,
-      restClient: { request },
+      restClient,
     });
 
     expect(items.map((item) => [item.rank, item.ticker, item.changePct])).toEqual([
@@ -248,4 +263,77 @@ describe('fetchKisFluctuationRanking', () => {
       [2, '000002', 5],
     ]);
   });
+
+  it('follows KIS tr_cont pages until the requested ranking count is filled', async () => {
+    const restClient = createMockRestClient([
+      {
+        payload: {
+          output: [
+            {
+              data_rank: '1',
+              stck_shrn_iscd: '000001',
+              hts_kor_isnm: '상승일',
+              stck_prpr: '1000',
+              prdy_vrss: '100',
+              prdy_ctrt: '10.00',
+              acml_vol: '100',
+            },
+          ],
+        },
+        trCont: 'M',
+      },
+      {
+        payload: {
+          output: [
+            {
+              data_rank: '2',
+              stck_shrn_iscd: '000002',
+              hts_kor_isnm: '상승이',
+              stck_prpr: '2000',
+              prdy_vrss: '180',
+              prdy_ctrt: '9.90',
+              acml_vol: '200',
+            },
+          ],
+        },
+        trCont: null,
+      },
+    ]);
+
+    const items = await fetchKisFluctuationRanking({
+      direction: 'gainers',
+      count: 2,
+      restClient,
+      pageDelayMs: 0,
+    });
+
+    expect(restClient.requestWithMeta).toHaveBeenCalledTimes(2);
+    expect(restClient.requestWithMeta).toHaveBeenNthCalledWith(
+      1,
+      expect.not.objectContaining({ headers: expect.anything() }),
+    );
+    expect(restClient.requestWithMeta).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ headers: { tr_cont: 'N' } }),
+    );
+    expect(items.map((item) => item.ticker)).toEqual(['000001', '000002']);
+  });
 });
+
+function createMockRestClient(
+  pages: Array<{ payload: Record<string, unknown>; trCont: string | null }>,
+) {
+  const queue = [...pages];
+  const requestWithMeta = vi.fn(async () => {
+    const next = queue.shift();
+    if (next === undefined) throw new Error('unexpected KIS page request');
+    return {
+      payload: next.payload,
+      headers: { trCont: next.trCont },
+    };
+  });
+  return {
+    request: vi.fn(async () => (await requestWithMeta()).payload),
+    requestWithMeta,
+  };
+}

@@ -6,10 +6,10 @@ import type {
 
 import { KisRestError } from '../kis/kis-rest-client.js';
 
-const DEFAULT_TTL_MS = 3_000;
-const DEFAULT_STALE_AFTER_MS = 15_000;
+const DEFAULT_TTL_MS = 10_000;
+const DEFAULT_STALE_AFTER_MS = 30_000;
 const DEFAULT_COOLDOWN_MS = 30_000;
-const DEFAULT_REFRESH_TIMEOUT_MS = 7_000;
+const DEFAULT_REFRESH_TIMEOUT_MS = 10_000;
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 100;
 
@@ -109,10 +109,18 @@ export function createMarketTopMoversService({
   async function refresh(current: Date): Promise<CacheEntry> {
     if (inflight !== null) return withTimeout(inflight, refreshTimeoutMs);
     const nextRefresh = (async () => {
-      const [gainers, losers] = await Promise.all([
-        fetchRanking({ direction: 'gainers', count: MAX_LIMIT, now: current }),
-        fetchRanking({ direction: 'losers', count: MAX_LIMIT, now: current }),
-      ]);
+      // TOP100 may require KIS continuation pages. Keep gainers/losers
+      // sequential so we do not create a burst against the shared KIS limiter.
+      const gainers = await fetchRanking({
+        direction: 'gainers',
+        count: MAX_LIMIT,
+        now: current,
+      });
+      const losers = await fetchRanking({
+        direction: 'losers',
+        count: MAX_LIMIT,
+        now: current,
+      });
       const next = {
         fetchedAt: current,
         gainers: gainers.slice(0, MAX_LIMIT),

@@ -1,5 +1,11 @@
 import type { MarketTopMoverItem, MarketTopMoversResponse } from '@shared/types';
-import { fmtAbs, fmtPct, fmtPrice, krColor } from '../lib/format';
+import {
+  fmtAbs,
+  fmtPct,
+  fmtPrice,
+  krColor,
+  rowBarAlpha,
+} from '../lib/format';
 
 interface TopMoversBoardProps {
   data: MarketTopMoversResponse;
@@ -7,16 +13,9 @@ interface TopMoversBoardProps {
 }
 
 export function TopMoversBoard({ data, onOpenTicker }: TopMoversBoardProps) {
-  const fetchedAt = data.fetchedAt === null
-    ? '대기 중'
-    : new Intl.DateTimeFormat('ko-KR', {
-        timeZone: 'Asia/Seoul',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      }).format(new Date(data.fetchedAt));
+  const fetchedAt = formatFetchedAt(data.fetchedAt);
   const refreshSec = Math.max(1, Math.round(data.refreshIntervalMs / 1000));
+  const subtitle = `${statusLabel(data.status)} · ${refreshSec}초마다 · 마지막 ${fetchedAt}`;
 
   return (
     <div
@@ -25,75 +24,29 @@ export function TopMoversBoard({ data, onOpenTicker }: TopMoversBoardProps) {
         border: '1px solid var(--border)',
         borderRadius: 12,
         overflow: 'hidden',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) 1px minmax(0, 1fr)',
+        width: '100%',
         minWidth: 0,
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          padding: '12px 14px',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>
-            전체 종목 TOP100
-          </div>
-          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>
-            KIS 등락률 순위 · {refreshSec}초마다 갱신 · 마지막 {fetchedAt}
-          </div>
-        </div>
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 800,
-            color: data.status === 'ready' ? 'var(--kr-up)' : 'var(--gold-text)',
-            background: data.status === 'ready' ? 'var(--up-tint-1)' : 'var(--gold-soft)',
-            padding: '3px 8px',
-            borderRadius: 999,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {statusLabel(data.status)}
-        </span>
-      </div>
-      {data.message.length > 0 && data.status !== 'ready' && (
-        <div
-          style={{
-            padding: '9px 14px',
-            borderBottom: '1px solid var(--border-soft)',
-            fontSize: 11,
-            fontWeight: 600,
-            color: 'var(--text-secondary)',
-          }}
-        >
-          {data.message}
-        </div>
-      )}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1px 1fr',
-          minWidth: 0,
-        }}
-      >
-        <TopMoversColumn
-          title="상승 TOP100"
-          tone="up"
-          items={data.gainers}
-          onOpenTicker={onOpenTicker}
-        />
-        <div style={{ background: 'var(--border)' }} />
-        <TopMoversColumn
-          title="하락 TOP100"
-          tone="down"
-          items={data.losers}
-          onOpenTicker={onOpenTicker}
-        />
-      </div>
+      <TopMoversColumn
+        title="상승 TOP100"
+        tone="up"
+        items={data.gainers}
+        subtitle={subtitle}
+        message={data.status === 'ready' ? '' : data.message}
+        onOpenTicker={onOpenTicker}
+      />
+      <div style={{ background: 'var(--border)' }} />
+      <TopMoversColumn
+        title="하락 TOP100"
+        tone="down"
+        items={data.losers}
+        subtitle={subtitle}
+        message={data.status === 'ready' ? '' : data.message}
+        onOpenTicker={onOpenTicker}
+      />
     </div>
   );
 }
@@ -102,6 +55,8 @@ interface TopMoversColumnProps {
   title: string;
   tone: 'up' | 'down';
   items: MarketTopMoverItem[];
+  subtitle: string;
+  message: string;
   onOpenTicker: (ticker: string) => void;
 }
 
@@ -109,20 +64,58 @@ function TopMoversColumn({
   title,
   tone,
   items,
+  subtitle,
+  message,
   onOpenTicker,
 }: TopMoversColumnProps) {
   return (
-    <div style={{ minWidth: 0 }}>
+    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
       <div
         style={{
-          padding: '10px 14px 8px',
-          fontSize: 13,
-          fontWeight: 800,
-          color: tone === 'up' ? 'var(--kr-up)' : 'var(--kr-down)',
+          padding: '12px 14px 8px',
           borderBottom: '1px solid var(--border-soft)',
         }}
       >
-        {title} · {items.length}종목
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: tone === 'up' ? 'var(--kr-up)' : 'var(--kr-down)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {title}
+          </div>
+          <div
+            style={{
+              marginLeft: 'auto',
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'var(--text-secondary)',
+              background: 'var(--bg-tint)',
+              padding: '2px 7px',
+              borderRadius: 50,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {items.length >= 100 ? '100' : `${items.length}/100`}
+          </div>
+        </div>
+        <div
+          style={{
+            marginTop: 3,
+            fontSize: 10,
+            fontWeight: 500,
+            color: 'var(--text-muted)',
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+            textOverflow: 'ellipsis',
+          }}
+          title={message.length > 0 ? `${subtitle} · ${message}` : subtitle}
+        >
+          {message.length > 0 ? `${subtitle} · ${message}` : subtitle}
+        </div>
       </div>
       {items.length === 0 ? (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
@@ -150,6 +143,16 @@ interface TopMoverRowProps {
 
 function TopMoverRow({ item, isFirst, onOpenTicker }: TopMoverRowProps) {
   const color = krColor(item.changePct);
+  const depthPct = Math.min(100, (Math.abs(item.changePct) / 30) * 100);
+  const barAlpha = rowBarAlpha(item.changePct);
+  const barColor =
+    item.changePct > 0
+      ? `rgba(246,70,93,${barAlpha})`
+      : item.changePct < 0
+        ? `rgba(30,174,219,${barAlpha})`
+        : 'transparent';
+  const dir = item.changePct > 0 ? '90deg' : '-90deg';
+
   return (
     <button
       type="button"
@@ -160,9 +163,11 @@ function TopMoverRow({ item, isFirst, onOpenTicker }: TopMoverRowProps) {
         border: 'none',
         borderTop: isFirst ? 'none' : '1px solid var(--border-soft)',
         background: 'transparent',
+        position: 'relative',
+        overflow: 'hidden',
         display: 'grid',
-        gridTemplateColumns: '26px minmax(0, 1fr) auto',
-        gap: 10,
+        gridTemplateColumns: '20px minmax(0, 1fr) auto auto',
+        gap: 8,
         alignItems: 'center',
         padding: '9px 12px',
         cursor: 'pointer',
@@ -171,22 +176,37 @@ function TopMoverRow({ item, isFirst, onOpenTicker }: TopMoverRowProps) {
       }}
     >
       <span
+        aria-hidden="true"
         style={{
+          position: 'absolute',
+          inset: 0,
+          background:
+            item.changePct === 0
+              ? 'transparent'
+              : `linear-gradient(${dir}, ${barColor} 0%, ${barColor} ${depthPct}%, transparent ${depthPct}%)`,
+          opacity: 0.6,
+          pointerEvents: 'none',
+        }}
+      />
+      <span
+        style={{
+          position: 'relative',
           fontSize: 10,
-          fontWeight: 800,
+          fontWeight: 700,
           color: 'var(--text-muted)',
           textAlign: 'right',
         }}
       >
         {String(item.rank).padStart(2, '0')}
       </span>
-      <span style={{ minWidth: 0 }}>
+      <span style={{ position: 'relative', minWidth: 0 }}>
         <span
           style={{
             display: 'block',
             fontSize: 12,
-            fontWeight: 800,
+            fontWeight: 700,
             color: 'var(--text-primary)',
+            lineHeight: 1.2,
             overflow: 'hidden',
             whiteSpace: 'nowrap',
             textOverflow: 'ellipsis',
@@ -194,25 +214,56 @@ function TopMoverRow({ item, isFirst, onOpenTicker }: TopMoverRowProps) {
         >
           {item.name}
         </span>
-        <span style={{ display: 'block', marginTop: 1, fontSize: 9, fontWeight: 700, color: 'var(--text-muted)' }}>
+        <span style={{ display: 'block', marginTop: 1, fontSize: 9, fontWeight: 600, color: 'var(--text-muted)' }}>
           {item.ticker}
         </span>
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 74 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)' }}>
-          {fmtPrice(item.price)}
-        </span>
-        <span style={{ marginTop: 1, fontSize: 11, fontWeight: 800, color }}>
+      <span
+        style={{
+          position: 'relative',
+          fontSize: 12,
+          fontWeight: 700,
+          color: 'var(--text-primary)',
+          textAlign: 'right',
+          minWidth: 64,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {fmtPrice(item.price)}
+      </span>
+      <span
+        style={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 1,
+          minWidth: 60,
+          textAlign: 'right',
+        }}
+      >
+        <span style={{ fontSize: 12, fontWeight: 700, color, lineHeight: 1.1 }}>
           {fmtPct(item.changePct)}
         </span>
         {item.changeAbs !== null && (
-          <span style={{ fontSize: 9, fontWeight: 700, color }}>
+          <span style={{ fontSize: 9, fontWeight: 600, color, lineHeight: 1.1 }}>
             {fmtAbs(item.changeAbs)}
           </span>
         )}
       </span>
     </button>
   );
+}
+
+function formatFetchedAt(value: string | null): string {
+  if (value === null) return '대기 중';
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
 }
 
 function statusLabel(status: MarketTopMoversResponse['status']): string {

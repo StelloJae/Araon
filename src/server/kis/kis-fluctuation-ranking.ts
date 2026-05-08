@@ -9,6 +9,8 @@ const FLUCTUATION_PATH = '/uapi/domestic-stock/v1/ranking/fluctuation';
 const FLUCTUATION_TR_ID = 'FHPST01700000';
 const MAX_RANKING_COUNT = 100;
 const KIS_ALL_RANKING_COUNT = '0';
+const MAX_RANKING_PAGES = 10;
+const KIS_CONTINUATION_DELAY_MS = 100;
 
 interface KisFluctuationRow {
   data_rank?: unknown;
@@ -28,8 +30,10 @@ interface KisFluctuationResponse {
 export interface FetchKisFluctuationRankingInput {
   direction: MarketTopMoverDirection;
   count: number;
-  restClient: Pick<KisRestClient, 'request'>;
+  restClient: Pick<KisRestClient, 'request' | 'requestWithMeta'>;
   now?: Date;
+  pageDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export async function fetchKisFluctuationRanking({
@@ -37,33 +41,56 @@ export async function fetchKisFluctuationRanking({
   count,
   restClient,
   now: _now = new Date(),
+  pageDelayMs = KIS_CONTINUATION_DELAY_MS,
+  sleep = defaultSleep,
 }: FetchKisFluctuationRankingInput): Promise<MarketTopMoverItem[]> {
   const safeCount = clampCount(count);
-  const payload = await restClient.request<KisFluctuationResponse>({
-    method: 'GET',
-    path: FLUCTUATION_PATH,
-    trId: FLUCTUATION_TR_ID,
-    endpointClass: 'ranking',
-    query: {
-      fid_cond_mrkt_div_code: 'J',
-      fid_cond_scr_div_code: '20170',
-      fid_input_iscd: '0000',
-      fid_rank_sort_cls_code: direction === 'gainers' ? '0' : '1',
-      fid_input_cnt_1: KIS_ALL_RANKING_COUNT,
-      fid_prc_cls_code: '0',
-      fid_input_price_1: '',
-      fid_input_price_2: '',
-      fid_vol_cnt: '',
-      fid_trgt_cls_code: '0',
-      fid_trgt_exls_cls_code: '0',
-      fid_div_cls_code: '0',
-      fid_rsfl_rate1: '',
-      fid_rsfl_rate2: '',
-    },
-  });
+  const rows: unknown[] = [];
+  let trCont = '';
+  for (let page = 0; page < MAX_RANKING_PAGES; page += 1) {
+    const response = await restClient.requestWithMeta<KisFluctuationResponse>({
+      method: 'GET',
+      path: FLUCTUATION_PATH,
+      trId: FLUCTUATION_TR_ID,
+      endpointClass: 'ranking',
+      ...(trCont.length > 0 ? { headers: { tr_cont: trCont } } : {}),
+      query: {
+        fid_cond_mrkt_div_code: 'J',
+        fid_cond_scr_div_code: '20170',
+        fid_input_iscd: '0000',
+        fid_rank_sort_cls_code: direction === 'gainers' ? '0' : '1',
+        fid_input_cnt_1: KIS_ALL_RANKING_COUNT,
+        fid_prc_cls_code: '0',
+        fid_input_price_1: '',
+        fid_input_price_2: '',
+        fid_vol_cnt: '',
+        fid_trgt_cls_code: '0',
+        fid_trgt_exls_cls_code: '0',
+        fid_div_cls_code: '0',
+        fid_rsfl_rate1: '',
+        fid_rsfl_rate2: '',
+      },
+    });
 
-  const rows = Array.isArray(payload.output) ? payload.output : [];
+    if (Array.isArray(response.payload.output)) {
+      rows.push(...response.payload.output);
+    }
+
+    const items = filterAndSortByDirection(mapKisFluctuationRows(rows), direction);
+    if (items.length >= safeCount || response.headers.trCont !== 'M') {
+      return items.slice(0, safeCount);
+    }
+    trCont = 'N';
+    if (pageDelayMs > 0) {
+      await sleep(pageDelayMs);
+    }
+  }
+
   return filterAndSortByDirection(mapKisFluctuationRows(rows), direction).slice(0, safeCount);
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function mapKisFluctuationRows(rows: unknown[]): MarketTopMoverItem[] {
