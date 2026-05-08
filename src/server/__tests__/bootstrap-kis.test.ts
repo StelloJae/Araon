@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   connectRealtimeFavoritesOnWarmup,
   createKisRuntimeRef,
+  fetchRuntimeRestQuoteWithFallback,
   shouldPollRuntimeTicker,
   type KisRuntimeStaticDeps,
 } from '../bootstrap-kis.js';
@@ -263,5 +264,68 @@ describe('shouldPollRuntimeTicker', () => {
         source: 'ws-integrated',
       },
     })).toBe(false);
+  });
+});
+
+describe('fetchRuntimeRestQuoteWithFallback', () => {
+  function price(value: number) {
+    return {
+      ticker: '354320',
+      price: value,
+      changeRate: 0,
+      volume: 0,
+      updatedAt: '2026-05-08T06:50:00.000Z',
+      isSnapshot: false,
+      source: 'rest',
+    } as const;
+  }
+
+  it('falls back from zero NXT quote to usable integrated quote', async () => {
+    const fetchByMarketDivCode = vi.fn(async (marketDivCode: 'NX' | 'UN') =>
+      marketDivCode === 'NX' ? price(0) : price(82_800),
+    );
+
+    const result = await fetchRuntimeRestQuoteWithFallback({
+      primaryMarketDivCode: 'NX',
+      fetchByMarketDivCode,
+    });
+
+    expect(result.price).toBe(82_800);
+    expect(fetchByMarketDivCode).toHaveBeenCalledWith('NX');
+    expect(fetchByMarketDivCode).toHaveBeenCalledWith('UN');
+  });
+
+  it('does not call fallback when NXT quote is usable', async () => {
+    const fetchByMarketDivCode = vi.fn(async () => price(83_000));
+
+    await expect(fetchRuntimeRestQuoteWithFallback({
+      primaryMarketDivCode: 'NX',
+      fetchByMarketDivCode,
+    })).resolves.toMatchObject({ price: 83_000 });
+
+    expect(fetchByMarketDivCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call fallback for the integrated primary route', async () => {
+    const fetchByMarketDivCode = vi.fn(async () => price(82_800));
+
+    await expect(fetchRuntimeRestQuoteWithFallback({
+      primaryMarketDivCode: 'UN',
+      fetchByMarketDivCode,
+    })).resolves.toMatchObject({ price: 82_800 });
+
+    expect(fetchByMarketDivCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the primary zero quote if the integrated fallback also fails', async () => {
+    const fetchByMarketDivCode = vi.fn(async (marketDivCode: 'NX' | 'UN') => {
+      if (marketDivCode === 'UN') throw new Error('fallback unavailable');
+      return price(0);
+    });
+
+    await expect(fetchRuntimeRestQuoteWithFallback({
+      primaryMarketDivCode: 'NX',
+      fetchByMarketDivCode,
+    })).resolves.toMatchObject({ price: 0 });
   });
 });

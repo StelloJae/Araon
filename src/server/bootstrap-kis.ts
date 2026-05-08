@@ -226,6 +226,7 @@ import {
 import {
   resolveRealtimeTickTrId,
   resolveRestQuoteMarketDivCode,
+  type RestQuoteMarketDivCode,
 } from './realtime/realtime-feed-route.js';
 
 // NXT4a wrapper: parse real KIS WS frames and expose parsed ticks to the
@@ -298,6 +299,31 @@ export function shouldPollRuntimeTicker(input: {
   }
 
   return !isRealtimePriceSource(current.source);
+}
+
+export async function fetchRuntimeRestQuoteWithFallback(input: {
+  readonly primaryMarketDivCode: RestQuoteMarketDivCode;
+  readonly fetchByMarketDivCode: (marketDivCode: RestQuoteMarketDivCode) => Promise<Price>;
+}): Promise<Price> {
+  const primary = await input.fetchByMarketDivCode(input.primaryMarketDivCode);
+  if (isUsableRuntimeQuote(primary) || input.primaryMarketDivCode !== 'NX') {
+    return primary;
+  }
+
+  try {
+    const fallback = await input.fetchByMarketDivCode('UN');
+    return isUsableRuntimeQuote(fallback) ? fallback : primary;
+  } catch (err: unknown) {
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'NXT quote fallback to integrated quote failed',
+    );
+    return primary;
+  }
+}
+
+function isUsableRuntimeQuote(price: Price): boolean {
+  return Number.isFinite(price.price) && price.price > 0;
 }
 
 export async function defaultActuallyStart(
@@ -416,18 +442,25 @@ export async function defaultActuallyStart(
       fetchPrice: async (ticker: string): Promise<Price> => {
         // KIS 주식현재가 시세 TR — same ID for both live (FH...) and paper hosts.
         // KIS supports J:KRX, NX:NXT, UN:통합. During NXT-only windows,
-        // KRX-only `J` returns stale/static pre/after-market values.
+        // KRX-only `J` returns stale/static pre/after-market values. Some
+        // NXT quotes return a zero price for tickers without NXT liquidity, so
+        // fall back to the integrated `UN` quote before dropping the update.
         const trId = 'FHKST01010100';
-        const resp = await restClient.request<Record<string, unknown>>({
-          method: 'GET',
-          path: '/uapi/domestic-stock/v1/quotations/inquire-price',
-          query: {
-            FID_COND_MRKT_DIV_CODE: resolveRestQuoteMarketDivCode(),
-            FID_INPUT_ISCD: ticker,
+        return fetchRuntimeRestQuoteWithFallback({
+          primaryMarketDivCode: resolveRestQuoteMarketDivCode(),
+          fetchByMarketDivCode: async (marketDivCode) => {
+            const resp = await restClient.request<Record<string, unknown>>({
+              method: 'GET',
+              path: '/uapi/domestic-stock/v1/quotations/inquire-price',
+              query: {
+                FID_COND_MRKT_DIV_CODE: marketDivCode,
+                FID_INPUT_ISCD: ticker,
+              },
+              trId,
+            });
+            return mapKisInquirePriceToPrice(ticker, resp);
           },
-          trId,
         });
-        return mapKisInquirePriceToPrice(ticker, resp);
       },
     },
     stockRepo: deps.stockRepo,
