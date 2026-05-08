@@ -669,6 +669,7 @@ interface MetricsGridProps {
 }
 
 function MetricsGrid({ stock, lastUpdated }: MetricsGridProps) {
+  const columns = 4;
   const metrics: Array<{
     label: string;
     value: string;
@@ -725,12 +726,13 @@ function MetricsGrid({ stock, lastUpdated }: MetricsGridProps) {
     ),
     makeOptionalMetric('배당수익률', formatOptionalPercent(stock.dividendYield)),
   ];
+  const fillerCount = (columns - (metrics.length % columns)) % columns;
 
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
+        gridTemplateColumns: `repeat(${columns}, 1fr)`,
         gap: 1,
         background: 'var(--border-soft)',
         border: '1px solid var(--border)',
@@ -745,6 +747,17 @@ function MetricsGrid({ stock, lastUpdated }: MetricsGridProps) {
           value={m.value}
           pending={m.pending}
           title={m.title}
+        />
+      ))}
+      {Array.from({ length: fillerCount }, (_, index) => (
+        <div
+          key={`metric-filler-${index}`}
+          aria-hidden="true"
+          data-testid="metric-grid-filler"
+          style={{
+            background: 'var(--bg-card)',
+            minHeight: 67,
+          }}
         />
       ))}
     </div>

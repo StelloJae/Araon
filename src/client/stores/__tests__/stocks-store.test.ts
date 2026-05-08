@@ -236,6 +236,55 @@ describe('useStocksStore.removeStock', () => {
     });
   });
 
+  it('keeps existing detail fields when an SSE reconnect snapshot omits them', async () => {
+    const { buildStockVM, useStocksStore } = await import('../stocks-store');
+    const store = useStocksStore.getState();
+    store.setCatalog([STOCK_A]);
+
+    store.applySnapshot([
+      {
+        ...PRICE_A,
+        openPrice: 78_000,
+        highPrice: 79_500,
+        lowPrice: 77_600,
+        marketCapKrw: 471_000_000_000_000,
+        per: 14.2,
+        pbr: 1.1,
+        foreignOwnershipRate: 52.4,
+        week52High: 92_000,
+        week52Low: 61_000,
+      },
+    ]);
+
+    store.applySnapshot([
+      {
+        ...PRICE_A,
+        price: 79_100,
+        changeRate: 1.7,
+        volume: 1_050_000,
+        updatedAt: '2026-04-27T01:00:01.000Z',
+        source: 'ws-integrated',
+      },
+    ]);
+
+    expect(
+      buildStockVM(
+        '005930',
+        useStocksStore.getState().catalog,
+        useStocksStore.getState().quotes,
+      ),
+    ).toMatchObject({
+      price: 79_100,
+      openPrice: 78_000,
+      highPrice: 79_500,
+      lowPrice: 77_600,
+      marketCapKrw: 471_000_000_000_000,
+      foreignOwnershipRate: 52.4,
+      week52High: 92_000,
+      week52Low: 61_000,
+    });
+  });
+
   it('does not flash for timestamp-only or volume-only updates', async () => {
     const { useStocksStore } = await import('../stocks-store');
     const store = useStocksStore.getState();

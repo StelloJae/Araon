@@ -140,10 +140,13 @@ export const useStocksStore = create<StocksState>((set) => ({
     }),
 
   applySnapshot: (prices) =>
-    set(() => {
+    set((state) => {
       const nextQuotes: Record<string, Price> = {};
       for (const p of prices) {
-        nextQuotes[p.ticker] = p;
+        nextQuotes[p.ticker] = carryForwardQuoteDetails(
+          state.quotes[p.ticker],
+          p,
+        );
       }
       return { quotes: nextQuotes };
     }),

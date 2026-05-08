@@ -52,8 +52,12 @@ export class PriceStore extends EventEmitter {
    */
   setPrice(price: Price): void {
     const enriched = this.enrichPrice(price);
-    this._prices.set(enriched.ticker, enriched);
-    this.emit('price-update', enriched);
+    const merged = carryForwardPriceDetails(
+      this._prices.get(enriched.ticker),
+      enriched,
+    );
+    this._prices.set(merged.ticker, merged);
+    this.emit('price-update', merged);
   }
 
   getPrice(ticker: string): Price | undefined {
@@ -73,6 +77,32 @@ export class PriceStore extends EventEmitter {
   clear(): void {
     this._prices.clear();
   }
+}
+
+const PRICE_DETAIL_KEYS = [
+  'accumulatedTradeValue',
+  'openPrice',
+  'highPrice',
+  'lowPrice',
+  'marketCapKrw',
+  'per',
+  'pbr',
+  'foreignOwnershipRate',
+  'week52High',
+  'week52Low',
+  'dividendYield',
+] as const satisfies ReadonlyArray<keyof Price>;
+
+function carryForwardPriceDetails(previous: Price | undefined, next: Price): Price {
+  if (previous === undefined) return next;
+  let merged: Price = next;
+  for (const key of PRICE_DETAIL_KEYS) {
+    if (key in next) continue;
+    const value = previous[key];
+    if (value === undefined) continue;
+    merged = { ...merged, [key]: value };
+  }
+  return merged;
 }
 
 // Unused variable kept only to make the typed events interface resolvable at

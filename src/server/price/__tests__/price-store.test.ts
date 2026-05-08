@@ -133,6 +133,65 @@ describe('T4 — price-update event', () => {
       volumeBaselineStatus: 'ready',
     });
   });
+
+  it('preserves REST detail fields when a later realtime tick omits them', () => {
+    const store = new PriceStore();
+    const received: Price[] = [];
+    store.on('price-update', (p) => {
+      received.push(p);
+    });
+
+    store.setPrice({
+      ticker: '005930',
+      price: 75_000,
+      changeRate: 1.5,
+      changeAbs: 1_100,
+      volume: 500_000,
+      updatedAt: '2026-05-08T00:00:00.000Z',
+      isSnapshot: false,
+      source: 'rest',
+      openPrice: 74_000,
+      highPrice: 76_000,
+      lowPrice: 73_500,
+      marketCapKrw: 471_000_000_000_000,
+      per: 14.2,
+      pbr: 1.1,
+      foreignOwnershipRate: 52.4,
+      week52High: 92_000,
+      week52Low: 61_000,
+    });
+
+    store.setPrice({
+      ticker: '005930',
+      price: 75_400,
+      changeRate: 1.8,
+      changeAbs: 1_500,
+      volume: 520_000,
+      updatedAt: '2026-05-08T00:00:01.000Z',
+      isSnapshot: false,
+      source: 'ws-integrated',
+    });
+
+    expect(store.getPrice('005930')).toMatchObject({
+      price: 75_400,
+      source: 'ws-integrated',
+      openPrice: 74_000,
+      highPrice: 76_000,
+      lowPrice: 73_500,
+      marketCapKrw: 471_000_000_000_000,
+      per: 14.2,
+      pbr: 1.1,
+      foreignOwnershipRate: 52.4,
+      week52High: 92_000,
+      week52Low: 61_000,
+    });
+    expect(received.at(-1)).toMatchObject({
+      price: 75_400,
+      openPrice: 74_000,
+      highPrice: 76_000,
+      lowPrice: 73_500,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -354,5 +354,6 @@ describe('volume visibility', () => {
     expect(html).toContain('61,000');
     expect(html).toContain('기준선 대비 2.4x');
     expect(html).toContain('미제공');
+    expect(html.match(/data-testid="metric-grid-filler"/g)).toHaveLength(3);
   });
 });
