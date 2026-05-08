@@ -28,8 +28,11 @@ function SparklineComponent({
   mini = false,
 }: SparklineProps) {
   const geom = useMemo(
-    () => buildSparklineGeometry(history, width, height),
-    [history, width, height],
+    () => buildSparklineGeometry(history, width, height, 2, {
+      maxPoints: mini ? 120 : 420,
+      liveTailPoints: mini ? 24 : 90,
+    }),
+    [history, width, height, mini],
   );
   if (geom === null) return null;
 

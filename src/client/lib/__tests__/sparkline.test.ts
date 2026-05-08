@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSparklineGeometry } from '../sparkline';
+import { buildAdaptivePriceSeries, buildSparklineGeometry } from '../sparkline';
 import type { PriceHistoryPoint } from '../../stores/price-history-store';
 
 function pt(price: number, ts: number): PriceHistoryPoint {
@@ -55,5 +55,30 @@ describe('buildSparklineGeometry', () => {
     expect(geom!.min).toBe(100);
     expect(geom!.max).toBe(150);
     expect(geom!.endX).toBeCloseTo(80);
+  });
+
+  it('downsamples long histories while preserving the live tail', () => {
+    const hist = Array.from({ length: 1_000 }, (_, idx) => pt(100 + (idx % 17), idx));
+    const sampled = buildAdaptivePriceSeries(hist, {
+      maxPoints: 120,
+      liveTailPoints: 24,
+    });
+    expect(sampled.length).toBeLessThanOrEqual(120);
+    expect(sampled.at(-1)?.ts).toBe(999);
+    expect(sampled.slice(-24).map((item) => item.ts)).toEqual(
+      hist.slice(-24).map((item) => item.ts),
+    );
+  });
+
+  it('keeps important extrema from the older context', () => {
+    const hist = Array.from({ length: 300 }, (_, idx) => pt(100, idx));
+    hist[40] = pt(50, 40);
+    hist[80] = pt(200, 80);
+    const sampled = buildAdaptivePriceSeries(hist, {
+      maxPoints: 80,
+      liveTailPoints: 12,
+    });
+    expect(sampled.some((item) => item.ts === 40)).toBe(true);
+    expect(sampled.some((item) => item.ts === 80)).toBe(true);
   });
 });

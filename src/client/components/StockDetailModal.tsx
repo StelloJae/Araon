@@ -571,7 +571,10 @@ function ChartArea({ history, positive }: ChartAreaProps) {
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
 
-  const geom = buildSparklineGeometry(history, innerW, innerH, MIN_POINTS_FOR_SPARKLINE);
+  const geom = buildSparklineGeometry(history, innerW, innerH, MIN_POINTS_FOR_SPARKLINE, {
+    maxPoints: 640,
+    liveTailPoints: 160,
+  });
   const accent = positive ? 'var(--kr-up)' : 'var(--kr-down)';
   const accentArea = positive ? 'var(--up-tint-1)' : 'var(--down-tint-1)';
 
