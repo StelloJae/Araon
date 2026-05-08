@@ -119,13 +119,13 @@ describe('fetchKisFluctuationRanking', () => {
         fid_cond_scr_div_code: '20170',
         fid_input_iscd: '0000',
         fid_rank_sort_cls_code: '0',
-        fid_input_cnt_1: '100',
+        fid_input_cnt_1: '0',
       }),
     });
     expect(items[0]?.ticker).toBe('005930');
   });
 
-  it('uses the KIS descending direction code for losers', async () => {
+  it('uses the KIS previous-day decline direction code for losers', async () => {
     const request = vi.fn(async () => ({ output: [] }));
 
     await fetchKisFluctuationRanking({
@@ -138,23 +138,24 @@ describe('fetchKisFluctuationRanking', () => {
     expect(request).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.objectContaining({
-          fid_rank_sort_cls_code: '3',
-          fid_input_cnt_1: '100',
+          fid_rank_sort_cls_code: '1',
+          fid_input_cnt_1: '0',
         }),
       }),
     );
   });
 
-  it('uses the official overtime endpoint during NXT after-hours', async () => {
+  it('keeps TOP100 on the full-day fluctuation endpoint during NXT after-hours', async () => {
     const request = vi.fn(async () => ({
-      output2: [
+      output: [
         {
-          mksc_shrn_iscd: '277810',
+          data_rank: '1',
+          stck_shrn_iscd: '277810',
           hts_kor_isnm: '레인보우로보틱스',
-          ovtm_untp_prpr: '762000',
-          ovtm_untp_prdy_vrss: '65000',
-          ovtm_untp_prdy_ctrt: '9.33',
-          ovtm_untp_vol: '12345',
+          stck_prpr: '782000',
+          prdy_vrss: '86000',
+          prdy_ctrt: '12.20',
+          acml_vol: '12345',
         },
       ],
     }));
@@ -168,21 +169,23 @@ describe('fetchKisFluctuationRanking', () => {
 
     expect(request).toHaveBeenCalledWith({
       method: 'GET',
-      path: '/uapi/domestic-stock/v1/ranking/overtime-fluctuation',
-      trId: 'FHPST02340000',
+      path: '/uapi/domestic-stock/v1/ranking/fluctuation',
+      trId: 'FHPST01700000',
       endpointClass: 'ranking',
       query: expect.objectContaining({
-        FID_COND_MRKT_DIV_CODE: 'J',
-        FID_COND_SCR_DIV_CODE: '20234',
-        FID_INPUT_ISCD: '0000',
-        FID_DIV_CLS_CODE: '2',
+        fid_cond_mrkt_div_code: 'J',
+        fid_cond_scr_div_code: '20170',
+        fid_input_iscd: '0000',
+        fid_rank_sort_cls_code: '0',
+        fid_input_cnt_1: '0',
       }),
     });
     expect(items[0]?.ticker).toBe('277810');
+    expect(items[0]?.changePct).toBe(12.2);
   });
 
-  it('uses the KIS overtime descending direction code for losers', async () => {
-    const request = vi.fn(async () => ({ output2: [] }));
+  it('keeps loser TOP100 on the full-day fluctuation endpoint during NXT after-hours', async () => {
+    const request = vi.fn(async () => ({ output: [] }));
 
     await fetchKisFluctuationRanking({
       direction: 'losers',
@@ -194,9 +197,55 @@ describe('fetchKisFluctuationRanking', () => {
     expect(request).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.objectContaining({
-          FID_DIV_CLS_CODE: '5',
+          fid_rank_sort_cls_code: '1',
+          fid_input_cnt_1: '0',
         }),
       }),
     );
+  });
+
+  it('filters and re-ranks mixed KIS rows by requested direction', async () => {
+    const request = vi.fn(async () => ({
+      output: [
+        {
+          data_rank: '1',
+          stck_shrn_iscd: '000001',
+          hts_kor_isnm: '깨진상승목록음수',
+          stck_prpr: '1000',
+          prdy_vrss: '-10',
+          prdy_ctrt: '-1.00',
+          acml_vol: '100',
+        },
+        {
+          data_rank: '2',
+          stck_shrn_iscd: '000002',
+          hts_kor_isnm: '상승이',
+          stck_prpr: '2000',
+          prdy_vrss: '100',
+          prdy_ctrt: '5.00',
+          acml_vol: '200',
+        },
+        {
+          data_rank: '3',
+          stck_shrn_iscd: '000003',
+          hts_kor_isnm: '상승일',
+          stck_prpr: '3000',
+          prdy_vrss: '300',
+          prdy_ctrt: '10.00',
+          acml_vol: '300',
+        },
+      ],
+    }));
+
+    const items = await fetchKisFluctuationRanking({
+      direction: 'gainers',
+      count: 10,
+      restClient: { request },
+    });
+
+    expect(items.map((item) => [item.rank, item.ticker, item.changePct])).toEqual([
+      [1, '000003', 10],
+      [2, '000002', 5],
+    ]);
   });
 });

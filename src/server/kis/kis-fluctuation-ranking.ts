@@ -7,9 +7,8 @@ import type { KisRestClient } from './kis-rest-client.js';
 
 const FLUCTUATION_PATH = '/uapi/domestic-stock/v1/ranking/fluctuation';
 const FLUCTUATION_TR_ID = 'FHPST01700000';
-const OVERTIME_FLUCTUATION_PATH = '/uapi/domestic-stock/v1/ranking/overtime-fluctuation';
-const OVERTIME_FLUCTUATION_TR_ID = 'FHPST02340000';
 const MAX_RANKING_COUNT = 100;
+const KIS_ALL_RANKING_COUNT = '0';
 
 interface KisFluctuationRow {
   data_rank?: unknown;
@@ -37,33 +36,9 @@ export async function fetchKisFluctuationRanking({
   direction,
   count,
   restClient,
-  now = new Date(),
+  now: _now = new Date(),
 }: FetchKisFluctuationRankingInput): Promise<MarketTopMoverItem[]> {
   const safeCount = clampCount(count);
-  if (isOvertimeWindow(now)) {
-    const payload = await restClient.request<KisFluctuationResponse>({
-      method: 'GET',
-      path: OVERTIME_FLUCTUATION_PATH,
-      trId: OVERTIME_FLUCTUATION_TR_ID,
-      endpointClass: 'ranking',
-      query: {
-        FID_COND_MRKT_DIV_CODE: 'J',
-        FID_MRKT_CLS_CODE: '',
-        FID_COND_SCR_DIV_CODE: '20234',
-        FID_INPUT_ISCD: '0000',
-        FID_DIV_CLS_CODE: direction === 'gainers' ? '2' : '5',
-        FID_INPUT_PRICE_1: '',
-        FID_INPUT_PRICE_2: '',
-        FID_VOL_CNT: '',
-        FID_TRGT_CLS_CODE: '',
-        FID_TRGT_EXLS_CLS_CODE: '',
-      },
-    });
-
-    const rows = Array.isArray(payload.output2) ? payload.output2 : [];
-    return mapKisOvertimeFluctuationRows(rows).slice(0, safeCount);
-  }
-
   const payload = await restClient.request<KisFluctuationResponse>({
     method: 'GET',
     path: FLUCTUATION_PATH,
@@ -73,8 +48,8 @@ export async function fetchKisFluctuationRanking({
       fid_cond_mrkt_div_code: 'J',
       fid_cond_scr_div_code: '20170',
       fid_input_iscd: '0000',
-      fid_rank_sort_cls_code: direction === 'gainers' ? '0' : '3',
-      fid_input_cnt_1: String(safeCount),
+      fid_rank_sort_cls_code: direction === 'gainers' ? '0' : '1',
+      fid_input_cnt_1: KIS_ALL_RANKING_COUNT,
       fid_prc_cls_code: '0',
       fid_input_price_1: '',
       fid_input_price_2: '',
@@ -88,7 +63,7 @@ export async function fetchKisFluctuationRanking({
   });
 
   const rows = Array.isArray(payload.output) ? payload.output : [];
-  return mapKisFluctuationRows(rows).slice(0, safeCount);
+  return filterAndSortByDirection(mapKisFluctuationRows(rows), direction).slice(0, safeCount);
 }
 
 export function mapKisFluctuationRows(rows: unknown[]): MarketTopMoverItem[] {
@@ -152,30 +127,22 @@ export function mapKisOvertimeFluctuationRows(rows: unknown[]): MarketTopMoverIt
   return items;
 }
 
-function isOvertimeWindow(now: Date): boolean {
-  const minutes = kstMinutes(now);
-  return (
-    (minutes >= 8 * 60 && minutes < 8 * 60 + 50) ||
-    (minutes >= 15 * 60 + 30 && minutes < 20 * 60)
-  );
-}
-
-function kstMinutes(now: Date): number {
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Seoul',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(now);
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
-  return hour * 60 + minute;
-}
-
 function clampCount(count: number): number {
   if (!Number.isFinite(count)) return MAX_RANKING_COUNT;
   return Math.min(MAX_RANKING_COUNT, Math.max(1, Math.trunc(count)));
+}
+
+function filterAndSortByDirection(
+  items: MarketTopMoverItem[],
+  direction: MarketTopMoverDirection,
+): MarketTopMoverItem[] {
+  const filtered = items.filter((item) =>
+    direction === 'gainers' ? item.changePct > 0 : item.changePct < 0,
+  );
+  filtered.sort((a, b) =>
+    direction === 'gainers' ? b.changePct - a.changePct : a.changePct - b.changePct,
+  );
+  return filtered.map((item, index) => ({ ...item, rank: index + 1 }));
 }
 
 function parseFiniteNumber(value: unknown): number | null {
