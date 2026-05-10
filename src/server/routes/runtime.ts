@@ -69,6 +69,11 @@ import {
 } from '../notifications/phone-delivery-log.js';
 import type { KisGovernorTelemetrySnapshot } from '../kis/kis-outbound-limiter.js';
 import {
+  buildKisGovernorAimdObservation,
+  type KisGovernorAimdDecision,
+  type KisGovernorAimdWindow,
+} from '../kis/kis-governor-aimd.js';
+import {
   defaultKisGovernorAimdState,
   type KisGovernorAimdStateSnapshot,
 } from '../kis/kis-governor-aimd-state.js';
@@ -266,10 +271,36 @@ export interface RuntimeKisGovernorAimdPayload {
   readonly nextEvaluationAt: string | null;
   readonly cleanRegularMarketWindowCount: number;
   readonly degradedWindowCount: number;
+  readonly lastDecision: RuntimeKisGovernorAimdDecisionPayload | null;
+  readonly observationWindow: RuntimeKisGovernorAimdWindowPayload | null;
   readonly rollbackBaseline: {
     readonly pollingMinStartGapMs: number;
     readonly pollingRecoveryRatePerSec: number;
   };
+}
+
+export interface RuntimeKisGovernorAimdDecisionPayload {
+  readonly evaluatedAt: string | null;
+  readonly source: 'telemetry_snapshot';
+  readonly action: string;
+  readonly reason: string;
+  readonly currentPollingMinStartGapMs: number;
+  readonly proposedPollingMinStartGapMs: number;
+  readonly applyRuntimeChange: boolean;
+}
+
+export interface RuntimeKisGovernorAimdWindowPayload {
+  readonly classification: string;
+  readonly durationMs: number;
+  readonly completedPollingCycles: number;
+  readonly throttleCount: number;
+  readonly circuitBreakerCount: number;
+  readonly throttleImmediatelyAfterNormal: boolean;
+  readonly maxRecoveryAttemptCount: number;
+  readonly queueStuckAfterRecovery: boolean;
+  readonly telemetryMalformed: boolean;
+  readonly dataHealthDisagrees: boolean;
+  readonly cleanRegularMarketWindowCount: number;
 }
 
 const sessionEnableBodySchema = z.object({
@@ -805,7 +836,7 @@ function buildKisOutboundLimiterPayload(
       circuitBreakerUntil: null,
       recentThrottleCount: 0,
       recentSuccessCount: 0,
-      aimd: buildKisGovernorAimdPayload(undefined),
+      aimd: buildKisGovernorAimdPayload(undefined, undefined),
       telemetry: buildKisGovernorTelemetryPayload(undefined),
       profiles: [],
     };
@@ -861,7 +892,10 @@ function buildKisOutboundLimiterPayload(
     circuitBreakerUntil: circuitBreaker?.circuitBreakerUntil ?? null,
     recentThrottleCount: profiles.reduce((sum, profile) => sum + profile.recentThrottleCount, 0),
     recentSuccessCount: profiles.reduce((sum, profile) => sum + profile.recentSuccessCount, 0),
-    aimd: buildKisGovernorAimdPayload(runtimeState.runtime.governorAimd?.snapshot()),
+    aimd: buildKisGovernorAimdPayload(
+      runtimeState.runtime.governorAimd?.snapshot(),
+      snapshot.telemetry,
+    ),
     telemetry: buildKisGovernorTelemetryPayload(snapshot.telemetry),
     profiles,
   };
@@ -869,8 +903,16 @@ function buildKisOutboundLimiterPayload(
 
 function buildKisGovernorAimdPayload(
   state: KisGovernorAimdStateSnapshot | undefined,
+  telemetry: KisGovernorTelemetrySnapshot | undefined,
 ): RuntimeKisGovernorAimdPayload {
   const snapshot = state ?? defaultKisGovernorAimdState();
+  const observation =
+    telemetry !== undefined && telemetry.recent.length > 0
+      ? buildKisGovernorAimdObservation({
+          state: snapshot,
+          telemetry,
+        })
+      : null;
   return {
     enabled: snapshot.enabled,
     mode: snapshot.mode,
@@ -882,10 +924,49 @@ function buildKisGovernorAimdPayload(
     nextEvaluationAt: millisToIso(snapshot.nextEvaluationAtMs),
     cleanRegularMarketWindowCount: snapshot.cleanRegularMarketWindowCount,
     degradedWindowCount: snapshot.degradedWindowCount,
+    lastDecision: observation !== null
+      ? buildKisGovernorAimdDecisionPayload(observation.evaluatedAtMs, observation.decision)
+      : null,
+    observationWindow: observation !== null
+      ? buildKisGovernorAimdWindowPayload(observation.window)
+      : null,
     rollbackBaseline: {
       pollingMinStartGapMs: snapshot.rollbackBaseline.pollingMinStartGapMs,
       pollingRecoveryRatePerSec: snapshot.rollbackBaseline.pollingRecoveryRatePerSec,
     },
+  };
+}
+
+function buildKisGovernorAimdDecisionPayload(
+  evaluatedAtMs: number,
+  decision: KisGovernorAimdDecision,
+): RuntimeKisGovernorAimdDecisionPayload {
+  return {
+    evaluatedAt: millisToIso(evaluatedAtMs),
+    source: 'telemetry_snapshot',
+    action: decision.action,
+    reason: decision.reason,
+    currentPollingMinStartGapMs: decision.currentPollingMinStartGapMs,
+    proposedPollingMinStartGapMs: decision.proposedPollingMinStartGapMs,
+    applyRuntimeChange: decision.applyRuntimeChange,
+  };
+}
+
+function buildKisGovernorAimdWindowPayload(
+  window: KisGovernorAimdWindow,
+): RuntimeKisGovernorAimdWindowPayload {
+  return {
+    classification: window.classification,
+    durationMs: window.durationMs,
+    completedPollingCycles: window.completedPollingCycles,
+    throttleCount: window.throttleCount,
+    circuitBreakerCount: window.circuitBreakerCount,
+    throttleImmediatelyAfterNormal: window.throttleImmediatelyAfterNormal,
+    maxRecoveryAttemptCount: window.maxRecoveryAttemptCount,
+    queueStuckAfterRecovery: window.queueStuckAfterRecovery,
+    telemetryMalformed: window.telemetryMalformed,
+    dataHealthDisagrees: window.dataHealthDisagrees,
+    cleanRegularMarketWindowCount: window.cleanRegularMarketWindowCount,
   };
 }
 

@@ -60,6 +60,8 @@ As of 2026-05-10:
 - pure polling AIMD evaluator is implemented behind tests
 - local JSON state store is implemented with disabled observe-only defaults
 - `/runtime/data-health` exposes sanitized AIMD diagnostics
+- data-health derives an observe-only `lastDecision` from sanitized governor
+  telemetry snapshots
 - no runtime polling gap is changed by AIMD
 - production activation still requires PM approval
 

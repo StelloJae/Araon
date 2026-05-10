@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateKisGovernorAimd } from '../kis-governor-aimd.js';
+import {
+  buildKisGovernorAimdObservation,
+  evaluateKisGovernorAimd,
+} from '../kis-governor-aimd.js';
 
 describe('evaluateKisGovernorAimd', () => {
   it('keeps clean windows until enough regular-market evidence accumulates', () => {
@@ -169,6 +172,74 @@ describe('evaluateKisGovernorAimd', () => {
   });
 });
 
+describe('buildKisGovernorAimdObservation', () => {
+  it('derives an observe-only tighten decision from repeated polling throttles', () => {
+    const observation = buildKisGovernorAimdObservation({
+      nowMs: 1_700_000_600_000,
+      classification: 'regular_market',
+      state: {
+        enabled: false,
+        mode: 'observe_only',
+        currentPollingMinStartGapMs: 350,
+        cleanRegularMarketWindowCount: 0,
+      },
+      telemetry: {
+        capacity: 10,
+        eventCount: 3,
+        recent: [
+          telemetryEvent(1_700_000_000_000, 'throttle'),
+          telemetryEvent(1_700_000_010_000, 'normal'),
+          telemetryEvent(1_700_000_600_000, 'throttle'),
+        ],
+      },
+    });
+
+    expect(observation.window).toMatchObject({
+      classification: 'regular_market',
+      durationMs: 600_000,
+      completedPollingCycles: 2,
+      throttleCount: 2,
+      cleanRegularMarketWindowCount: 0,
+    });
+    expect(observation.decision).toMatchObject({
+      mode: 'observe_only',
+      action: 'tighten',
+      reason: 'repeated_throttle',
+      currentPollingMinStartGapMs: 350,
+      proposedPollingMinStartGapMs: 438,
+      applyRuntimeChange: false,
+    });
+  });
+
+  it('holds when telemetry is present but the observation window is too short', () => {
+    const observation = buildKisGovernorAimdObservation({
+      nowMs: 1_700_000_030_000,
+      classification: 'regular_market',
+      state: {
+        enabled: false,
+        mode: 'observe_only',
+        currentPollingMinStartGapMs: 350,
+        cleanRegularMarketWindowCount: 0,
+      },
+      telemetry: {
+        capacity: 10,
+        eventCount: 2,
+        recent: [
+          telemetryEvent(1_700_000_000_000, 'throttle'),
+          telemetryEvent(1_700_000_030_000, 'normal'),
+        ],
+      },
+    });
+
+    expect(observation.window.durationMs).toBe(30_000);
+    expect(observation.decision).toMatchObject({
+      action: 'hold',
+      reason: 'window_too_short',
+      proposedPollingMinStartGapMs: 350,
+    });
+  });
+});
+
 function cleanWindow(
   overrides: Partial<Parameters<typeof evaluateKisGovernorAimd>[0]['window']> = {},
 ): Parameters<typeof evaluateKisGovernorAimd>[0]['window'] {
@@ -186,4 +257,24 @@ function cleanWindow(
     cleanRegularMarketWindowCount: 0,
     ...overrides,
   };
+}
+
+function telemetryEvent(
+  atMs: number,
+  event: 'throttle' | 'normal' | 'recovered' | 'half_open' | 'circuit_breaker',
+) {
+  return {
+    atMs,
+    event,
+    profileId: 'primary',
+    endpointClass: 'polling',
+    priorityClass: 'polling',
+    state: event === 'normal' ? 'normal' : event === 'circuit_breaker' ? 'circuit_breaker' : 'throttled',
+    throttleCode: event === 'throttle' ? 'EGW00201' : null,
+    recoveryAttemptCount: 0,
+    observedRecoveryMs: event === 'normal' ? 200 : null,
+    currentAllowedRps: event === 'recovered' ? 3 : 15,
+    minStartGapMs: 350,
+    maxInFlight: 2,
+  } as const;
 }

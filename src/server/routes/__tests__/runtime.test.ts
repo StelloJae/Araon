@@ -138,6 +138,8 @@ function defaultAimdPayload() {
     nextEvaluationAt: null,
     cleanRegularMarketWindowCount: 0,
     degradedWindowCount: 0,
+    lastDecision: null,
+    observationWindow: null,
     rollbackBaseline: {
       pollingMinStartGapMs: 350,
       pollingRecoveryRatePerSec: 3,
@@ -685,7 +687,23 @@ describe('GET /runtime/data-health', () => {
       circuitBreakerUntil: null,
       recentThrottleCount: 1,
       recentSuccessCount: 3,
-      aimd: defaultAimdPayload(),
+      aimd: {
+        ...defaultAimdPayload(),
+        lastDecision: expect.objectContaining({
+          source: 'telemetry_snapshot',
+          action: 'hold',
+          reason: 'insufficient_polling_cycles',
+          currentPollingMinStartGapMs: 350,
+          proposedPollingMinStartGapMs: 350,
+          applyRuntimeChange: false,
+        }),
+        observationWindow: expect.objectContaining({
+          classification: 'mixed',
+          completedPollingCycles: 1,
+          throttleCount: 1,
+          circuitBreakerCount: 0,
+        }),
+      },
       telemetry: {
         capacity: 3,
         eventCount: 1,
@@ -781,12 +799,121 @@ describe('GET /runtime/data-health', () => {
       nextEvaluationAt: '2026-05-08T14:40:00.000Z',
       cleanRegularMarketWindowCount: 3,
       degradedWindowCount: 0,
+      lastDecision: null,
+      observationWindow: null,
       rollbackBaseline: {
         pollingMinStartGapMs: 350,
         pollingRecoveryRatePerSec: 3,
       },
     });
     expect(JSON.stringify(body)).not.toContain('SHOULD_NOT_APPEAR');
+  });
+
+  it('exposes observe-only AIMD last decision from sanitized telemetry', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          governorAimd: {
+            snapshot: vi.fn(() => ({
+              enabled: false,
+              mode: 'observe_only',
+              currentPollingMinStartGapMs: 350,
+              baselinePollingMinStartGapMs: 350,
+              lastAdjustmentAtMs: null,
+              lastAdjustmentDirection: 'none',
+              lastAdjustmentReason: null,
+              nextEvaluationAtMs: null,
+              cleanRegularMarketWindowCount: 0,
+              degradedWindowCount: 0,
+              rollbackBaseline: {
+                pollingMinStartGapMs: 350,
+                pollingRecoveryRatePerSec: 3,
+              },
+            })),
+          },
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 10,
+              profiles: [],
+              telemetry: {
+                capacity: 10,
+                eventCount: 3,
+                recent: [
+                  {
+                    atMs: Date.parse('2026-05-08T14:00:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 350,
+                    maxInFlight: 2,
+                  },
+                  {
+                    atMs: Date.parse('2026-05-08T14:00:01.000Z'),
+                    event: 'normal',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'normal',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: 500,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 350,
+                    maxInFlight: 2,
+                  },
+                  {
+                    atMs: Date.parse('2026-05-08T14:10:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 350,
+                    maxInFlight: 2,
+                  },
+                ],
+              },
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const aimd = res.json().data.kisOutboundLimiter.aimd;
+
+    expect(res.statusCode).toBe(200);
+    expect(aimd.lastDecision).toMatchObject({
+      source: 'telemetry_snapshot',
+      action: 'hold',
+      reason: 'mixed_window',
+      currentPollingMinStartGapMs: 350,
+      proposedPollingMinStartGapMs: 350,
+      applyRuntimeChange: false,
+    });
+    expect(aimd.observationWindow).toMatchObject({
+      classification: 'mixed',
+      completedPollingCycles: 2,
+      throttleCount: 2,
+      circuitBreakerCount: 0,
+      cleanRegularMarketWindowCount: 0,
+    });
   });
 
   it('does not summarize a pending throttle probe as normal when cooldown time has elapsed', async () => {

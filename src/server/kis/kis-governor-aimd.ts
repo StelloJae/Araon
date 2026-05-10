@@ -54,6 +54,39 @@ export interface KisGovernorAimdDecision {
     | 'waiting_for_clean_windows';
 }
 
+export interface KisGovernorAimdObservationState {
+  enabled: boolean;
+  mode: KisGovernorAimdMode;
+  currentPollingMinStartGapMs: number;
+  cleanRegularMarketWindowCount: number;
+}
+
+export interface KisGovernorAimdObservationTelemetryEvent {
+  atMs: number;
+  event: 'throttle' | 'half_open' | 'recovered' | 'normal' | 'circuit_breaker';
+  endpointClass?: string | null;
+  priorityClass?: string;
+  recoveryAttemptCount?: number;
+}
+
+export interface KisGovernorAimdObservationTelemetry {
+  recent: readonly KisGovernorAimdObservationTelemetryEvent[];
+}
+
+export interface KisGovernorAimdObservationInput {
+  nowMs?: number;
+  classification?: KisGovernorAimdWindowClassification;
+  state: KisGovernorAimdObservationState;
+  telemetry?: KisGovernorAimdObservationTelemetry;
+}
+
+export interface KisGovernorAimdObservation {
+  evaluatedAtMs: number;
+  source: 'telemetry_snapshot';
+  window: KisGovernorAimdWindow;
+  decision: KisGovernorAimdDecision;
+}
+
 const MIN_REVIEW_WINDOW_MS = 10 * 60 * 1_000;
 const MIN_COMPLETED_POLLING_CYCLES = 2;
 const REQUIRED_CLEAN_WINDOWS = 3;
@@ -121,6 +154,52 @@ export function evaluateKisGovernorAimd(
   return changed(mode, currentGap, proposedGap, 'loosen', 'clean_regular_market_windows');
 }
 
+export function buildKisGovernorAimdObservation(
+  input: KisGovernorAimdObservationInput,
+): KisGovernorAimdObservation {
+  const evaluatedAtMs = Math.max(0, Math.trunc(input.nowMs ?? Date.now()));
+  const telemetryEvents = input.telemetry?.recent ?? [];
+  const telemetryMalformed = telemetryEvents.some((event) => !Number.isFinite(event.atMs));
+  const pollingEvents = telemetryEvents
+    .filter((event) => event.endpointClass === 'polling' || event.priorityClass === 'polling')
+    .filter((event) => Number.isFinite(event.atMs))
+    .sort((a, b) => a.atMs - b.atMs);
+  const firstEventAtMs = pollingEvents[0]?.atMs ?? evaluatedAtMs;
+  const throttleCount = pollingEvents.filter((event) => event.event === 'throttle').length;
+  const circuitBreakerCount = pollingEvents.filter((event) => event.event === 'circuit_breaker').length;
+  const maxRecoveryAttemptCount = pollingEvents.reduce(
+    (max, event) => Math.max(max, Math.trunc(event.recoveryAttemptCount ?? 0)),
+    0,
+  );
+  const window: KisGovernorAimdWindow = {
+    classification: input.classification ?? 'mixed',
+    durationMs: Math.max(0, evaluatedAtMs - firstEventAtMs),
+    completedPollingCycles: pollingEvents.length > 0 ? Math.min(2, pollingEvents.length) : 0,
+    throttleCount,
+    circuitBreakerCount,
+    throttleImmediatelyAfterNormal: hasThrottleImmediatelyAfterNormal(pollingEvents),
+    maxRecoveryAttemptCount,
+    queueStuckAfterRecovery: false,
+    telemetryMalformed,
+    dataHealthDisagrees: false,
+    cleanRegularMarketWindowCount:
+      throttleCount === 0 && circuitBreakerCount === 0
+        ? input.state.cleanRegularMarketWindowCount
+        : 0,
+  };
+
+  return {
+    evaluatedAtMs,
+    source: 'telemetry_snapshot',
+    window,
+    decision: evaluateKisGovernorAimd({
+      mode: input.state.enabled ? input.state.mode : 'observe_only',
+      currentPollingMinStartGapMs: input.state.currentPollingMinStartGapMs,
+      window,
+    }),
+  };
+}
+
 function tighteningSignal(
   window: KisGovernorAimdWindow,
 ): { factor: number; reason: KisGovernorAimdDecision['reason'] } | null {
@@ -140,6 +219,15 @@ function tighteningSignal(
     return { factor: 1.15, reason: 'queue_stuck_after_recovery' };
   }
   return null;
+}
+
+function hasThrottleImmediatelyAfterNormal(
+  events: readonly KisGovernorAimdObservationTelemetryEvent[],
+): boolean {
+  return events.some((event, index) => {
+    if (event.event !== 'throttle') return false;
+    return events[index - 1]?.event === 'normal';
+  });
 }
 
 function unchanged(
