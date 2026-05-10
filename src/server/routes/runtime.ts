@@ -346,6 +346,11 @@ const localBackupPayloadSchema = z.object({
   favorites: z.array(backupFavoriteSchema).max(5000),
 });
 
+const kisGovernorAimdControlBodySchema = z.object({
+  action: z.enum(['enable_active', 'enable_observe_only', 'disable', 'rollback']),
+  pollingMinStartGapMs: z.number().int().min(0).max(1_200).optional(),
+});
+
 const sessionTimers = new WeakMap<KisRuntime, ReturnType<typeof setTimeout>>();
 
 export async function runtimeRoutes(
@@ -609,6 +614,55 @@ export async function runtimeRoutes(
       },
     });
   });
+
+  app.post<{ Body: z.infer<typeof kisGovernorAimdControlBodySchema> }>(
+    '/runtime/kis-governor/aimd',
+    async (request, reply) => {
+      const parsed = kisGovernorAimdControlBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'INVALID_KIS_GOVERNOR_AIMD_BODY' },
+        });
+      }
+
+      const runtimeState = opts.runtimeRef.get();
+      if (runtimeState.status !== 'started') {
+        return reply.status(503).send({
+          success: false,
+          error: {
+            code: 'KIS_RUNTIME_NOT_READY',
+            runtime: runtimeState.status,
+          },
+        });
+      }
+      if (runtimeState.runtime.governorAimd === undefined) {
+        return reply.status(503).send({
+          success: false,
+          error: { code: 'KIS_GOVERNOR_AIMD_UNAVAILABLE' },
+        });
+      }
+
+      const nextState = await applyKisGovernorAimdControl(
+        runtimeState.runtime,
+        parsed.data,
+      );
+      const limiterSnapshot = runtimeState.runtime.outboundLimiter.snapshot();
+      return reply.send({
+        success: true,
+        data: {
+          aimd: buildKisGovernorAimdPayload(
+            nextState,
+            limiterSnapshot.telemetry,
+            classifyAimdWindowFromMarketPhase(
+              runtimeState.runtime.marketHoursScheduler.getCurrentPhase(),
+            ),
+            runtimeState.runtime.pollingScheduler.getStatus().cycleCount,
+          ),
+        },
+      });
+    },
+  );
 
   app.get('/runtime/realtime/status', async (_request, reply) => {
     const configured = await isCredentialConfigured(opts.credentialStore);
@@ -905,6 +959,88 @@ function buildKisOutboundLimiterPayload(
     ),
     telemetry: buildKisGovernorTelemetryPayload(snapshot.telemetry),
     profiles,
+  };
+}
+
+async function applyKisGovernorAimdControl(
+  runtime: KisRuntime,
+  input: z.infer<typeof kisGovernorAimdControlBodySchema>,
+): Promise<KisGovernorAimdStateSnapshot> {
+  if (runtime.governorAimd === undefined) {
+    return defaultKisGovernorAimdState();
+  }
+
+  if (input.action === 'rollback') {
+    await runtime.governorAimd.reset();
+    runtime.outboundLimiter.setClassPolicyOverride?.('polling', null);
+    return runtime.governorAimd.snapshot();
+  }
+
+  const nextState = buildControlledKisGovernorAimdState(
+    runtime.governorAimd.snapshot(),
+    input,
+  );
+  await runtime.governorAimd.save(nextState);
+  if (nextState.enabled && nextState.mode === 'active') {
+    runtime.outboundLimiter.setClassPolicyOverride?.('polling', {
+      minStartGapMs: nextState.currentPollingMinStartGapMs,
+    });
+  } else {
+    runtime.outboundLimiter.setClassPolicyOverride?.('polling', null);
+  }
+  return nextState;
+}
+
+function buildControlledKisGovernorAimdState(
+  currentInput: KisGovernorAimdStateSnapshot,
+  input: z.infer<typeof kisGovernorAimdControlBodySchema>,
+): KisGovernorAimdStateSnapshot {
+  const current = knownKisGovernorAimdState(currentInput);
+  const requestedGap = Math.max(
+    0,
+    Math.trunc(input.pollingMinStartGapMs ?? current.currentPollingMinStartGapMs),
+  );
+
+  if (input.action === 'disable') {
+    return {
+      ...current,
+      enabled: false,
+      mode: 'observe_only',
+      currentPollingMinStartGapMs: current.baselinePollingMinStartGapMs,
+      nextEvaluationAtMs: null,
+      cleanRegularMarketWindowCount: 0,
+      degradedWindowCount: 0,
+      rollbackBaseline: { ...current.rollbackBaseline },
+    };
+  }
+
+  return {
+    ...current,
+    enabled: true,
+    mode: input.action === 'enable_active' ? 'active' : 'observe_only',
+    currentPollingMinStartGapMs: requestedGap,
+    nextEvaluationAtMs: null,
+    cleanRegularMarketWindowCount: 0,
+    degradedWindowCount: 0,
+    rollbackBaseline: { ...current.rollbackBaseline },
+  };
+}
+
+function knownKisGovernorAimdState(
+  state: KisGovernorAimdStateSnapshot,
+): KisGovernorAimdStateSnapshot {
+  return {
+    enabled: state.enabled,
+    mode: state.mode,
+    currentPollingMinStartGapMs: state.currentPollingMinStartGapMs,
+    baselinePollingMinStartGapMs: state.baselinePollingMinStartGapMs,
+    lastAdjustmentAtMs: state.lastAdjustmentAtMs,
+    lastAdjustmentDirection: state.lastAdjustmentDirection,
+    lastAdjustmentReason: state.lastAdjustmentReason,
+    nextEvaluationAtMs: state.nextEvaluationAtMs,
+    cleanRegularMarketWindowCount: state.cleanRegularMarketWindowCount,
+    degradedWindowCount: state.degradedWindowCount,
+    rollbackBaseline: { ...state.rollbackBaseline },
   };
 }
 

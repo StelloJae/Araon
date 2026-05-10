@@ -69,7 +69,7 @@ function startedRuntime(
       getStats?: ReturnType<typeof vi.fn>;
     };
     outboundLimiter?: KisRuntime['outboundLimiter'];
-    governorAimd?: { snapshot(): unknown };
+    governorAimd?: Partial<NonNullable<KisRuntime['governorAimd']>> & { snapshot(): unknown };
     marketPhase?: MarketPhase;
     pollingStatus?: Partial<PollingSchedulerStatus>;
     pollingStop?: ReturnType<typeof vi.fn>;
@@ -159,6 +159,25 @@ function defaultAimdPayload() {
     degradedWindowCount: 0,
     lastDecision: null,
     observationWindow: null,
+    rollbackBaseline: {
+      pollingMinStartGapMs: 350,
+      pollingRecoveryRatePerSec: 3,
+    },
+  };
+}
+
+function defaultAimdState() {
+  return {
+    enabled: false,
+    mode: 'observe_only' as const,
+    currentPollingMinStartGapMs: 350,
+    baselinePollingMinStartGapMs: 350,
+    lastAdjustmentAtMs: null,
+    lastAdjustmentDirection: 'none' as const,
+    lastAdjustmentReason: null,
+    nextEvaluationAtMs: null,
+    cleanRegularMarketWindowCount: 0,
+    degradedWindowCount: 0,
     rollbackBaseline: {
       pollingMinStartGapMs: 350,
       pollingRecoveryRatePerSec: 3,
@@ -1175,6 +1194,149 @@ describe('GET /runtime/data-health', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().data.kisOutboundLimiter.currentState).toBe('throttled');
+  });
+});
+
+describe('POST /runtime/kis-governor/aimd', () => {
+  it('enables active AIMD and applies the polling override without leaking state extras', async () => {
+    let current = {
+      ...defaultAimdState(),
+      rawBody: 'SHOULD_NOT_APPEAR',
+      privateDiagnostic: 'SHOULD_NOT_APPEAR',
+    } as any;
+    const save = vi.fn(async (next: any) => {
+      current = next;
+    });
+    const setClassPolicyOverride = vi.fn();
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          governorAimd: {
+            load: vi.fn(async () => current),
+            save,
+            reset: vi.fn(async () => undefined),
+            snapshot: vi.fn(() => current),
+          },
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            setClassPolicyOverride,
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 15,
+              profiles: [],
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/kis-governor/aimd',
+      payload: {
+        action: 'enable_active',
+        pollingMinStartGapMs: 320,
+      },
+    });
+    const body = res.json();
+
+    expect(res.statusCode).toBe(200);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      enabled: true,
+      mode: 'active',
+      currentPollingMinStartGapMs: 320,
+      nextEvaluationAtMs: null,
+      cleanRegularMarketWindowCount: 0,
+      degradedWindowCount: 0,
+    }));
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 320 });
+    expect(body.data.aimd).toMatchObject({
+      enabled: true,
+      mode: 'active',
+      currentPollingMinStartGapMs: 320,
+      nextEvaluationAt: null,
+    });
+    expect(JSON.stringify(body)).not.toContain('SHOULD_NOT_APPEAR');
+  });
+
+  it('rolls AIMD back to disabled defaults and clears the polling override', async () => {
+    let current = {
+      ...defaultAimdState(),
+      enabled: true,
+      mode: 'active' as const,
+      currentPollingMinStartGapMs: 438,
+    };
+    const reset = vi.fn(async () => {
+      current = defaultAimdState();
+    });
+    const setClassPolicyOverride = vi.fn();
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          governorAimd: {
+            load: vi.fn(async () => current),
+            save: vi.fn(async (next) => {
+              current = next;
+            }),
+            reset,
+            snapshot: vi.fn(() => current),
+          },
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            setClassPolicyOverride,
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 15,
+              profiles: [],
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/kis-governor/aimd',
+      payload: { action: 'rollback' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', null);
+    expect(res.json().data.aimd).toMatchObject({
+      enabled: false,
+      mode: 'observe_only',
+      currentPollingMinStartGapMs: 350,
+    });
+  });
+
+  it('rejects AIMD control when KIS runtime is not started', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/kis-governor/aimd',
+      payload: { action: 'enable_active' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({
+      success: false,
+      error: {
+        code: 'KIS_RUNTIME_NOT_READY',
+        runtime: 'unconfigured',
+      },
+    });
   });
 });
 
