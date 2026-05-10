@@ -868,6 +868,7 @@ function buildKisOutboundLimiterPayload(
   const lastThrottle = profiles
     .filter((profile) => profile.lastLimitedAt !== null)
     .sort((a, b) => String(b.lastLimitedAt).localeCompare(String(a.lastLimitedAt)))[0];
+  const pollingStatus = runtimeState.runtime.pollingScheduler?.getStatus?.();
   const mostRestrictiveRps = profiles.length > 0
     ? Math.min(...profiles.map((profile) => profile.currentAllowedRps))
     : snapshot.ratePerSec;
@@ -900,6 +901,7 @@ function buildKisOutboundLimiterPayload(
       classifyAimdWindowFromMarketPhase(
         runtimeState.runtime.marketHoursScheduler?.getCurrentPhase?.(),
       ),
+      pollingStatus?.cycleCount,
     ),
     telemetry: buildKisGovernorTelemetryPayload(snapshot.telemetry),
     profiles,
@@ -910,6 +912,7 @@ function buildKisGovernorAimdPayload(
   state: KisGovernorAimdStateSnapshot | undefined,
   telemetry: KisGovernorTelemetrySnapshot | undefined,
   classification: KisGovernorAimdWindowClassification = 'mixed',
+  pollingCycleCount?: number,
 ): RuntimeKisGovernorAimdPayload {
   const snapshot = state ?? defaultKisGovernorAimdState();
   const observation =
@@ -918,6 +921,9 @@ function buildKisGovernorAimdPayload(
           state: snapshot,
           telemetry,
           classification,
+          ...(pollingCycleCount !== undefined
+            ? { polling: { cycleCount: pollingCycleCount } }
+            : {}),
         })
       : null;
   return {

@@ -65,6 +65,8 @@ As of 2026-05-10:
 - data-health classifies telemetry windows as `regular_market` only when the
   runtime market phase is `open`; non-open/unknown phases remain conservative
   `mixed` or `startup_warm`
+- data-health uses the polling scheduler cycle count for `completedPollingCycles`
+  instead of inferring completed cycles from throttle event count alone
 - no runtime polling gap is changed by AIMD
 - production activation still requires PM approval
 

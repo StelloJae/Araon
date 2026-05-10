@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import type { KisRuntime, KisRuntimeRef } from '../../bootstrap-kis.js';
 import type { CredentialStore } from '../../credential-store.js';
 import type { MarketPhase } from '../../lifecycle/market-hours-scheduler.js';
+import type { PollingSchedulerStatus } from '../../polling/polling-scheduler.js';
 import {
   DEFAULT_SETTINGS,
   type Settings,
@@ -70,6 +71,7 @@ function startedRuntime(
     outboundLimiter?: KisRuntime['outboundLimiter'];
     governorAimd?: { snapshot(): unknown };
     marketPhase?: MarketPhase;
+    pollingStatus?: Partial<PollingSchedulerStatus>;
     pollingStop?: ReturnType<typeof vi.fn>;
     sessionGate?: RealtimeSessionGate;
   } = {},
@@ -109,6 +111,16 @@ function startedRuntime(
     settingsStore: undefined,
     pollingScheduler: {
       stop: overrides.pollingStop ?? vi.fn(async () => undefined),
+      getStatus: vi.fn(() => ({
+        running: true,
+        cycleCount: 0,
+        lastCycleMs: 0,
+        tickersInCycle: 0,
+        errorCount: 0,
+        throttledCount: 0,
+        lastCycleP95Ms: 0,
+        ...overrides.pollingStatus,
+      })),
     },
     wsClient: {
       getStatus: vi.fn(() => ({
@@ -706,7 +718,7 @@ describe('GET /runtime/data-health', () => {
         }),
         observationWindow: expect.objectContaining({
           classification: 'mixed',
-          completedPollingCycles: 1,
+          completedPollingCycles: 0,
           throttleCount: 1,
           circuitBreakerCount: 0,
         }),
@@ -821,6 +833,9 @@ describe('GET /runtime/data-health', () => {
       runtimeRef: runtimeRef({
         status: 'started',
         runtime: startedRuntime({
+          pollingStatus: {
+            cycleCount: 2,
+          },
           governorAimd: {
             snapshot: vi.fn(() => ({
               enabled: false,
@@ -929,6 +944,9 @@ describe('GET /runtime/data-health', () => {
         status: 'started',
         runtime: startedRuntime({
           marketPhase: 'open',
+          pollingStatus: {
+            cycleCount: 2,
+          },
           governorAimd: {
             snapshot: vi.fn(() => ({
               enabled: true,
@@ -1011,6 +1029,100 @@ describe('GET /runtime/data-health', () => {
       reason: 'repeated_throttle',
       currentPollingMinStartGapMs: 350,
       proposedPollingMinStartGapMs: 438,
+      applyRuntimeChange: false,
+    });
+  });
+
+  it('uses polling scheduler cycle count for AIMD diagnostics', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          marketPhase: 'open',
+          pollingStatus: {
+            cycleCount: 1,
+          },
+          governorAimd: {
+            snapshot: vi.fn(() => ({
+              enabled: true,
+              mode: 'observe_only',
+              currentPollingMinStartGapMs: 350,
+              baselinePollingMinStartGapMs: 350,
+              lastAdjustmentAtMs: null,
+              lastAdjustmentDirection: 'none',
+              lastAdjustmentReason: null,
+              nextEvaluationAtMs: null,
+              cleanRegularMarketWindowCount: 0,
+              degradedWindowCount: 0,
+              rollbackBaseline: {
+                pollingMinStartGapMs: 350,
+                pollingRecoveryRatePerSec: 3,
+              },
+            })),
+          },
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 10,
+              profiles: [],
+              telemetry: {
+                capacity: 10,
+                eventCount: 2,
+                recent: [
+                  {
+                    atMs: Date.parse('2026-05-08T14:00:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 350,
+                    maxInFlight: 2,
+                  },
+                  {
+                    atMs: Date.parse('2026-05-08T14:10:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 350,
+                    maxInFlight: 2,
+                  },
+                ],
+              },
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const aimd = res.json().data.kisOutboundLimiter.aimd;
+
+    expect(res.statusCode).toBe(200);
+    expect(aimd.observationWindow).toMatchObject({
+      classification: 'regular_market',
+      completedPollingCycles: 1,
+      throttleCount: 2,
+    });
+    expect(aimd.lastDecision).toMatchObject({
+      action: 'hold',
+      reason: 'insufficient_polling_cycles',
+      currentPollingMinStartGapMs: 350,
+      proposedPollingMinStartGapMs: 350,
       applyRuntimeChange: false,
     });
   });

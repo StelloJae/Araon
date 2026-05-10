@@ -238,6 +238,40 @@ describe('buildKisGovernorAimdObservation', () => {
       proposedPollingMinStartGapMs: 350,
     });
   });
+
+  it('uses polling scheduler cycle count instead of inferring cycles from event count', () => {
+    const observation = buildKisGovernorAimdObservation({
+      nowMs: 1_700_000_600_000,
+      classification: 'regular_market',
+      state: {
+        enabled: false,
+        mode: 'observe_only',
+        currentPollingMinStartGapMs: 350,
+        cleanRegularMarketWindowCount: 0,
+      },
+      polling: {
+        cycleCount: 1,
+      },
+      telemetry: {
+        capacity: 10,
+        eventCount: 2,
+        recent: [
+          telemetryEvent(1_700_000_000_000, 'throttle'),
+          telemetryEvent(1_700_000_600_000, 'throttle'),
+        ],
+      },
+    });
+
+    expect(observation.window).toMatchObject({
+      completedPollingCycles: 1,
+      throttleCount: 2,
+    });
+    expect(observation.decision).toMatchObject({
+      action: 'hold',
+      reason: 'insufficient_polling_cycles',
+      proposedPollingMinStartGapMs: 350,
+    });
+  });
 });
 
 function cleanWindow(

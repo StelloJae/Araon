@@ -73,11 +73,16 @@ export interface KisGovernorAimdObservationTelemetry {
   recent: readonly KisGovernorAimdObservationTelemetryEvent[];
 }
 
+export interface KisGovernorAimdObservationPollingSummary {
+  cycleCount: number;
+}
+
 export interface KisGovernorAimdObservationInput {
   nowMs?: number;
   classification?: KisGovernorAimdWindowClassification;
   state: KisGovernorAimdObservationState;
   telemetry?: KisGovernorAimdObservationTelemetry;
+  polling?: KisGovernorAimdObservationPollingSummary;
 }
 
 export interface KisGovernorAimdObservation {
@@ -174,7 +179,7 @@ export function buildKisGovernorAimdObservation(
   const window: KisGovernorAimdWindow = {
     classification: input.classification ?? 'mixed',
     durationMs: Math.max(0, evaluatedAtMs - firstEventAtMs),
-    completedPollingCycles: pollingEvents.length > 0 ? Math.min(2, pollingEvents.length) : 0,
+    completedPollingCycles: completedPollingCycles(input.polling, pollingEvents),
     throttleCount,
     circuitBreakerCount,
     throttleImmediatelyAfterNormal: hasThrottleImmediatelyAfterNormal(pollingEvents),
@@ -198,6 +203,16 @@ export function buildKisGovernorAimdObservation(
       window,
     }),
   };
+}
+
+function completedPollingCycles(
+  polling: KisGovernorAimdObservationPollingSummary | undefined,
+  events: readonly KisGovernorAimdObservationTelemetryEvent[],
+): number {
+  if (polling !== undefined && Number.isFinite(polling.cycleCount)) {
+    return Math.max(0, Math.min(2, Math.trunc(polling.cycleCount)));
+  }
+  return events.length > 0 ? Math.min(2, events.length) : 0;
 }
 
 function tighteningSignal(
