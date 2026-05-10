@@ -507,6 +507,38 @@ describe('createBackgroundDailyBackfillScheduler', () => {
     });
   });
 
+  it('classifies EGW00201 backfill failures as rate-limit pauses and stops the batch', async () => {
+    const backfillDailyCandles = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('KIS HTTP 500: 초당 거래건수를 초과하였습니다. EGW00201'));
+    const scheduler = createBackgroundDailyBackfillScheduler({
+      settingsStore: { snapshot: () => settings() },
+      stockRepo: { findAll: () => [stock('005930'), stock('000660')] },
+      favoriteRepo: { findAll: () => [] },
+      dailyBackfillService: { backfillDailyCandles },
+      marketPhase: () => 'closed',
+      now: () => new Date('2026-05-05T11:05:00.000Z'),
+      requestGapMs: 0,
+    });
+
+    await expect(scheduler.runOnce()).resolves.toMatchObject({
+      attempted: 1,
+      failed: 1,
+    });
+    expect(backfillDailyCandles).toHaveBeenCalledOnce();
+    expect(scheduler.snapshot().recent[0]).toEqual(expect.objectContaining({
+      ticker: '005930',
+      status: 'failed',
+      errorCode: 'RATE_LIMIT',
+    }));
+    await expect(
+      scheduler.runOnce(new Date('2026-05-05T11:06:00.000Z')),
+    ).resolves.toMatchObject({
+      attempted: 0,
+      skippedReason: 'cooldown',
+    });
+  });
+
   it('stops the current batch after a backfill failure', async () => {
     const backfillDailyCandles = vi
       .fn()

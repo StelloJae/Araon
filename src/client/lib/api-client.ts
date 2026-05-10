@@ -674,6 +674,42 @@ export interface RuntimeDataHealthPayload {
       errorCode: string | null;
     }>;
   };
+  kisOutboundLimiter: {
+    configured: boolean;
+    currentState: string;
+    ratePerSec: number | null;
+    burst: number | null;
+    tokens: number | null;
+    currentAllowedRps: number | null;
+    lastThrottleAt: string | null;
+    lastThrottleClass: string | null;
+    lastThrottleCode: string | null;
+    recoveryAttemptCount: number;
+    circuitBreakerUntil: string | null;
+    recentThrottleCount: number;
+    recentSuccessCount: number;
+    profiles: Array<{
+      profileId: string;
+      endpointClass: string | null;
+      priorityClass: string;
+      state: string;
+      cooldownUntil: string | null;
+      cooldownActive: boolean;
+      firstLimitedAt: string | null;
+      lastLimitedAt: string | null;
+      recoveredAt: string | null;
+      observedRecoveryMs: number | null;
+      nextRetryAt: string | null;
+      circuitBreakerUntil: string | null;
+      lastThrottleCode: string | null;
+      recoveryAttemptCount: number;
+      recentThrottleCount: number;
+      recentSuccessCount: number;
+      currentAllowedRps: number;
+      minStartGapMs: number;
+      maxInFlight: number;
+    }>;
+  };
   volumeBaseline: {
     total: number;
     ready: number;

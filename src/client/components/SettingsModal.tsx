@@ -1454,6 +1454,9 @@ export function BackgroundBackfillControl({
 export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload | null }) {
   const oneMinute = health?.candles.find((row) => row.interval === '1m') ?? null;
   const daily = health?.candles.find((row) => row.interval === '1d') ?? null;
+  const kisLimiterSummary = health !== null
+    ? formatKisLimiterSummary(health.kisOutboundLimiter)
+    : null;
   return (
     <div
       data-testid="data-health-panel"
@@ -1524,6 +1527,11 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               k="오늘 백필 호출"
               v={`${health.backfill.dailyCallCount}회`}
               chipColor={health.backfill.cooldownActive ? 'var(--gold-text)' : 'var(--text-muted)'}
+            />
+            <Row
+              k="KIS 요청 제한"
+              v={kisLimiterSummary?.label ?? '대기'}
+              chipColor={kisLimiterSummary?.chipColor ?? 'var(--text-muted)'}
             />
             <Row
               k="보강 대기 제외"
@@ -1615,6 +1623,44 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
       )}
     </div>
   );
+}
+
+function formatKisLimiterSummary(
+  limiter: RuntimeDataHealthPayload['kisOutboundLimiter'],
+): { label: string; chipColor: string } {
+  if (!limiter.configured) {
+    return { label: '미시작', chipColor: 'var(--text-muted)' };
+  }
+  const activeCooldowns = limiter.profiles.filter((profile) => profile.cooldownActive);
+  if (activeCooldowns.length > 0) {
+    return { label: `쿨다운 ${activeCooldowns.length}개`, chipColor: 'var(--gold-text)' };
+  }
+  const latestRecovery = latestObservedRecoveryMs(limiter);
+  if (latestRecovery !== null) {
+    return {
+      label: `최근 회복 ${(latestRecovery / 1000).toFixed(1)}초`,
+      chipColor: 'var(--text-muted)',
+    };
+  }
+  return {
+    label: limiter.ratePerSec !== null ? `${limiter.ratePerSec}/s` : '정상',
+    chipColor: 'var(--text-muted)',
+  };
+}
+
+function latestObservedRecoveryMs(
+  limiter: RuntimeDataHealthPayload['kisOutboundLimiter'],
+): number | null {
+  let latest: { recoveredAtMs: number; observedRecoveryMs: number } | null = null;
+  for (const profile of limiter.profiles) {
+    if (profile.recoveredAt === null || profile.observedRecoveryMs === null) continue;
+    const recoveredAtMs = Date.parse(profile.recoveredAt);
+    if (!Number.isFinite(recoveredAtMs)) continue;
+    if (latest === null || recoveredAtMs > latest.recoveredAtMs) {
+      latest = { recoveredAtMs, observedRecoveryMs: profile.observedRecoveryMs };
+    }
+  }
+  return latest?.observedRecoveryMs ?? null;
 }
 
 export function LocalBackupPanel({

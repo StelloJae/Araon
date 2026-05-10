@@ -27,6 +27,10 @@ import type {
   KisEndpointClass,
   KisOutboundLimiter,
 } from './kis-outbound-limiter.js';
+import {
+  classifyKisRestFailure,
+  isKisSecondWindowThrottle,
+} from './kis-rate-limit-classifier.js';
 
 const log = createChildLogger('kis-rest');
 
@@ -256,7 +260,10 @@ export function createKisRestClient(
 
   function isRetryable(err: unknown): boolean {
     if (err instanceof KisRestError) {
-      if (isLocalOutboundLimiterCooldown(err) || isKisThrottleError(err)) {
+      if (
+        isLocalOutboundLimiterCooldown(err)
+        || isKisSecondWindowThrottle(classifyKisRestFailure(err))
+      ) {
         return false;
       }
       return RETRYABLE_STATUS.has(err.status);
@@ -269,7 +276,9 @@ export function createKisRestClient(
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        return await performOnce<T>(req);
+        const response = await performOnce<T>(req);
+        options.outboundLimiter?.recordSuccess?.(limiterContext(req));
+        return response;
       } catch (err: unknown) {
         lastErr = err;
         options.outboundLimiter?.recordFailure({
@@ -325,10 +334,6 @@ function isLocalOutboundLimiterCooldown(err: KisRestError): boolean {
     && err.msgCd === 'EGW00201'
     && err.message === LOCAL_OUTBOUND_COOLDOWN_MESSAGE
   );
-}
-
-function isKisThrottleError(err: KisRestError): boolean {
-  return err.msgCd === 'EGW00201';
 }
 
 function limiterContext(req: KisRestRequest): {

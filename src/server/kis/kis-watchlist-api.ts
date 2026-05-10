@@ -114,6 +114,7 @@ export async function fetchWatchlistGroups(
       method: 'GET',
       path: KIS_INTSTOCK_GROUPLIST_PATH,
       trId: KIS_INTSTOCK_GROUPLIST_TR_ID,
+      endpointClass: 'foreground',
     });
   } catch (err: unknown) {
     log.error(

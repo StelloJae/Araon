@@ -58,6 +58,12 @@ Credentials/data/runtime state는 커밋하지 않는다.
 - Clean no-credentials startup에서 master refresh, token, approval, WebSocket, backfill
   호출이 발생하면 회귀다.
 - Public status/API/UI에 raw secret이 노출되면 회귀다.
+- KIS REST 호출은 가능한 한 전역 outbound governor를 통과시키고 `endpointClass`를
+  명시한다. Foreground도 governor를 우회하지 않는다.
+- `EGW00201` / "초당 거래건수 초과"는 second-window throttle로 다룬다. 단순
+  고정 cooldown으로 치환하지 말고 canary recovery, backoff, start spacing,
+  circuit breaker 정책을 유지한다.
+- live KIS stress test나 의도적인 throttle 유도는 사용자의 명시 승인 없이 금지한다.
 
 ## 주요 명령
 

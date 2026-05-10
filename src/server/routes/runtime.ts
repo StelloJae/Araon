@@ -190,6 +190,43 @@ export interface RuntimeRealtimeSessionPayload {
   readonly endReason: RealtimeSessionState['sessionEndReason'];
 }
 
+export interface RuntimeKisOutboundLimiterPayload {
+  readonly configured: boolean;
+  readonly currentState: string;
+  readonly ratePerSec: number | null;
+  readonly burst: number | null;
+  readonly tokens: number | null;
+  readonly currentAllowedRps: number | null;
+  readonly lastThrottleAt: string | null;
+  readonly lastThrottleClass: string | null;
+  readonly lastThrottleCode: string | null;
+  readonly recoveryAttemptCount: number;
+  readonly circuitBreakerUntil: string | null;
+  readonly recentThrottleCount: number;
+  readonly recentSuccessCount: number;
+  readonly profiles: readonly {
+    readonly profileId: string;
+    readonly endpointClass: string | null;
+    readonly priorityClass: string;
+    readonly state: string;
+    readonly cooldownUntil: string | null;
+    readonly cooldownActive: boolean;
+    readonly firstLimitedAt: string | null;
+    readonly lastLimitedAt: string | null;
+    readonly recoveredAt: string | null;
+    readonly observedRecoveryMs: number | null;
+    readonly nextRetryAt: string | null;
+    readonly circuitBreakerUntil: string | null;
+    readonly lastThrottleCode: string | null;
+    readonly recoveryAttemptCount: number;
+    readonly recentThrottleCount: number;
+    readonly recentSuccessCount: number;
+    readonly currentAllowedRps: number;
+    readonly minStartGapMs: number;
+    readonly maxInFlight: number;
+  }[];
+}
+
 const sessionEnableBodySchema = z.object({
   cap: z.number().int(),
   confirm: z.boolean(),
@@ -459,6 +496,7 @@ export async function runtimeRoutes(
           nextNoWorkRetryAt: backgroundBackfill.nextNoWorkRetryAt,
           recent: backgroundBackfill.recent,
         },
+        kisOutboundLimiter: buildKisOutboundLimiterPayload(opts.runtimeRef.get()),
         volumeBaseline: baselineCounts,
         growth: {
           signals: {
@@ -700,6 +738,83 @@ export async function runtimeRoutes(
     );
     return reply.send({ success: true, data: result });
   });
+}
+
+function buildKisOutboundLimiterPayload(
+  runtimeState: KisRuntimeState,
+): RuntimeKisOutboundLimiterPayload {
+  if (runtimeState.status !== 'started') {
+    return {
+      configured: false,
+      currentState: 'unconfigured',
+      ratePerSec: null,
+      burst: null,
+      tokens: null,
+      currentAllowedRps: null,
+      lastThrottleAt: null,
+      lastThrottleClass: null,
+      lastThrottleCode: null,
+      recoveryAttemptCount: 0,
+      circuitBreakerUntil: null,
+      recentThrottleCount: 0,
+      recentSuccessCount: 0,
+      profiles: [],
+    };
+  }
+  const snapshot = runtimeState.runtime.outboundLimiter.snapshot();
+  const profiles = snapshot.profiles.map((profile) => ({
+    profileId: profile.profileId,
+    endpointClass: profile.endpointClass,
+    priorityClass: profile.priorityClass,
+    state: profile.state,
+    cooldownUntil: millisToIso(profile.cooldownUntilMs),
+    cooldownActive: profile.cooldownActive,
+    firstLimitedAt: millisToIso(profile.firstLimitedAtMs),
+    lastLimitedAt: millisToIso(profile.lastLimitedAtMs),
+    recoveredAt: millisToIso(profile.recoveredAtMs),
+    observedRecoveryMs: profile.observedRecoveryMs,
+    nextRetryAt: millisToIso(profile.nextRetryAtMs),
+    circuitBreakerUntil: millisToIso(profile.circuitBreakerUntilMs),
+    lastThrottleCode: profile.lastThrottleCode,
+    recoveryAttemptCount: profile.recoveryAttemptCount,
+    recentThrottleCount: profile.recentThrottleCount,
+    recentSuccessCount: profile.recentSuccessCount,
+    currentAllowedRps: profile.currentAllowedRps,
+    minStartGapMs: profile.minStartGapMs,
+    maxInFlight: profile.maxInFlight,
+  }));
+  const lastThrottle = profiles
+    .filter((profile) => profile.lastLimitedAt !== null)
+    .sort((a, b) => String(b.lastLimitedAt).localeCompare(String(a.lastLimitedAt)))[0];
+  const mostRestrictiveRps = profiles.length > 0
+    ? Math.min(...profiles.map((profile) => profile.currentAllowedRps))
+    : snapshot.ratePerSec;
+  const circuitBreaker = profiles.find((profile) => profile.state === 'circuit_breaker');
+  const active = profiles.find((profile) => profile.cooldownActive)
+    ?? profiles.find((profile) => profile.state === 'recovering');
+  return {
+    configured: true,
+    currentState: circuitBreaker?.state ?? active?.state ?? 'normal',
+    ratePerSec: snapshot.ratePerSec,
+    burst: snapshot.burst,
+    tokens: snapshot.tokens,
+    currentAllowedRps: mostRestrictiveRps,
+    lastThrottleAt: lastThrottle?.lastLimitedAt ?? null,
+    lastThrottleClass: lastThrottle?.priorityClass ?? null,
+    lastThrottleCode: lastThrottle?.lastThrottleCode ?? null,
+    recoveryAttemptCount: profiles.reduce(
+      (max, profile) => Math.max(max, profile.recoveryAttemptCount),
+      0,
+    ),
+    circuitBreakerUntil: circuitBreaker?.circuitBreakerUntil ?? null,
+    recentThrottleCount: profiles.reduce((sum, profile) => sum + profile.recentThrottleCount, 0),
+    recentSuccessCount: profiles.reduce((sum, profile) => sum + profile.recentSuccessCount, 0),
+    profiles,
+  };
+}
+
+function millisToIso(ms: number | null): string | null {
+  return ms !== null && ms > 0 ? new Date(ms).toISOString() : null;
 }
 
 function buildLocalBackupPayload(

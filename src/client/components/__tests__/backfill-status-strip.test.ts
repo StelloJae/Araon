@@ -37,6 +37,22 @@ function health(
       recent: [],
       ...backfill,
     },
+    kisOutboundLimiter: {
+      configured: false,
+      currentState: 'unconfigured',
+      ratePerSec: null,
+      burst: null,
+      tokens: null,
+      currentAllowedRps: null,
+      lastThrottleAt: null,
+      lastThrottleClass: null,
+      lastThrottleCode: null,
+      recoveryAttemptCount: 0,
+      circuitBreakerUntil: null,
+      recentThrottleCount: 0,
+      recentSuccessCount: 0,
+      profiles: [],
+    },
     volumeBaseline: { total: 12, ready: 0, collecting: 0, unavailable: 12 },
     growth: {
       signals: {

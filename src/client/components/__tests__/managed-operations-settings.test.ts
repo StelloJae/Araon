@@ -158,6 +158,44 @@ describe('managed operations settings copy', () => {
               },
             ],
           },
+          kisOutboundLimiter: {
+            configured: true,
+            currentState: 'recovering',
+            ratePerSec: 15,
+            burst: 15,
+            tokens: 7.5,
+            currentAllowedRps: 4,
+            lastThrottleAt: '2026-05-08T14:01:00.000Z',
+            lastThrottleClass: 'polling',
+            lastThrottleCode: 'EGW00201',
+            recoveryAttemptCount: 0,
+            circuitBreakerUntil: null,
+            recentThrottleCount: 1,
+            recentSuccessCount: 3,
+            profiles: [
+              {
+                profileId: 'primary',
+                endpointClass: 'polling',
+                priorityClass: 'polling',
+                state: 'recovering',
+                cooldownUntil: '2026-05-08T14:01:30.000Z',
+                cooldownActive: false,
+                firstLimitedAt: '2026-05-08T14:01:00.000Z',
+                lastLimitedAt: '2026-05-08T14:01:00.000Z',
+                recoveredAt: '2026-05-08T14:01:31.250Z',
+                observedRecoveryMs: 31_250,
+                nextRetryAt: null,
+                circuitBreakerUntil: null,
+                lastThrottleCode: 'EGW00201',
+                recoveryAttemptCount: 0,
+                recentThrottleCount: 1,
+                recentSuccessCount: 3,
+                currentAllowedRps: 4,
+                minStartGapMs: 250,
+                maxInFlight: 2,
+              },
+            ],
+          },
           volumeBaseline: {
             total: 12,
             ready: 7,
@@ -261,6 +299,8 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('candle 정리');
     expect(html).toContain('오늘 백필 호출');
     expect(html).toContain('4회');
+    expect(html).toContain('KIS 요청 제한');
+    expect(html).toContain('31.3초');
     expect(html).toContain('보강 대기 제외');
     expect(html).toContain('1종목');
     expect(html).toContain('최근 보강');

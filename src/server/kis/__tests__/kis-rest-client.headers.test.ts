@@ -110,6 +110,7 @@ describe('createKisRestClient — authenticated header contract', () => {
     )) as unknown as typeof fetch;
     const acquire = vi.fn(async () => {});
     const recordFailure = vi.fn();
+    const recordSuccess = vi.fn();
     const client = createKisRestClient({
       isPaper: false,
       auth: makeAuth(creds),
@@ -117,6 +118,7 @@ describe('createKisRestClient — authenticated header contract', () => {
       outboundLimiter: {
         acquire,
         recordFailure,
+        recordSuccess,
         snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
       },
     });
@@ -130,6 +132,7 @@ describe('createKisRestClient — authenticated header contract', () => {
     expect(acquire).toHaveBeenCalledWith({ endpointClass: 'polling' });
     expect(fetchFn).toHaveBeenCalledOnce();
     expect(recordFailure).not.toHaveBeenCalled();
+    expect(recordSuccess).toHaveBeenCalledWith({ endpointClass: 'polling' });
   });
 
   it('does not retry when the local outbound limiter is already cooling down', async () => {
@@ -201,6 +204,41 @@ describe('createKisRestClient — authenticated header contract', () => {
     })).rejects.toMatchObject({
       status: 500,
       msgCd: 'EGW00201',
+    });
+
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(fetchFn).toHaveBeenCalledOnce();
+    expect(recordFailure).toHaveBeenCalledOnce();
+  });
+
+  it('does not retry second-window throttle messages even when msg_cd is missing', async () => {
+    const fetchFn = vi.fn(async () => (
+      new Response(JSON.stringify({
+        rt_cd: '1',
+        msg1: '초당 거래건수를 초과하였습니다.',
+      }), { status: 500 })
+    )) as unknown as typeof fetch;
+    const acquire = vi.fn(async () => {});
+    const recordFailure = vi.fn();
+    const client = createKisRestClient({
+      isPaper: false,
+      auth: makeAuth(creds),
+      fetchFn,
+      maxAttempts: 3,
+      backoffBaseMs: 1,
+      outboundLimiter: {
+        acquire,
+        recordFailure,
+        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
+      },
+    });
+
+    await expect(client.request({
+      method: 'GET',
+      path: '/uapi/domestic-stock/v1/quotations/inquire-price',
+      endpointClass: 'polling',
+    })).rejects.toMatchObject({
+      status: 500,
     });
 
     expect(acquire).toHaveBeenCalledOnce();

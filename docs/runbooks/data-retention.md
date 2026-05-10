@@ -64,6 +64,8 @@ as `database locked` or `maintenance_failed`.
 - candle prune last run time and sanitized last error
 - existing candle coverage, daily backfill call count/cooldown, and volume baseline
   readiness
+- KIS outbound rate governor state, throttle/recovery timing, and sanitized
+  per-class diagnostics
 
 The Settings connection tab renders these as diagnostics under the data-health
 panel. Raw keys, tokens, approval keys, and account values must never appear in

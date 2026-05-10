@@ -66,6 +66,7 @@ function startedRuntime(
       stopSession?: ReturnType<typeof vi.fn>;
       getStats?: ReturnType<typeof vi.fn>;
     };
+    outboundLimiter?: KisRuntime['outboundLimiter'];
     pollingStop?: ReturnType<typeof vi.fn>;
     sessionGate?: RealtimeSessionGate;
   } = {},
@@ -91,6 +92,17 @@ function startedRuntime(
       listFavorites: vi.fn(() => overrides.favorites ?? []),
     },
     sessionGate: overrides.sessionGate ?? createRealtimeSessionGate(),
+    outboundLimiter: overrides.outboundLimiter ?? {
+      acquire: vi.fn(async () => undefined),
+      recordFailure: vi.fn(),
+      recordSuccess: vi.fn(),
+      snapshot: vi.fn(() => ({
+        ratePerSec: 15,
+        burst: 15,
+        tokens: 15,
+        profiles: [],
+      })),
+    },
     settingsStore: undefined,
     pollingScheduler: {
       stop: overrides.pollingStop ?? vi.fn(async () => undefined),
@@ -451,6 +463,22 @@ describe('GET /runtime/data-health', () => {
             },
           ],
         },
+        kisOutboundLimiter: {
+          configured: false,
+          currentState: 'unconfigured',
+          ratePerSec: null,
+          burst: null,
+          tokens: null,
+          currentAllowedRps: null,
+          lastThrottleAt: null,
+          lastThrottleClass: null,
+          lastThrottleCode: null,
+          recoveryAttemptCount: 0,
+          circuitBreakerUntil: null,
+          recentThrottleCount: 0,
+          recentSuccessCount: 0,
+          profiles: [],
+        },
         volumeBaseline: {
           total: 2,
           ready: 1,
@@ -534,6 +562,91 @@ describe('GET /runtime/data-health', () => {
           candlePruneLastError: null,
         },
       },
+    });
+  });
+
+  it('exposes KIS outbound limiter cooldown and observed recovery timing safely', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 7.5,
+              profiles: [
+                {
+                  profileId: 'primary',
+                  endpointClass: 'polling',
+                  priorityClass: 'polling',
+                  state: 'recovering',
+                  cooldownUntilMs: Date.parse('2026-05-08T14:01:30.000Z'),
+                  cooldownActive: false,
+                  firstLimitedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  lastLimitedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  recoveredAtMs: Date.parse('2026-05-08T14:01:31.250Z'),
+                  observedRecoveryMs: 31_250,
+                  nextRetryAtMs: null,
+                  circuitBreakerUntilMs: null,
+                  lastThrottleCode: 'EGW00201',
+                  recoveryAttemptCount: 0,
+                  recentThrottleCount: 1,
+                  recentSuccessCount: 3,
+                  currentAllowedRps: 4,
+                  minStartGapMs: 250,
+                  maxInFlight: 2,
+                },
+              ],
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.kisOutboundLimiter).toEqual({
+      configured: true,
+      currentState: 'recovering',
+      ratePerSec: 15,
+      burst: 15,
+      tokens: 7.5,
+      currentAllowedRps: 4,
+      lastThrottleAt: '2026-05-08T14:01:00.000Z',
+      lastThrottleClass: 'polling',
+      lastThrottleCode: 'EGW00201',
+      recoveryAttemptCount: 0,
+      circuitBreakerUntil: null,
+      recentThrottleCount: 1,
+      recentSuccessCount: 3,
+      profiles: [
+        {
+          profileId: 'primary',
+          endpointClass: 'polling',
+          priorityClass: 'polling',
+          state: 'recovering',
+          cooldownUntil: '2026-05-08T14:01:30.000Z',
+          cooldownActive: false,
+          firstLimitedAt: '2026-05-08T14:01:00.000Z',
+          lastLimitedAt: '2026-05-08T14:01:00.000Z',
+          recoveredAt: '2026-05-08T14:01:31.250Z',
+          observedRecoveryMs: 31_250,
+          nextRetryAt: null,
+          circuitBreakerUntil: null,
+          lastThrottleCode: 'EGW00201',
+          recoveryAttemptCount: 0,
+          recentThrottleCount: 1,
+          recentSuccessCount: 3,
+          currentAllowedRps: 4,
+          minStartGapMs: 250,
+          maxInFlight: 2,
+        },
+      ],
     });
   });
 });

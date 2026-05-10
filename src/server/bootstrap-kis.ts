@@ -340,10 +340,32 @@ export async function defaultActuallyStart(
   const outboundLimiter = createKisOutboundLimiter({
     ratePerSec,
     burst: Math.ceil(ratePerSec),
-    cooldownMsByEndpointClass: {
-      foreground: 30_000,
-      polling: 30_000,
-      ranking: 60_000,
+    globalMinStartGapMs: 25,
+    recoveryBackoffMs: [150, 300, 700, 1_500, 3_000, 5_000, 10_000],
+    recoveryRatePerSec: Math.min(4, ratePerSec),
+    classPolicies: {
+      token: { minStartGapMs: 1_000, maxInFlight: 1, recoveryRatePerSec: 1 },
+      approval: { minStartGapMs: 1_000, maxInFlight: 1, recoveryRatePerSec: 1 },
+      foreground: { minStartGapMs: 80, maxInFlight: 2 },
+      polling: { minStartGapMs: 120, maxInFlight: 2 },
+      ranking: {
+        minStartGapMs: 750,
+        maxInFlight: 1,
+        recoveryRatePerSec: 1,
+        recoveryBackoffMs: [1_500, 3_000, 5_000, 10_000],
+      },
+      'selected-minute': {
+        minStartGapMs: 1_000,
+        maxInFlight: 1,
+        recoveryRatePerSec: 1,
+        recoveryBackoffMs: [700, 1_500, 3_000, 5_000, 10_000],
+      },
+      'daily-backfill': {
+        minStartGapMs: 1_500,
+        maxInFlight: 1,
+        recoveryRatePerSec: 1,
+        recoveryBackoffMs: [3_000, 5_000, 10_000, 30_000],
+      },
     },
   });
   const tokenRest = createKisRestClient({
@@ -370,7 +392,8 @@ export async function defaultActuallyStart(
     appKey: credentials.appKey,
     appSecret: credentials.appSecret,
     transport: {
-      request: <T>(req: ApprovalRequest): Promise<T> => restClient.request<T>(req),
+      request: <T>(req: ApprovalRequest): Promise<T> =>
+        restClient.request<T>({ ...req, endpointClass: 'approval' }),
     },
   });
 

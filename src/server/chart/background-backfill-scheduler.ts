@@ -419,17 +419,21 @@ function backgroundTickerOrder(
 
 function cooldownMsForError(err: unknown): number {
   const message = err instanceof Error ? err.message : String(err);
-  return /429|rate.?limit|throttle/i.test(message)
+  return isRateLimitMessage(message)
     ? DEFAULT_429_COOLDOWN_MS
     : DEFAULT_5XX_COOLDOWN_MS;
 }
 
 function classifyBackfillError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
-  if (/429|rate.?limit|throttle/i.test(message)) return 'RATE_LIMIT';
+  if (isRateLimitMessage(message)) return 'RATE_LIMIT';
   if (/401|403|credential|auth/i.test(message)) return 'AUTH';
   if (/timeout|timed.?out/i.test(message)) return 'TIMEOUT';
   return 'UPSTREAM';
+}
+
+function isRateLimitMessage(message: string): boolean {
+  return /429|EGW00201|초당\s*거래건수를\s*초과|rate.?limit|throttle/i.test(message);
 }
 
 function sleep(ms: number): Promise<void> {
