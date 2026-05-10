@@ -74,6 +74,8 @@ this response or UI.
 KIS governor telemetry is persisted under `data/kis-governor-telemetry.json` as
 a small sanitized transition-event ring. It is intended for normal-operation
 review after a throttle/recovery incident, not for forcing live stress tests.
+Use `docs/runbooks/kis-governor-tuning.md` when deciding whether observed
+telemetry justifies keeping, tightening, or loosening governor settings.
 
 Observation notes/plans/timeline were removed from the product surface on
 2026-05-07. Existing migration tables may remain for deployed DB compatibility,

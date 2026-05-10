@@ -125,6 +125,11 @@ secrets, approval keys, and account values.
 Telemetry events are operational breadcrumbs for normal-use observation. They
 are not used as an automatic tuning source yet.
 
+Tuning decisions should follow
+[`docs/runbooks/kis-governor-tuning.md`](../runbooks/kis-governor-tuning.md).
+In short: keep the current `350ms / 3rps recovery` baseline unless normal-use
+telemetry provides enough evidence to tighten or, more cautiously, loosen it.
+
 ## Live Boundary
 
 No live KIS stress test was part of Phase 1. The governor should be observed
