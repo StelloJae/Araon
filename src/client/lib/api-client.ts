@@ -690,6 +690,64 @@ export interface RuntimeDataHealthPayload {
     circuitBreakerUntil: string | null;
     recentThrottleCount: number;
     recentSuccessCount: number;
+    aimd: {
+      enabled: boolean;
+      mode: 'observe_only' | 'active';
+      currentPollingMinStartGapMs: number;
+      baselinePollingMinStartGapMs: number;
+      lastAdjustmentAt: string | null;
+      lastAdjustmentDirection: 'increase_gap' | 'decrease_gap' | 'none';
+      lastAdjustmentReason: string | null;
+      nextEvaluationAt: string | null;
+      cleanRegularMarketWindowCount: number;
+      degradedWindowCount: number;
+      lastDecision: {
+        evaluatedAt: string | null;
+        source: 'telemetry_snapshot';
+        action: string;
+        reason: string;
+        currentPollingMinStartGapMs: number;
+        proposedPollingMinStartGapMs: number;
+        applyRuntimeChange: boolean;
+      } | null;
+      observationWindow: {
+        classification: string;
+        durationMs: number;
+        completedPollingCycles: number;
+        throttleCount: number;
+        circuitBreakerCount: number;
+        throttleImmediatelyAfterNormal: boolean;
+        maxRecoveryAttemptCount: number;
+        queueStuckAfterRecovery: boolean;
+        telemetryMalformed: boolean;
+        dataHealthDisagrees: boolean;
+        cleanRegularMarketWindowCount: number;
+      } | null;
+      rollbackBaseline: {
+        pollingMinStartGapMs: number;
+        pollingRecoveryRatePerSec: number;
+      };
+    };
+    telemetry: {
+      capacity: number;
+      eventCount: number;
+      oldestAt: string | null;
+      newestAt: string | null;
+      recent: Array<{
+        at: string | null;
+        event: 'throttle' | 'half_open' | 'recovered' | 'normal' | 'circuit_breaker';
+        profileId: string;
+        endpointClass: string | null;
+        priorityClass: string;
+        state: string;
+        throttleCode: string | null;
+        recoveryAttemptCount: number;
+        observedRecoveryMs: number | null;
+        currentAllowedRps: number;
+        minStartGapMs: number;
+        maxInFlight: number;
+      }>;
+    };
     profiles: Array<{
       profileId: string;
       endpointClass: string | null;
