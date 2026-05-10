@@ -5,13 +5,16 @@
 Design a conservative AIMD controller for Araon's KIS outbound governor so
 polling can slowly learn a safer request pace from normal-operation telemetry.
 
-This document is a design draft only. It does not enable AIMD and does not
-change live defaults.
+This document started as a design draft. As of 2026-05-10, polling-only AIMD is
+implemented and can be enabled explicitly through runtime controls. Code
+defaults still keep the manual polling baseline available for rollback.
 
 ## Non-Goals
 
-- No deliberate KIS throttle generation
-- No live stress test
+- No deliberate KIS throttle generation unless a bounded user/PM-approved live
+  experiment explicitly allows it
+- No live stress test unless a bounded user/PM-approved live experiment
+  explicitly allows it
 - No WebSocket cap test
 - No forced daily/minute backfill run
 - No multi-key capacity strategy
@@ -59,6 +62,8 @@ As of 2026-05-10:
 
 - pure polling AIMD evaluator is implemented behind tests
 - local JSON state store is implemented with disabled observe-only defaults
+- runtime control route is implemented:
+  `POST /runtime/kis-governor/aimd`
 - `/runtime/data-health` exposes sanitized AIMD diagnostics
 - data-health derives an observe-only `lastDecision` from sanitized governor
   telemetry snapshots
@@ -67,8 +72,13 @@ As of 2026-05-10:
   `mixed` or `startup_warm`
 - data-health uses the polling scheduler cycle count for `completedPollingCycles`
   instead of inferring completed cycles from throttle event count alone
-- no runtime polling gap is changed by AIMD
-- production activation still requires PM approval
+- active runtime mode applies polling gap overrides through the outbound limiter
+- active runtime mode schedules regular 10-minute evaluations
+- active runtime mode can tighten early when a current evaluation window already
+  shows a protective signal such as repeated `EGW00201`
+- data-health anchors diagnostics to the active evaluation window so old
+  pre-adjustment throttle events do not become stale proposals
+- runtime rollback clears the AIMD override and returns to the manual baseline
 
 ## Inputs
 
@@ -117,6 +127,8 @@ Minimum proposal:
 - ignore the first 2 minutes after runtime start
 - ignore windows classified as `startup_warm` or `mixed`
 - allow tightening from a 10-minute degraded window
+- allow protective early tightening before the scheduled evaluation if the
+  current active window already has repeated throttle/circuit-breaker pressure
 - allow loosening only after 3 clean 30-minute regular-market windows
 
 ## AIMD Rules
@@ -165,13 +177,31 @@ Hold current settings when:
 
 Hold is a first-class decision, not a failure.
 
+## 2026-05-10 Controlled Live Observation
+
+Under an explicit user `$goal`, controlled live polling observation was allowed.
+No order/account-changing endpoints were used.
+
+Observed values:
+
+- 438ms active polling gap still hit repeated `EGW00201`
+- short recovery samples observed around 458-493ms
+- active AIMD tightened early at `2026-05-10T08:09:10.468Z`
+- applied polling override: 438ms -> 548ms
+- post-adjustment data-health returned to `normal`
+- a following 105-ticker polling cycle completed with 0 throttles at about 1.62
+  effective rps
+- diagnostics-window anchoring then reported `throttleCount: 0` for the current
+  post-adjustment window instead of carrying pre-adjustment pressure forward
+
+These are local observations, not a KIS contract.
+
 ## Rollback
 
 Manual rollback must be simple:
 
-- disable AIMD
-- remove the AIMD state file
-- restart runtime
+- call `POST /runtime/kis-governor/aimd` with `{"action":"rollback"}`
+- or stop runtime, remove `data/kis-governor-aimd-state.json`, and restart
 - verify polling baseline is back to 350ms / 3rps recovery
 
 The baseline should remain in code and docs. AIMD overrides should be layered on

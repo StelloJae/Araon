@@ -8,13 +8,17 @@ instruction to create throttles on purpose.
 
 Current live polling baseline:
 
-- polling min start gap: 350ms
+- manual polling min start gap: 350ms
+- active AIMD observed polling override: 548ms
 - polling recovery rate: 3rps
 - recovery stable window: 30s
 - polling max in-flight: 2 at the governor layer
 
 These values come from local normal-operation evidence on 2026-05-10. They are
 not a KIS contract.
+
+The code baseline remains 350ms. Active AIMD may layer a runtime override on top
+of that baseline; rollback returns polling to the baseline.
 
 ## Data Sources
 
@@ -31,6 +35,10 @@ Do not use:
 - WebSocket cap tests
 - forced daily/minute backfill runs
 - full-watchlist background experiments
+
+Exception: a specific user/PM-approved live experiment may use controlled
+throttle probes. Keep the probe short, record the start value, stop condition,
+rollback condition, observed timing, and never run trading/order endpoints.
 
 ## Review Window
 
@@ -103,7 +111,9 @@ Suggested conservative changes:
 | queue depth does not drain after recovery | keep gap, reduce polling max in-flight by 1 if possible |
 
 After tightening, observe again under normal operation. Do not tighten repeatedly
-inside the same short window unless `circuit_breaker` appears.
+inside the same short window unless `circuit_breaker` appears or active AIMD sees
+a fresh repeated-throttle signal in the current post-adjustment evaluation
+window.
 
 ## Loosen Settings
 
@@ -126,24 +136,58 @@ Suggested loosen step:
 
 Do not loosen recovery rate before the normal polling gap has been validated.
 
-## AIMD Candidate Gate
+## AIMD Runtime Mode
 
-AIMD auto-tuning is a future implementation candidate only when:
+As of 2026-05-10, Araon's AIMD implementation can run in `observe_only` or
+`active` mode. It still adjusts polling only.
 
-- persistent telemetry has been validated in normal operation
-- current fixed settings have at least 3 review windows of evidence
-- tighten/keep/loosen rules above are accepted
-- manual rollback is documented
-- data-health exposes enough state to explain every AIMD adjustment
+Active AIMD behavior:
 
-Initial AIMD scope should be polling only. Ranking, backfill, auth, approval,
-foreground, and master refresh should stay manually configured until polling is
-proven stable.
+- scheduled evaluation every 10 minutes
+- protective early tighten when the current evaluation window already has a
+  strong pressure signal such as repeated `EGW00201`
+- no early loosen; loosening still requires clean windows
+- data-health diagnostics are anchored to the same active evaluation window, so
+  old pre-adjustment throttle events do not look like a fresh proposal
 
-The current design draft is
+The design is tracked in
 [`docs/research/kis-governor-aimd-design.md`](../research/kis-governor-aimd-design.md).
-It keeps the first implementation disabled by default and treats observe-only
-diagnostics plus mock tests as non-PM-gated work.
+
+## 2026-05-10 Live AIMD Observation
+
+Controlled live observation was run under explicit user goal approval.
+
+Observed polling sequence:
+
+- start: active AIMD polling gap 438ms
+- first live throttle after startup: observed recovery around 458ms
+- repeated throttle in the same active window: active AIMD tightened early at
+  `2026-05-10T08:09:10.468Z`
+- applied override: 438ms -> 548ms
+- next evaluation: `2026-05-10T08:19:10.468Z`
+- post-adjustment observation: state returned to `normal`; one full 105-ticker
+  polling cycle completed with 0 throttles at about 1.62 effective rps
+- data-health after the diagnostics-window fix reported the current window with
+  `throttleCount: 0` and no sensitive-field names
+
+These are local observations, not a permanent KIS timing guarantee.
+
+## Rollback
+
+Preferred runtime rollback:
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/runtime/kis-governor/aimd \
+  -H 'content-type: application/json' \
+  -d '{"action":"rollback"}'
+```
+
+Fallback rollback:
+
+- stop the runtime
+- delete `data/kis-governor-aimd-state.json`
+- restart
+- verify `/runtime/data-health` shows the baseline polling gap again
 
 ## PM Check Required
 
@@ -158,6 +202,10 @@ Ask PM before:
 - running WebSocket cap tests
 - forcing daily/minute backfill or full-watchlist runs to test limits
 - changing ranking/top-list strategy in a way that competes with polling budget
+
+Direct user approval for a bounded `$goal`-style experiment may replace the PM
+check for live measurement/tuning work, but it does not override the absolute
+ban on order/account-changing endpoints or secret exposure.
 
 PM check is not required for:
 

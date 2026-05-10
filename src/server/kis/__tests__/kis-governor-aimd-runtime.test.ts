@@ -122,6 +122,85 @@ describe('applyKisGovernorAimdRuntime', () => {
     }));
   });
 
+  it('applies protective tighten before the next scheduled evaluation on repeated throttles', async () => {
+    const nowMs = Date.parse('2026-05-10T01:47:00.000Z');
+    const store = stateStore({
+      ...defaultKisGovernorAimdState(),
+      enabled: true,
+      mode: 'active',
+      currentPollingMinStartGapMs: 438,
+      nextEvaluationAtMs: nowMs + 480_000,
+    });
+    const setClassPolicyOverride = vi.fn();
+
+    const result = await applyKisGovernorAimdRuntime({
+      stateStore: store,
+      outboundLimiter: { setClassPolicyOverride },
+      telemetry: {
+        capacity: 10,
+        eventCount: 4,
+        recent: [
+          telemetryEvent(nowMs - 100_000, 'throttle'),
+          telemetryEvent(nowMs - 99_000, 'recovered'),
+          telemetryEvent(nowMs - 10_000, 'throttle'),
+          telemetryEvent(nowMs - 9_000, 'recovered'),
+        ],
+      },
+      classification: 'regular_market',
+      pollingCycleCount: 2,
+      nowMs,
+    });
+
+    expect(result.decision).toMatchObject({
+      action: 'tighten',
+      reason: 'repeated_throttle',
+      proposedPollingMinStartGapMs: 548,
+      applyRuntimeChange: true,
+    });
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 548 });
+    expect(store.save).toHaveBeenCalledWith(expect.objectContaining({
+      currentPollingMinStartGapMs: 548,
+      lastAdjustmentAtMs: nowMs,
+      lastAdjustmentDirection: 'increase_gap',
+      lastAdjustmentReason: 'repeated_throttle',
+      nextEvaluationAtMs: nowMs + 600_000,
+      degradedWindowCount: 1,
+    }));
+  });
+
+  it('does not tune early on a single throttle', async () => {
+    const nowMs = Date.parse('2026-05-10T01:48:00.000Z');
+    const store = stateStore({
+      ...defaultKisGovernorAimdState(),
+      enabled: true,
+      mode: 'active',
+      currentPollingMinStartGapMs: 438,
+      nextEvaluationAtMs: nowMs + 480_000,
+    });
+    const setClassPolicyOverride = vi.fn();
+
+    const result = await applyKisGovernorAimdRuntime({
+      stateStore: store,
+      outboundLimiter: { setClassPolicyOverride },
+      telemetry: {
+        capacity: 10,
+        eventCount: 2,
+        recent: [
+          telemetryEvent(nowMs - 100_000, 'throttle'),
+          telemetryEvent(nowMs - 99_000, 'recovered'),
+        ],
+      },
+      classification: 'regular_market',
+      pollingCycleCount: 2,
+      nowMs,
+    });
+
+    expect(result.decision).toBeNull();
+    expect(result.skippedReason).toBe('too_early');
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 438 });
+    expect(store.save).not.toHaveBeenCalled();
+  });
+
   it('clears polling overrides when AIMD is disabled', async () => {
     const store = stateStore(defaultKisGovernorAimdState());
     const setClassPolicyOverride = vi.fn();

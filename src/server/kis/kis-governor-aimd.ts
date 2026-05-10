@@ -160,6 +160,30 @@ export function evaluateKisGovernorAimd(
   return changed(mode, currentGap, proposedGap, 'loosen', 'clean_regular_market_windows');
 }
 
+export function evaluateKisGovernorAimdProtectiveTighten(
+  input: KisGovernorAimdEvaluationInput,
+): KisGovernorAimdDecision | null {
+  const mode = input.mode ?? 'observe_only';
+  const currentGap = Math.max(0, Math.trunc(input.currentPollingMinStartGapMs));
+  const window = input.window;
+
+  if (window.telemetryMalformed || window.dataHealthDisagrees) return null;
+  if (window.completedPollingCycles < MIN_COMPLETED_POLLING_CYCLES) return null;
+  if (window.classification === 'startup_warm' || window.classification === 'mixed') return null;
+
+  const tighten = tighteningSignal(window);
+  if (tighten === null) return null;
+
+  const maxGapMs = tighten.reason === 'circuit_breaker' ? EMERGENCY_MAX_GAP_MS : NORMAL_MAX_GAP_MS;
+  return changed(
+    mode,
+    currentGap,
+    clampGap(Math.ceil(currentGap * tighten.factor), MIN_GAP_MS, maxGapMs),
+    'tighten',
+    tighten.reason,
+  );
+}
+
 export function buildKisGovernorAimdObservation(
   input: KisGovernorAimdObservationInput,
 ): KisGovernorAimdObservation {

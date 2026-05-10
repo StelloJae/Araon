@@ -91,8 +91,9 @@ Covered by the governor after Phase 2:
 
 Still outside or not fully solved after Phase 2:
 
-- AIMD auto-tuning is not enabled
-- AIMD design is tracked in
+- AIMD auto-tuning started as a follow-up and is now implemented for polling-only
+  explicit active mode
+- AIMD design and live observations are tracked in
   [`docs/research/kis-governor-aimd-design.md`](kis-governor-aimd-design.md)
 
 ## Data Health
@@ -137,6 +138,10 @@ telemetry provides enough evidence to tighten or, more cautiously, loosen it.
 No live KIS stress test was part of Phase 1. The governor should be observed
 during normal use after deploy; it should not intentionally create `EGW00201`.
 
+Later AIMD work did use controlled live polling observation under explicit user
+goal approval. That live work remains separate from the Phase 1 acceptance
+boundary and still did not touch trading/order/account-changing endpoints.
+
 ## Normal-Operation Live Observation
 
 On 2026-05-10, normal runtime startup with existing live credentials was
@@ -156,5 +161,5 @@ normal-operation telemetry and should not intentionally generate throttles.
 
 ## Follow-Up
 
-- Phase 3: AIMD auto-tuning
+- Phase 3: expand AIMD beyond polling only if needed
 - Phase 3: normal-operation telemetry review after deploy

@@ -1052,6 +1052,100 @@ describe('GET /runtime/data-health', () => {
     });
   });
 
+  it('anchors AIMD diagnostics to the active evaluation window', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          marketPhase: 'open',
+          pollingStatus: {
+            cycleCount: 2,
+          },
+          governorAimd: {
+            snapshot: vi.fn(() => ({
+              enabled: true,
+              mode: 'active',
+              currentPollingMinStartGapMs: 548,
+              baselinePollingMinStartGapMs: 350,
+              lastAdjustmentAtMs: Date.parse('2026-05-08T14:10:00.000Z'),
+              lastAdjustmentDirection: 'increase_gap',
+              lastAdjustmentReason: 'repeated_throttle',
+              nextEvaluationAtMs: Date.parse('2026-05-08T14:20:00.000Z'),
+              cleanRegularMarketWindowCount: 0,
+              degradedWindowCount: 1,
+              rollbackBaseline: {
+                pollingMinStartGapMs: 350,
+                pollingRecoveryRatePerSec: 3,
+              },
+            })),
+          },
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 10,
+              profiles: [],
+              telemetry: {
+                capacity: 10,
+                eventCount: 2,
+                recent: [
+                  {
+                    atMs: Date.parse('2026-05-08T14:00:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 350,
+                    maxInFlight: 2,
+                  },
+                  {
+                    atMs: Date.parse('2026-05-08T14:11:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 548,
+                    maxInFlight: 2,
+                  },
+                ],
+              },
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const aimd = res.json().data.kisOutboundLimiter.aimd;
+
+    expect(res.statusCode).toBe(200);
+    expect(aimd.observationWindow).toMatchObject({
+      classification: 'regular_market',
+      completedPollingCycles: 2,
+      throttleCount: 1,
+    });
+    expect(aimd.lastDecision).toMatchObject({
+      action: 'keep',
+      reason: 'single_throttle_observed',
+      currentPollingMinStartGapMs: 548,
+      proposedPollingMinStartGapMs: 548,
+      applyRuntimeChange: false,
+    });
+  });
+
   it('uses polling scheduler cycle count for AIMD diagnostics', async () => {
     const app = await build({
       runtimeRef: runtimeRef({

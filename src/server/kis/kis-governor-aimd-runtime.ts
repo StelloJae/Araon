@@ -4,7 +4,10 @@ import type {
   KisGovernorAimdObservation,
   KisGovernorAimdWindowClassification,
 } from './kis-governor-aimd.js';
-import { buildKisGovernorAimdObservation } from './kis-governor-aimd.js';
+import {
+  buildKisGovernorAimdObservation,
+  evaluateKisGovernorAimdProtectiveTighten,
+} from './kis-governor-aimd.js';
 import type { KisGovernorTelemetrySnapshot, KisOutboundLimiter } from './kis-outbound-limiter.js';
 import {
   applyKisGovernorAimdDecisionToState,
@@ -56,6 +59,8 @@ export async function applyKisGovernorAimdRuntime(
     return { decision: null, observation: null, state: scheduledState, skippedReason: 'too_early' };
   }
   if (state.nextEvaluationAtMs !== null && nowMs < state.nextEvaluationAtMs) {
+    const earlyResult = await applyEarlyProtectiveTighten(input, state, nowMs);
+    if (earlyResult !== null) return earlyResult;
     return { decision: null, observation: null, state, skippedReason: 'too_early' };
   }
 
@@ -77,6 +82,41 @@ export async function applyKisGovernorAimdRuntime(
   return {
     decision: observation.decision,
     observation,
+    state: nextState,
+    skippedReason: null,
+  };
+}
+
+async function applyEarlyProtectiveTighten(
+  input: ApplyKisGovernorAimdRuntimeInput,
+  state: KisGovernorAimdStateSnapshot,
+  nowMs: number,
+): Promise<ApplyKisGovernorAimdRuntimeResult | null> {
+  const observation = buildKisGovernorAimdObservation({
+    nowMs,
+    windowStartedAtMs: evaluationWindowStartedAtMs(state, nowMs),
+    state,
+    telemetry: input.telemetry ?? { recent: [] },
+    classification: input.classification,
+    ...(input.pollingCycleCount !== undefined
+      ? { polling: { cycleCount: input.pollingCycleCount } }
+      : {}),
+  });
+  const decision = evaluateKisGovernorAimdProtectiveTighten({
+    mode: state.mode,
+    currentPollingMinStartGapMs: state.currentPollingMinStartGapMs,
+    window: observation.window,
+  });
+  if (decision === null || !decision.applyRuntimeChange) return null;
+
+  const protectiveObservation = { ...observation, decision };
+  const nextState = nextStateForObservation(state, protectiveObservation);
+  await input.stateStore.save(nextState);
+  applyPollingGapOverride(input.outboundLimiter, nextState.currentPollingMinStartGapMs);
+
+  return {
+    decision,
+    observation: protectiveObservation,
     state: nextState,
     skippedReason: null,
   };

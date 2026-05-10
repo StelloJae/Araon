@@ -79,6 +79,7 @@ import {
   defaultKisGovernorAimdState,
   type KisGovernorAimdStateSnapshot,
 } from '../kis/kis-governor-aimd-state.js';
+import { KIS_GOVERNOR_AIMD_EVALUATION_INTERVAL_MS } from '../kis/kis-governor-aimd-runtime.js';
 
 export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
@@ -1051,11 +1052,13 @@ function buildKisGovernorAimdPayload(
   pollingCycleCount?: number,
 ): RuntimeKisGovernorAimdPayload {
   const snapshot = state ?? defaultKisGovernorAimdState();
+  const windowStartedAtMs = aimdObservationWindowStartedAtMs(snapshot);
   const observation =
     telemetry !== undefined && telemetry.recent.length > 0
       ? buildKisGovernorAimdObservation({
           state: snapshot,
           telemetry,
+          ...(windowStartedAtMs !== undefined ? { windowStartedAtMs } : {}),
           classification,
           ...(pollingCycleCount !== undefined
             ? { polling: { cycleCount: pollingCycleCount } }
@@ -1084,6 +1087,16 @@ function buildKisGovernorAimdPayload(
       pollingRecoveryRatePerSec: snapshot.rollbackBaseline.pollingRecoveryRatePerSec,
     },
   };
+}
+
+function aimdObservationWindowStartedAtMs(
+  snapshot: KisGovernorAimdStateSnapshot,
+): number | undefined {
+  if (snapshot.nextEvaluationAtMs === null) return undefined;
+  return Math.max(
+    0,
+    snapshot.nextEvaluationAtMs - KIS_GOVERNOR_AIMD_EVALUATION_INTERVAL_MS,
+  );
 }
 
 function classifyAimdWindowFromMarketPhase(
