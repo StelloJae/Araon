@@ -3,8 +3,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { MarketTopMoversResponse } from '@shared/types';
-import type { StockViewModel } from '../../lib/view-models';
-import { buildLocalTopMoversFallback } from '../SectionStack';
 import { TopMoversBoard } from '../TopMoversBoard';
 import { ViewToggle } from '../ViewToggle';
 
@@ -25,6 +23,9 @@ function topMovers(): MarketTopMoversResponse {
       losersCount: 1,
       gainersComplete: false,
       losersComplete: false,
+      marketUniverse: 'kis-full-market-ranking',
+      guaranteedTop100: false,
+      includesLocalFallback: false,
     },
     gainers: [
       {
@@ -77,68 +78,61 @@ describe('TOP100 view chrome', () => {
     expect(html).toContain('상승 TOP100');
     expect(html).toContain('하락 TOP100');
     expect(html).toContain('1/100');
+    expect(html).toContain('KIS 전체시장 일부');
     expect(html).toContain('3초');
     expect(html).toContain('삼성전자');
     expect(html).toContain('SK하이닉스');
   });
 
-  it('uses current local stocks when KIS ranking is cooling down without cached rows', () => {
-    const fallback = buildLocalTopMoversFallback(
-      {
-        ...topMovers(),
-        fetchedAt: null,
-        status: 'cooldown',
-        message: 'KIS 호출 제한으로 TOP100 갱신을 대기합니다.',
-        gainers: [],
-        losers: [],
-      },
-      [
-        vm('005930', '삼성전자', 70_000, 3.7, 2_500),
-        vm('000660', 'SK하이닉스', 180_000, -2.7, -5_000),
-        vm('000001', '보합종목', 1_000, 0, 0),
-      ],
+  it('does not turn local watchlist rows into a fake full-market TOP100 fallback', () => {
+    const html = renderToStaticMarkup(
+      createElement(TopMoversBoard, {
+        data: {
+          ...topMovers(),
+          fetchedAt: null,
+          status: 'cooldown',
+          message: 'KIS 호출 제한으로 TOP100 갱신을 대기합니다.',
+          coverage: {
+            requestedLimit: 100,
+            gainersCount: 0,
+            losersCount: 0,
+            gainersComplete: false,
+            losersComplete: false,
+            marketUniverse: 'kis-full-market-ranking',
+            guaranteedTop100: false,
+            includesLocalFallback: false,
+          },
+          gainers: [],
+          losers: [],
+        },
+        onOpenTicker: vi.fn(),
+      }),
     );
 
-    expect(fallback.status).toBe('stale');
-    expect(fallback.message).toContain('현재 화면 종목 기준');
-    expect(fallback.gainers.map((item) => item.ticker)).toEqual(['005930']);
-    expect(fallback.losers.map((item) => item.ticker)).toEqual(['000660']);
+    expect(html).toContain('KIS 전체시장 대기');
+    expect(html).toContain('랭킹 데이터를 기다리는 중');
+    expect(html).not.toContain('현재 화면 종목 기준');
   });
 
-  it('merges local tracked movers into partial KIS ranking rows', () => {
-    const fallback = buildLocalTopMoversFallback(
-      topMovers(),
-      [
-        vm('439090', '마녀공장', 18_110, 20.17, 3_050),
-        vm('036010', '아비코전자', 10_460, -13.77, -1_670),
-      ],
+  it('labels a complete KIS ranking as full-market guaranteed', () => {
+    const full = {
+      ...topMovers(),
+      coverage: {
+        ...topMovers().coverage,
+        gainersCount: 100,
+        losersCount: 100,
+        gainersComplete: true,
+        losersComplete: true,
+        guaranteedTop100: true,
+      },
+    } satisfies MarketTopMoversResponse;
+    const html = renderToStaticMarkup(
+      createElement(TopMoversBoard, {
+        data: full,
+        onOpenTicker: vi.fn(),
+      }),
     );
 
-    expect(fallback.message).toContain('보강');
-    expect(fallback.gainers.map((item) => item.ticker)).toEqual(['439090', '005930']);
-    expect(fallback.losers.map((item) => item.ticker)).toEqual(['036010', '000660']);
-    expect(fallback.gainers.map((item) => item.rank)).toEqual([1, 2]);
+    expect(html).toContain('KIS 전체시장 보장');
   });
 });
-
-function vm(
-  code: string,
-  name: string,
-  price: number,
-  changePct: number,
-  changeAbs: number,
-): StockViewModel {
-  return {
-    code,
-    name,
-    price,
-    changePct,
-    changeAbs,
-    volume: 1_000,
-    market: 'KOSPI',
-    updatedAt: '2026-05-08T08:00:00.000Z',
-    isSnapshot: false,
-    sectorId: null,
-    effectiveSector: { name: '미분류', source: 'unclassified' },
-  };
-}

@@ -64,6 +64,7 @@
     "capture:live-assets": "node scripts/capture-araon-live-assets.mjs",
     "capture:install-schedule": "node scripts/install-araon-live-capture-launchd.mjs",
     "soak:no-live": "tsx scripts/internal/soak/soak-araon.mts",
+    "soak:kis-governor": "tsx scripts/internal/soak/kis-governor-observation-report.mts",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.cli.json --noEmit",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "typecheck:client": "tsc -p tsconfig.client.json --noEmit",

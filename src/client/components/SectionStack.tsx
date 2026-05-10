@@ -83,9 +83,6 @@ export function SectionStack({
   if (view === 'top100') {
     return (
       <MarketTop100Block
-        stocks={Object.keys(catalog)
-          .map((ticker) => buildStockVM(ticker, catalog, quotes))
-          .filter((vm): vm is StockViewModel => vm !== null)}
         onOpenTicker={onOpenRankingTicker ?? onOpenDetail}
       />
     );
@@ -293,10 +290,8 @@ function ColumnAndDivider({
 // ---------- TOP100 live ranking ----------
 
 function MarketTop100Block({
-  stocks,
   onOpenTicker,
 }: {
-  stocks: StockViewModel[];
   onOpenTicker: (ticker: string) => void;
 }) {
   const [data, setData] = useState<MarketTopMoversResponse | null>(null);
@@ -357,75 +352,13 @@ function MarketTop100Block({
 
   return (
     <TopMoversBoard
-      data={buildLocalTopMoversFallback(data, stocks)}
+      data={data}
       onOpenTicker={onOpenTicker}
     />
   );
 }
 
 // ---------- Helpers ----------
-
-export function buildLocalTopMoversFallback(
-  data: MarketTopMoversResponse,
-  stocks: StockViewModel[],
-): MarketTopMoversResponse {
-  const tradable = stocks.filter((stock) => stock.price > 0 && Number.isFinite(stock.changePct));
-  const localGainers = tradable
-    .filter((stock) => stock.changePct > 0)
-    .sort((a, b) => b.changePct - a.changePct)
-    .slice(0, 100)
-    .map(stockToTopMover);
-  const localLosers = tradable
-    .filter((stock) => stock.changePct < 0)
-    .sort((a, b) => a.changePct - b.changePct)
-    .slice(0, 100)
-    .map(stockToTopMover);
-  const gainers = mergeTopMovers(data.gainers, localGainers, 'up');
-  const losers = mergeTopMovers(data.losers, localLosers, 'down');
-  if (gainers.length === 0 && losers.length === 0) return data;
-  const wasEmpty = data.gainers.length === 0 && data.losers.length === 0;
-  return {
-    ...data,
-    status: data.status === 'ready' && !wasEmpty ? 'ready' : 'stale',
-    message: wasEmpty
-      ? 'KIS 직접 랭킹 대기 중 · 현재 화면 종목 기준으로 표시합니다.'
-      : 'KIS 직접 랭킹에 현재 화면 종목을 보강해 표시합니다.',
-    gainers,
-    losers,
-  };
-}
-
-function stockToTopMover(stock: StockViewModel, index: number) {
-  return {
-    rank: index + 1,
-    ticker: stock.code,
-    name: stock.name,
-    price: stock.price,
-    changeAbs: stock.changeAbs,
-    changePct: stock.changePct,
-    volume: stock.volume,
-  };
-}
-
-function mergeTopMovers(
-  primary: MarketTopMoversResponse['gainers'],
-  fallback: MarketTopMoversResponse['gainers'],
-  direction: 'up' | 'down',
-): MarketTopMoversResponse['gainers'] {
-  const byTicker = new Map<string, MarketTopMoversResponse['gainers'][number]>();
-  for (const item of [...primary, ...fallback]) {
-    if (byTicker.has(item.ticker)) continue;
-    byTicker.set(item.ticker, item);
-  }
-  return Array.from(byTicker.values())
-    .sort((a, b) =>
-      direction === 'up'
-        ? b.changePct - a.changePct
-        : a.changePct - b.changePct,
-    )
-    .slice(0, 100)
-    .map((item, index) => ({ ...item, rank: index + 1 }));
-}
 
 function sortByChangeDesc(stocks: StockViewModel[]): StockViewModel[] {
   return [...stocks].sort((a, b) => b.changePct - a.changePct);

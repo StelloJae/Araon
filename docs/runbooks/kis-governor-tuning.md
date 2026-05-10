@@ -30,6 +30,8 @@ Use only normal-operation evidence:
 - `GET /runtime/data-health`
 - `data/kis-governor-telemetry.json`
 - polling scheduler cycle summaries already emitted by the server
+- `npm run soak:kis-governor -- --duration-ms=<ms> --interval-ms=<ms>` for a
+  sanitized observation report against an already-running local Araon server
 
 Do not use:
 
@@ -75,6 +77,9 @@ The governor is healthy when:
 - queue depth drains instead of growing indefinitely
 - telemetry contains no raw KIS body, app key, app secret, token, approval key,
   or account value
+- `data-health.marketTopMovers.coverage.guaranteedTop100` is true when the UI
+  claims a complete KIS TOP100 ranking; partial or cooldown states should stay
+  visible instead of being filled with watchlist-only fallback rows
 
 Treat the governor as degraded when:
 
@@ -198,6 +203,32 @@ Observed polling sequence:
   1.0 effective rps
 
 These are local observations, not a permanent KIS timing guarantee.
+
+## Observation Report Command
+
+Use this during the later regular-market 1-2 hour observation window after the
+Araon server is already running:
+
+```bash
+npm run soak:kis-governor -- \
+  --duration-ms=3600000 \
+  --interval-ms=10000 \
+  --out docs/archive/kis-governor-observation-YYYYMMDD.json
+```
+
+The report samples only `GET /runtime/data-health`, runs the same sensitive-value
+screen used by the no-live soak, and writes a sanitized summary. It intentionally
+does not store raw response bodies, app keys, app secrets, tokens, approval keys,
+or account values.
+
+Use two hours by changing `--duration-ms=7200000`. A useful review should compare:
+
+- governor state counts and `circuit_breaker` samples
+- observed recovery milliseconds
+- max queue depth and recovery attempt count
+- AIMD active settings and last decision
+- `marketTopMovers.statusCounts` and `guaranteedTop100Samples`
+- background backfill running/cooldown samples
 
 ## Rollback
 

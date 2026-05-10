@@ -27,10 +27,14 @@ describe('market routes', () => {
             losersCount: 0,
             gainersComplete: false,
             losersComplete: false,
+            marketUniverse: 'kis-full-market-ranking',
+            guaranteedTop100: false,
+            includesLocalFallback: false,
           },
           gainers: [],
           losers: [],
         })),
+        snapshot: vi.fn(),
       },
     });
 

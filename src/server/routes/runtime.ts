@@ -80,6 +80,10 @@ import {
   type KisGovernorAimdStateSnapshot,
 } from '../kis/kis-governor-aimd-state.js';
 import { KIS_GOVERNOR_AIMD_EVALUATION_INTERVAL_MS } from '../kis/kis-governor-aimd-runtime.js';
+import type {
+  MarketTopMoversService,
+  MarketTopMoversServiceSnapshot,
+} from '../market/market-top-movers-service.js';
 
 export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
@@ -107,6 +111,7 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
     summarizeGrowth(now?: Date, staleAfterMs?: number): StockDisclosureGrowthSummary;
   };
   dataRetention?: { snapshot(): DataRetentionSnapshot };
+  marketTopMoversService?: Pick<MarketTopMoversService, 'snapshot'>;
   phoneNotifier?: PhoneNotifier;
   phoneDeliveryLog?: PhoneDeliveryLog;
 }
@@ -312,6 +317,23 @@ export interface RuntimeKisGovernorAimdWindowPayload {
   readonly telemetryMalformed: boolean;
   readonly dataHealthDisagrees: boolean;
   readonly cleanRegularMarketWindowCount: number;
+}
+
+export interface RuntimeMarketTopMoversPayload {
+  readonly configured: boolean;
+  readonly status: string;
+  readonly source: string | null;
+  readonly lastFetchedAt: string | null;
+  readonly lastGeneratedAt: string | null;
+  readonly cacheAgeMs: number | null;
+  readonly cacheTtlMs: number | null;
+  readonly staleAfterMs: number | null;
+  readonly cooldownUntil: string | null;
+  readonly cooldownActive: boolean;
+  readonly inflight: boolean;
+  readonly lastMessage: string | null;
+  readonly lastErrorCode: string | null;
+  readonly coverage: MarketTopMoversServiceSnapshot['coverage'] | null;
 }
 
 const sessionEnableBodySchema = z.object({
@@ -590,6 +612,7 @@ export async function runtimeRoutes(
           recent: backgroundBackfill.recent,
         },
         kisOutboundLimiter: buildKisOutboundLimiterPayload(opts.runtimeRef.get()),
+        marketTopMovers: buildMarketTopMoversPayload(opts.marketTopMoversService?.snapshot()),
         volumeBaseline: baselineCounts,
         growth: {
           signals: {
@@ -977,6 +1000,45 @@ function buildKisOutboundLimiterPayload(
       recoveryRatePerSec: policy.recoveryRatePerSec,
     })),
     profiles,
+  };
+}
+
+function buildMarketTopMoversPayload(
+  snapshot: MarketTopMoversServiceSnapshot | undefined,
+): RuntimeMarketTopMoversPayload {
+  if (snapshot === undefined) {
+    return {
+      configured: false,
+      status: 'unconfigured',
+      source: null,
+      lastFetchedAt: null,
+      lastGeneratedAt: null,
+      cacheAgeMs: null,
+      cacheTtlMs: null,
+      staleAfterMs: null,
+      cooldownUntil: null,
+      cooldownActive: false,
+      inflight: false,
+      lastMessage: null,
+      lastErrorCode: null,
+      coverage: null,
+    };
+  }
+  return {
+    configured: true,
+    status: snapshot.status,
+    source: snapshot.source,
+    lastFetchedAt: snapshot.lastFetchedAt,
+    lastGeneratedAt: snapshot.lastGeneratedAt,
+    cacheAgeMs: snapshot.cacheAgeMs,
+    cacheTtlMs: snapshot.cacheTtlMs,
+    staleAfterMs: snapshot.staleAfterMs,
+    cooldownUntil: snapshot.cooldownUntil,
+    cooldownActive: snapshot.cooldownActive,
+    inflight: snapshot.inflight,
+    lastMessage: snapshot.lastMessage,
+    lastErrorCode: snapshot.lastErrorCode,
+    coverage: snapshot.coverage,
   };
 }
 

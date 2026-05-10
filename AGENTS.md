@@ -65,6 +65,9 @@ Credentials/data/runtime state는 커밋하지 않는다.
   circuit breaker 정책을 유지한다.
 - Governor queue에서는 foreground가 background/ranking/master refresh보다 먼저
   나가야 하지만, token/start spacing/max in-flight 제한은 계속 지킨다.
+- TOP100 화면은 KIS ranking endpoint에서 받은 전체시장 랭킹만 TOP100으로 표시한다.
+  현재 화면/watchlist 종목으로 빈 랭킹을 보강해 "전체시장 TOP100"처럼 보이게 만들지
+  않는다. 부분 수신이면 `coverage.guaranteedTop100=false`로 노출한다.
 - KIS AIMD는 polling policy override만 조정한다. 자동 판단은 polling gap에
   제한하고, recovery rps는 명시 실험값으로만 바꾼다. Active AIMD는 명시 승인된
   목표나 운영 절차에서만 켜고, 문제 시 `/runtime/kis-governor/aimd` rollback으로
@@ -99,6 +102,12 @@ No-live soak:
 
 ```bash
 npm run soak:no-live
+```
+
+장중 KIS governor 관찰 리포트:
+
+```bash
+npm run soak:kis-governor -- --duration-ms=3600000 --interval-ms=10000 --out docs/archive/kis-governor-observation.json
 ```
 
 ## 주요 코드 위치

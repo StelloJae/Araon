@@ -115,6 +115,55 @@ describe('market top movers service', () => {
       losersCount: 1,
       gainersComplete: false,
       losersComplete: false,
+      marketUniverse: 'kis-full-market-ranking',
+      guaranteedTop100: false,
+      includesLocalFallback: false,
+    });
+  });
+
+  it('exposes sanitized cache and cooldown state for data-health', async () => {
+    let now = 1_000;
+    let fail = false;
+    const fetchRanking = vi.fn(async ({ direction }) => {
+      if (fail) throw new KisRestError('rate limited', 429, null, 'EGW00201', {});
+      return Array.from({ length: 100 }, (_, idx) => ({
+        rank: idx + 1,
+        ticker: String(idx + 1).padStart(6, '0'),
+        name: `${direction}-${idx + 1}`,
+        price: 1_000 + idx,
+        changeAbs: direction === 'gainers' ? idx : -idx,
+        changePct: direction === 'gainers' ? idx + 1 : -(idx + 1),
+        volume: idx,
+      }));
+    });
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      ttlMs: 1,
+      cooldownMs: 10_000,
+      fetchRanking,
+    });
+
+    await service.getTopMovers({ limit: 100 });
+    now += 2;
+    fail = true;
+    await service.getTopMovers({ limit: 100 });
+
+    expect(service.snapshot()).toMatchObject({
+      status: 'stale',
+      source: 'kis-ranking-auto',
+      lastFetchedAt: '1970-01-01T00:00:01.000Z',
+      cacheAgeMs: 2,
+      cooldownUntil: '1970-01-01T00:00:11.002Z',
+      cooldownActive: true,
+      inflight: false,
+      lastErrorCode: 'KIS_RATE_LIMIT_SECOND_WINDOW',
+      coverage: {
+        requestedLimit: 100,
+        gainersCount: 100,
+        losersCount: 100,
+        guaranteedTop100: true,
+        includesLocalFallback: false,
+      },
     });
   });
 

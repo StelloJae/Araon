@@ -56,6 +56,22 @@ function health(
       policies: [],
       profiles: [],
     },
+    marketTopMovers: {
+      configured: false,
+      status: 'unconfigured',
+      source: null,
+      lastFetchedAt: null,
+      lastGeneratedAt: null,
+      cacheAgeMs: null,
+      cacheTtlMs: null,
+      staleAfterMs: null,
+      cooldownUntil: null,
+      cooldownActive: false,
+      inflight: false,
+      lastMessage: null,
+      lastErrorCode: null,
+      coverage: null,
+    },
     volumeBaseline: { total: 12, ready: 0, collecting: 0, unavailable: 12 },
     growth: {
       signals: {

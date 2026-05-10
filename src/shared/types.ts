@@ -184,6 +184,9 @@ export interface MarketTopMoversResponse {
     losersCount: number;
     gainersComplete: boolean;
     losersComplete: boolean;
+    marketUniverse: 'kis-full-market-ranking';
+    guaranteedTop100: boolean;
+    includesLocalFallback: boolean;
   };
   gainers: MarketTopMoverItem[];
   losers: MarketTopMoverItem[];

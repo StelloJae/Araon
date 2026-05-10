@@ -778,6 +778,31 @@ export interface RuntimeDataHealthPayload {
       maxInFlight: number;
     }>;
   };
+  marketTopMovers: {
+    configured: boolean;
+    status: string;
+    source: string | null;
+    lastFetchedAt: string | null;
+    lastGeneratedAt: string | null;
+    cacheAgeMs: number | null;
+    cacheTtlMs: number | null;
+    staleAfterMs: number | null;
+    cooldownUntil: string | null;
+    cooldownActive: boolean;
+    inflight: boolean;
+    lastMessage: string | null;
+    lastErrorCode: string | null;
+    coverage: {
+      requestedLimit: number;
+      gainersCount: number;
+      losersCount: number;
+      gainersComplete: boolean;
+      losersComplete: boolean;
+      marketUniverse: 'kis-full-market-ranking';
+      guaranteedTop100: boolean;
+      includesLocalFallback: boolean;
+    } | null;
+  };
   volumeBaseline: {
     total: number;
     ready: number;

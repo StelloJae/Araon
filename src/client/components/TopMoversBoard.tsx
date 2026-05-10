@@ -15,7 +15,8 @@ interface TopMoversBoardProps {
 export function TopMoversBoard({ data, onOpenTicker }: TopMoversBoardProps) {
   const fetchedAt = formatFetchedAt(data.fetchedAt);
   const refreshSec = Math.max(1, Math.round(data.refreshIntervalMs / 1000));
-  const subtitle = `${statusLabel(data.status)} · ${refreshSec}초마다 · 마지막 ${fetchedAt}`;
+  const subtitle =
+    `${coverageLabel(data)} · ${statusLabel(data.status)} · ${refreshSec}초마다 · 마지막 ${fetchedAt}`;
 
   return (
     <div
@@ -281,4 +282,13 @@ function statusLabel(status: MarketTopMoversResponse['status']): string {
     case 'error':
       return '오류';
   }
+}
+
+function coverageLabel(data: MarketTopMoversResponse): string {
+  if (data.coverage.includesLocalFallback) return '화면 종목 포함';
+  if (data.coverage.guaranteedTop100) return 'KIS 전체시장 보장';
+  if (data.coverage.gainersCount > 0 || data.coverage.losersCount > 0) {
+    return 'KIS 전체시장 일부';
+  }
+  return 'KIS 전체시장 대기';
 }

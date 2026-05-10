@@ -366,6 +366,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     newsRepo,
     disclosureRepo,
     dataRetention,
+    marketTopMoversService,
     phoneNotifier: createTelegramPhoneNotifier(),
   });
   await app.register(launcherRoutes, options.launcher ?? {});

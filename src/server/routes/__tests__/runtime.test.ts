@@ -214,6 +214,7 @@ async function build(
     priceStore?: { getAllPrices(): Array<{ ticker: string; price: number; changeRate: number; volume: number; updatedAt: string; isSnapshot: boolean; volumeBaselineStatus?: 'ready' | 'collecting' | 'unavailable' }> };
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
     backgroundBackfill?: { snapshot(): { running: boolean; lastRunAt: string | null; lastFinishedAt: string | null; lastAttempted: number; lastSucceeded: number; lastFailed: number; lastSkippedReason: 'disabled' | 'market_not_allowed' | 'no_tickers' | 'no_stale_tickers' | 'already_running' | 'cooldown' | null } };
+    marketTopMoversService?: { snapshot(): any };
     phoneNotifier?: {
       status(): { configured: boolean; provider: 'telegram'; mode: 'env' };
       sendAlert(input: { title: string; detail: string; ticker: string; name: string }): Promise<{ sent: boolean; reason?: string }>;
@@ -249,6 +250,7 @@ async function build(
     priceStore: opts.priceStore,
     backfillStateStore: opts.backfillStateStore,
     backgroundBackfill: opts.backgroundBackfill,
+    marketTopMoversService: opts.marketTopMoversService,
     phoneNotifier: opts.phoneNotifier,
     phoneDeliveryLog: opts.phoneDeliveryLog,
   });
@@ -554,6 +556,22 @@ describe('GET /runtime/data-health', () => {
           policies: [],
           profiles: [],
         },
+        marketTopMovers: {
+          configured: false,
+          status: 'unconfigured',
+          source: null,
+          lastFetchedAt: null,
+          lastGeneratedAt: null,
+          cacheAgeMs: null,
+          cacheTtlMs: null,
+          staleAfterMs: null,
+          cooldownUntil: null,
+          cooldownActive: false,
+          inflight: false,
+          lastMessage: null,
+          lastErrorCode: null,
+          coverage: null,
+        },
         volumeBaseline: {
           total: 2,
           ready: 1,
@@ -636,6 +654,67 @@ describe('GET /runtime/data-health', () => {
           candlePruneLastRunAt: '2026-05-06T06:00:00.000Z',
           candlePruneLastError: null,
         },
+      },
+    });
+  });
+
+  it('exposes sanitized market TOP100 cache and coverage diagnostics', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      marketTopMoversService: {
+        snapshot: vi.fn(() => ({
+          status: 'partial',
+          source: 'kis-ranking-auto',
+          lastFetchedAt: '2026-05-10T10:00:00.000Z',
+          lastGeneratedAt: '2026-05-10T10:00:05.000Z',
+          cacheAgeMs: 5_000,
+          cacheTtlMs: 10_000,
+          staleAfterMs: 30_000,
+          cooldownUntil: null,
+          cooldownActive: false,
+          inflight: false,
+          lastMessage: 'KIS 직접 랭킹 일부만 수신했습니다.',
+          lastErrorCode: null,
+          coverage: {
+            requestedLimit: 100,
+            gainersCount: 80,
+            losersCount: 100,
+            gainersComplete: false,
+            losersComplete: true,
+            marketUniverse: 'kis-full-market-ranking',
+            guaranteedTop100: false,
+            includesLocalFallback: false,
+          },
+        })),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.marketTopMovers).toEqual({
+      configured: true,
+      status: 'partial',
+      source: 'kis-ranking-auto',
+      lastFetchedAt: '2026-05-10T10:00:00.000Z',
+      lastGeneratedAt: '2026-05-10T10:00:05.000Z',
+      cacheAgeMs: 5_000,
+      cacheTtlMs: 10_000,
+      staleAfterMs: 30_000,
+      cooldownUntil: null,
+      cooldownActive: false,
+      inflight: false,
+      lastMessage: 'KIS 직접 랭킹 일부만 수신했습니다.',
+      lastErrorCode: null,
+      coverage: {
+        requestedLimit: 100,
+        gainersCount: 80,
+        losersCount: 100,
+        gainersComplete: false,
+        losersComplete: true,
+        marketUniverse: 'kis-full-market-ranking',
+        guaranteedTop100: false,
+        includesLocalFallback: false,
       },
     });
   });

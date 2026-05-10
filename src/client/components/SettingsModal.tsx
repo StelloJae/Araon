@@ -1457,6 +1457,9 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
   const kisLimiterSummary = health !== null
     ? formatKisLimiterSummary(health.kisOutboundLimiter)
     : null;
+  const topMoversSummary = health !== null
+    ? formatMarketTopMoversSummary(health.marketTopMovers)
+    : null;
   return (
     <div
       data-testid="data-health-panel"
@@ -1532,6 +1535,11 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               k="KIS 요청 제한"
               v={kisLimiterSummary?.label ?? '대기'}
               chipColor={kisLimiterSummary?.chipColor ?? 'var(--text-muted)'}
+            />
+            <Row
+              k="TOP100 보장"
+              v={topMoversSummary?.label ?? '대기'}
+              chipColor={topMoversSummary?.chipColor ?? 'var(--text-muted)'}
             />
             <Row
               k="보강 대기 제외"
@@ -1612,6 +1620,12 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
                 최근 보강: {formatBackfillRecent(health.backfill.recent)}
               </>
             )}
+            {health.marketTopMovers.lastFetchedAt !== null && (
+              <>
+                <br />
+                TOP100 갱신: {formatLocal(health.marketTopMovers.lastFetchedAt)}
+              </>
+            )}
             {health.signalOutcomes.totalSignals > 0 && (
               <>
                 <br />
@@ -1664,6 +1678,32 @@ function latestObservedRecoveryMs(
     }
   }
   return latest?.observedRecoveryMs ?? null;
+}
+
+function formatMarketTopMoversSummary(
+  topMovers: RuntimeDataHealthPayload['marketTopMovers'],
+): { label: string; chipColor: string } {
+  if (!topMovers.configured) {
+    return { label: '미시작', chipColor: 'var(--text-muted)' };
+  }
+  if (topMovers.cooldownActive || topMovers.status === 'cooldown') {
+    return { label: '쿨다운', chipColor: 'var(--gold-text)' };
+  }
+  if (topMovers.inflight || topMovers.status === 'refreshing') {
+    return { label: '갱신 중', chipColor: 'var(--text-muted)' };
+  }
+  const coverage = topMovers.coverage;
+  if (coverage === null) {
+    return { label: topMovers.status, chipColor: 'var(--text-muted)' };
+  }
+  if (coverage.guaranteedTop100) {
+    return { label: 'KIS 전체시장', chipColor: 'var(--kr-up)' };
+  }
+  const count = Math.max(coverage.gainersCount, coverage.losersCount);
+  if (count > 0) {
+    return { label: `부분 ${count}/${coverage.requestedLimit}`, chipColor: 'var(--gold-text)' };
+  }
+  return { label: '대기', chipColor: 'var(--text-muted)' };
 }
 
 export function LocalBackupPanel({

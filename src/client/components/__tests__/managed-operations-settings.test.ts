@@ -199,6 +199,31 @@ describe('managed operations settings copy', () => {
               },
             ],
           },
+          marketTopMovers: {
+            configured: true,
+            status: 'ready',
+            source: 'kis-ranking-auto',
+            lastFetchedAt: '2026-05-06T09:00:00.000Z',
+            lastGeneratedAt: '2026-05-06T09:00:05.000Z',
+            cacheAgeMs: 5_000,
+            cacheTtlMs: 10_000,
+            staleAfterMs: 30_000,
+            cooldownUntil: null,
+            cooldownActive: false,
+            inflight: false,
+            lastMessage: '10초마다 갱신',
+            lastErrorCode: null,
+            coverage: {
+              requestedLimit: 100,
+              gainersCount: 100,
+              losersCount: 100,
+              gainersComplete: true,
+              losersComplete: true,
+              marketUniverse: 'kis-full-market-ranking',
+              guaranteedTop100: true,
+              includesLocalFallback: false,
+            },
+          },
           volumeBaseline: {
             total: 12,
             ready: 7,
@@ -304,6 +329,8 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('4회');
     expect(html).toContain('KIS 요청 제한');
     expect(html).toContain('31.3초');
+    expect(html).toContain('TOP100 보장');
+    expect(html).toContain('KIS 전체시장');
     expect(html).toContain('보강 대기 제외');
     expect(html).toContain('1종목');
     expect(html).toContain('최근 보강');
