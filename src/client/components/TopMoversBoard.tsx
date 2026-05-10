@@ -270,6 +270,8 @@ function statusLabel(status: MarketTopMoversResponse['status']): string {
   switch (status) {
     case 'ready':
       return 'LIVE';
+    case 'partial':
+      return '일부 수신';
     case 'stale':
       return '직전 데이터';
     case 'unconfigured':

@@ -175,9 +175,16 @@ export interface MarketTopMoversResponse {
   refreshIntervalMs: number;
   staleAfterMs: number;
   source: 'kis-ranking-auto' | 'kis-ranking-fluctuation' | 'kis-ranking-overtime-fluctuation';
-  status: 'ready' | 'stale' | 'unconfigured' | 'cooldown' | 'error';
+  status: 'ready' | 'partial' | 'stale' | 'unconfigured' | 'cooldown' | 'error';
   message: string;
   cooldownUntil: string | null;
+  coverage: {
+    requestedLimit: number;
+    gainersCount: number;
+    losersCount: number;
+    gainersComplete: boolean;
+    losersComplete: boolean;
+  };
   gainers: MarketTopMoverItem[];
   losers: MarketTopMoverItem[];
 }

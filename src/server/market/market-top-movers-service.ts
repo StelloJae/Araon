@@ -155,6 +155,9 @@ export function createMarketTopMoversService({
     message: string,
     limit: number,
   ): MarketTopMoversResponse {
+    const coverage = buildCoverage(entry, limit);
+    const partial = status === 'ready'
+      && (!coverage.gainersComplete || !coverage.losersComplete);
     return {
       generatedAt: current.toISOString(),
       fetchedAt: entry.fetchedAt.toISOString(),
@@ -162,11 +165,14 @@ export function createMarketTopMoversService({
       refreshIntervalMs: ttlMs,
       staleAfterMs,
       source: 'kis-ranking-auto',
-      status,
-      message,
+      status: partial ? 'partial' : status,
+      message: partial
+        ? `KIS 직접 랭킹 일부만 수신했습니다. 상승 ${coverage.gainersCount}/${limit}, 하락 ${coverage.losersCount}/${limit}`
+        : message,
       cooldownUntil: cooldownUntilMs > current.getTime()
         ? new Date(cooldownUntilMs).toISOString()
         : null,
+      coverage,
       gainers: entry.gainers.slice(0, limit),
       losers: entry.losers.slice(0, limit),
     };
@@ -190,12 +196,29 @@ export function createMarketTopMoversService({
       cooldownUntil: cooldownUntilMs > current.getTime()
         ? new Date(cooldownUntilMs).toISOString()
         : null,
+      coverage: {
+        requestedLimit: _limit,
+        gainersCount: 0,
+        losersCount: 0,
+        gainersComplete: false,
+        losersComplete: false,
+      },
       gainers: [],
       losers: [],
     };
   }
 
   return { getTopMovers };
+}
+
+function buildCoverage(entry: CacheEntry, limit: number): MarketTopMoversResponse['coverage'] {
+  return {
+    requestedLimit: limit,
+    gainersCount: Math.min(entry.gainers.length, limit),
+    losersCount: Math.min(entry.losers.length, limit),
+    gainersComplete: entry.gainers.length >= limit,
+    losersComplete: entry.losers.length >= limit,
+  };
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

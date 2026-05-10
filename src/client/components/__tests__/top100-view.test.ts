@@ -19,6 +19,13 @@ function topMovers(): MarketTopMoversResponse {
     status: 'ready',
     message: '3초마다 갱신',
     cooldownUntil: null,
+    coverage: {
+      requestedLimit: 100,
+      gainersCount: 1,
+      losersCount: 1,
+      gainersComplete: false,
+      losersComplete: false,
+    },
     gainers: [
       {
         rank: 1,

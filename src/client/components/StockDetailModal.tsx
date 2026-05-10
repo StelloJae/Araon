@@ -55,6 +55,8 @@ const PENDING_LABEL = '연동 예정';
 const UNAVAILABLE_LABEL = '미제공';
 const COLLECTING_LABEL = '기준선 수집 중';
 
+export type QuoteRefreshStatus = 'idle' | 'refreshing' | 'fresh' | 'failed';
+
 interface StockDetailModalProps {
   stock: StockViewModel;
   allStocks: ReadonlyArray<StockViewModel>;
@@ -63,6 +65,7 @@ interface StockDetailModalProps {
   onNavigate: (code: string) => void;
   onToggleFav: (code: string) => void;
   onUntrack: (code: string) => void;
+  quoteRefreshStatus?: QuoteRefreshStatus;
 }
 
 export function StockDetailModal({
@@ -73,6 +76,7 @@ export function StockDetailModal({
   onNavigate,
   onToggleFav,
   onUntrack,
+  quoteRefreshStatus = 'idle',
 }: StockDetailModalProps) {
   const [activeTab, setActiveTab] = useState<'realtime' | 'chart'>('realtime');
   const [quickRuleMessage, setQuickRuleMessage] = useState<string | null>(null);
@@ -154,6 +158,7 @@ export function StockDetailModal({
           stock={stock}
           accent={accent}
           isFavorite={isFavorite}
+          quoteRefreshStatus={quoteRefreshStatus}
           onToggleFav={onToggleFav}
           onUntrack={onUntrack}
           onClose={onClose}
@@ -359,6 +364,7 @@ interface ModalHeaderProps {
   stock: StockViewModel;
   accent: string;
   isFavorite: boolean;
+  quoteRefreshStatus: QuoteRefreshStatus;
   onToggleFav: (code: string) => void;
   onUntrack: (code: string) => void;
   onClose: () => void;
@@ -368,6 +374,7 @@ function ModalHeader({
   stock,
   accent,
   isFavorite,
+  quoteRefreshStatus,
   onToggleFav,
   onUntrack,
   onClose,
@@ -431,6 +438,21 @@ function ModalHeader({
             title="장 시간 외 또는 첫 라이브 틱 전"
           >
             SNAPSHOT
+          </span>
+        )}
+        {quoteRefreshStatus !== 'idle' && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              color: quoteRefreshStatus === 'failed' ? 'var(--gold-text)' : 'var(--text-muted)',
+              border: '1px solid var(--border)',
+              padding: '2px 5px',
+              borderRadius: 4,
+              letterSpacing: 0.3,
+            }}
+          >
+            {quoteRefreshStatusLabel(quoteRefreshStatus)}
           </span>
         )}
         <span
@@ -557,6 +579,19 @@ function ModalHeader({
       </button>
     </div>
   );
+}
+
+function quoteRefreshStatusLabel(status: QuoteRefreshStatus): string {
+  switch (status) {
+    case 'refreshing':
+      return '시세 갱신 중';
+    case 'fresh':
+      return '시세 갱신됨';
+    case 'failed':
+      return '시세 갱신 대기';
+    case 'idle':
+      return '';
+  }
 }
 
 interface ChartAreaProps {

@@ -88,6 +88,36 @@ describe('market top movers service', () => {
     expect(fetchRanking).toHaveBeenCalledWith(expect.objectContaining({ count: 100 }));
   });
 
+  it('marks the KIS ranking as partial when fewer than the requested top100 rows arrive', async () => {
+    const fetchRanking = vi.fn(async ({ direction }) => [
+      {
+        rank: 1,
+        ticker: direction === 'gainers' ? '005930' : '000660',
+        name: direction === 'gainers' ? '삼성전자' : 'SK하이닉스',
+        price: 70_000,
+        changeAbs: direction === 'gainers' ? 2_500 : -5_000,
+        changePct: direction === 'gainers' ? 3.7 : -2.7,
+        volume: 1_000,
+      },
+    ]);
+    const service = createMarketTopMoversService({
+      now: () => new Date('2026-05-08T08:00:00.000Z'),
+      fetchRanking,
+    });
+
+    const result = await service.getTopMovers({ limit: 100 });
+
+    expect(result.status).toBe('partial');
+    expect(result.message).toContain('일부');
+    expect(result.coverage).toEqual({
+      requestedLimit: 100,
+      gainersCount: 1,
+      losersCount: 1,
+      gainersComplete: false,
+      losersComplete: false,
+    });
+  });
+
   it('keeps a full top100 cache even when a smaller caller limit refreshes first', async () => {
     let now = 1_000;
     let fail = false;

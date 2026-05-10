@@ -38,7 +38,7 @@ import { FavoritesBlock } from './components/FavoritesBlock';
 import { SectionStack } from './components/SectionStack';
 import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
-import { StockDetailModal } from './components/StockDetailModal';
+import { StockDetailModal, type QuoteRefreshStatus } from './components/StockDetailModal';
 import { ToastStack } from './components/ToastStack';
 import { useAlertEvaluator } from './hooks/useAlertEvaluator';
 import { useMasterStore } from './stores/master-store';
@@ -105,6 +105,10 @@ export function App() {
 
   // Detail modal: a single open ticker code, or null when closed.
   const [detailCode, setDetailCode] = useState<string | null>(null);
+  const [detailQuoteRefresh, setDetailQuoteRefresh] = useState<{
+    code: string;
+    status: QuoteRefreshStatus;
+  } | null>(null);
   const [kstTime, setKstTime] = useState(() => formatKstTime(new Date()));
   const [marketSummary, setMarketSummary] = useState<MarketTapeSummary | null>(null);
   const openDetail = useCallback((code: string) => {
@@ -338,13 +342,20 @@ export function App() {
   useEffect(() => {
     if (detailCode === null) return;
     let cancelled = false;
+    setDetailQuoteRefresh({ code: detailCode, status: 'refreshing' });
     void refreshStockQuote(detailCode)
       .then((price) => {
-        if (!cancelled) applyPriceUpdate(price);
+        if (!cancelled) {
+          applyPriceUpdate(price);
+          setDetailQuoteRefresh({ code: detailCode, status: 'fresh' });
+        }
       })
       .catch(() => {
         // Foreground quote refresh is opportunistic. Polling/SSE still keep the
         // dashboard honest if KIS is throttled or credentials are unavailable.
+        if (!cancelled) {
+          setDetailQuoteRefresh({ code: detailCode, status: 'failed' });
+        }
       });
     return () => {
       cancelled = true;
@@ -407,6 +418,9 @@ export function App() {
           stock={detailStock}
           allStocks={allStockVMs}
           isFavorite={favorites.has(detailStock.code)}
+          quoteRefreshStatus={
+            detailQuoteRefresh?.code === detailStock.code ? detailQuoteRefresh.status : 'idle'
+          }
           onClose={closeDetail}
           onNavigate={openDetail}
           onToggleFav={toggleFavoriteFromRow}

@@ -327,6 +327,23 @@ describe('volume visibility', () => {
     expect(html).toContain('차트');
   });
 
+  it('shows foreground quote refresh status inside the detail modal', () => {
+    const html = renderToStaticMarkup(
+      createElement(StockDetailModal, {
+        stock: stock({ isSnapshot: true }),
+        allStocks: [stock()],
+        isFavorite: false,
+        quoteRefreshStatus: 'refreshing',
+        onClose: () => undefined,
+        onNavigate: () => undefined,
+        onToggleFav: () => undefined,
+        onUntrack: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('시세 갱신 중');
+  });
+
   it('offers stock-scoped quick alert rule presets in the detail modal', () => {
     const html = renderToStaticMarkup(
       createElement(StockDetailModal, {

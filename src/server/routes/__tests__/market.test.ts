@@ -21,6 +21,13 @@ describe('market routes', () => {
           status: 'ready',
           message: '5초마다 갱신',
           cooldownUntil: null,
+          coverage: {
+            requestedLimit: 100,
+            gainersCount: 0,
+            losersCount: 0,
+            gainersComplete: false,
+            losersComplete: false,
+          },
           gainers: [],
           losers: [],
         })),
