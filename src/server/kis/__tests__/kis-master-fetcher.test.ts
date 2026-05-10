@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -219,6 +219,27 @@ describe('fetchMaster (with stub download)', () => {
     expect(result.kospi.map((r) => r.ticker)).toEqual(['005930']);
     expect(result.kosdaq.map((r) => r.ticker)).toEqual(['050890', '005930']);
     expect(result.combined.map((r) => r.ticker)).toEqual(['005930', '050890']);
+  });
+
+  it('runs master downloads through the low-priority outbound governor when provided', async () => {
+    const kospiText = buildLine('005930', 'KR7005930003', '삼성전자', 228);
+    const kosdaqText = buildLine('050890', 'KR7050890009', '쏠리드', 222);
+    const outboundLimiter = {
+      acquire: vi.fn(async () => undefined),
+      recordSuccess: vi.fn(),
+      recordFailure: vi.fn(),
+    };
+
+    await fetchMaster({
+      download: async (url) =>
+        url.includes('kospi') ? makeZip(kospiText, 'kospi.mst') : makeZip(kosdaqText, 'kosdaq.mst'),
+      outboundLimiter,
+    } as never);
+
+    expect(outboundLimiter.acquire).toHaveBeenCalledTimes(2);
+    expect(outboundLimiter.acquire).toHaveBeenCalledWith({ endpointClass: 'master_refresh' });
+    expect(outboundLimiter.recordSuccess).toHaveBeenCalledTimes(2);
+    expect(outboundLimiter.recordFailure).not.toHaveBeenCalled();
   });
 
   it('wraps download failures in KisMasterFetchError', async () => {

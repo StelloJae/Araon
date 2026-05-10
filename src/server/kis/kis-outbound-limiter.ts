@@ -70,6 +70,8 @@ export interface KisOutboundLimiterSnapshot {
   ratePerSec: number;
   burst: number;
   tokens: number;
+  queueDepth?: number;
+  queuedByPriority?: Partial<Record<KisPriorityClass, number>>;
   profiles: KisOutboundLimiterProfileSnapshot[];
 }
 
@@ -135,6 +137,26 @@ interface CooldownObservation {
   recoveryStartedAtMs: number | null;
   recoverySuccessCount: number;
 }
+
+interface QueuedAcquire {
+  sequence: number;
+  input: Required<Pick<KisOutboundLimiterAcquireInput, 'profileId'>> & {
+    endpointClass?: KisEndpointClass;
+  };
+  resolve: () => void;
+  reject: (err: unknown) => void;
+}
+
+const PRIORITY_ORDER: Record<KisPriorityClass, number> = {
+  auth: 0,
+  foreground: 1,
+  selected_backfill: 2,
+  polling: 3,
+  ranking: 4,
+  background_backfill: 5,
+  master_refresh: 6,
+  maintenance: 7,
+};
 
 const DEFAULT_CLASS_POLICIES: Record<KisPriorityClass, ResolvedKisClassPolicy> = {
   auth: {
@@ -227,29 +249,28 @@ export function createKisOutboundLimiter(
   const observationsByKey = new Map<string, CooldownObservation>();
   const lastStartAtMsByPriority = new Map<KisPriorityClass, number>();
   const inFlightByPriority = new Map<KisPriorityClass, number>();
+  const acquireQueue: QueuedAcquire[] = [];
+  let nextSequence = 0;
+  let drainActive = false;
 
   async function acquire(input: KisOutboundLimiterAcquireInput = {}): Promise<void> {
     const profileId = input.profileId ?? DEFAULT_PROFILE_ID;
     const cooldownKey = cooldownMapKey(profileId, input.endpointClass);
-    const policy = policyForEndpoint(input.endpointClass);
     const currentObservation = observationsByKey.get(cooldownKey);
-    enforceGovernorState(cooldownKey, currentObservation, input.endpointClass);
-
-    await waitForClassCapacity(policy);
-    refill();
-    const effectiveRate = effectiveRatePerSec(currentObservation, policy);
-    if (tokens < 1) {
-      const waitMs = Math.ceil(((1 - tokens) / effectiveRate) * 1000);
-      await sleep(waitMs);
-      refill();
-    }
-    await waitForStartSpacing(policy, currentObservation);
-
-    tokens = Math.max(0, tokens - 1);
-    inFlightByPriority.set(
-      policy.priorityClass,
-      (inFlightByPriority.get(policy.priorityClass) ?? 0) + 1,
-    );
+    assertNotLocallyBlocked(currentObservation, input.endpointClass);
+    return new Promise<void>((resolve, reject) => {
+      acquireQueue.push({
+        sequence: nextSequence,
+        input: {
+          profileId,
+          ...(input.endpointClass !== undefined ? { endpointClass: input.endpointClass } : {}),
+        },
+        resolve,
+        reject,
+      });
+      nextSequence += 1;
+      void drainAcquireQueue();
+    });
   }
 
   function recordFailure(input: KisOutboundLimiterFailureInput): void {
@@ -331,6 +352,8 @@ export function createKisOutboundLimiter(
       ratePerSec,
       burst,
       tokens,
+      queueDepth: acquireQueue.length,
+      queuedByPriority: queuedByPrioritySnapshot(),
       profiles: Array.from(cooldownUntilByKey.entries())
         .map(([key, cooldownUntilMs]) => ({
           ...parseCooldownMapKey(key),
@@ -373,6 +396,15 @@ export function createKisOutboundLimiter(
     };
   }
 
+  function queuedByPrioritySnapshot(): Record<KisPriorityClass, number> {
+    const counts = emptyPriorityCounts();
+    for (const entry of acquireQueue) {
+      const priorityClass = priorityClassForEndpoint(entry.input.endpointClass);
+      counts[priorityClass] += 1;
+    }
+    return counts;
+  }
+
   function refill(): void {
     const current = now();
     const elapsedMs = Math.max(0, current - lastRefillAtMs);
@@ -381,11 +413,114 @@ export function createKisOutboundLimiter(
     lastRefillAtMs = current;
   }
 
-  function enforceGovernorState(
-    cooldownKey: string,
+  async function drainAcquireQueue(): Promise<void> {
+    if (drainActive) return;
+    drainActive = true;
+    try {
+      while (acquireQueue.length > 0) {
+        rejectLocallyBlockedQueuedAcquires();
+        if (acquireQueue.length === 0) return;
+        refill();
+
+        const readyIndex = findReadyQueuedAcquireIndex();
+        if (readyIndex >= 0) {
+          const [entry] = acquireQueue.splice(readyIndex, 1);
+          if (entry === undefined) continue;
+          grantQueuedAcquire(entry);
+          continue;
+        }
+
+        const waitMs = nextQueueWaitMs();
+        await sleep(waitMs);
+      }
+    } finally {
+      drainActive = false;
+      if (acquireQueue.length > 0) {
+        void drainAcquireQueue();
+      }
+    }
+  }
+
+  function rejectLocallyBlockedQueuedAcquires(): void {
+    for (let index = acquireQueue.length - 1; index >= 0; index -= 1) {
+      const entry = acquireQueue[index]!;
+      const cooldownKey = cooldownMapKey(entry.input.profileId, entry.input.endpointClass);
+      const observation = observationsByKey.get(cooldownKey);
+      try {
+        assertNotLocallyBlocked(observation, entry.input.endpointClass);
+      } catch (err: unknown) {
+        acquireQueue.splice(index, 1);
+        entry.reject(err);
+      }
+    }
+  }
+
+  function findReadyQueuedAcquireIndex(): number {
+    const sorted = acquireQueue
+      .map((entry, index) => ({ entry, index }))
+      .sort((a, b) => compareQueuedAcquires(a.entry, b.entry));
+    for (const { entry, index } of sorted) {
+      if (queuedAcquireWaitMs(entry) === 0) return index;
+    }
+    return -1;
+  }
+
+  function nextQueueWaitMs(): number {
+    let waitMs = Number.POSITIVE_INFINITY;
+    for (const entry of acquireQueue) {
+      waitMs = Math.min(waitMs, queuedAcquireWaitMs(entry));
+    }
+    return Number.isFinite(waitMs) ? Math.max(1, Math.ceil(waitMs)) : 10;
+  }
+
+  function queuedAcquireWaitMs(entry: QueuedAcquire): number {
+    const policy = policyForEndpoint(entry.input.endpointClass);
+    const observation = observationsByKey.get(
+      cooldownMapKey(entry.input.profileId, entry.input.endpointClass),
+    );
+    if ((inFlightByPriority.get(policy.priorityClass) ?? 0) >= policy.maxInFlight) {
+      return 10;
+    }
+    const effectiveRate = effectiveRatePerSec(observation, policy);
+    const tokenWaitMs = tokens < 1
+      ? Math.ceil(((1 - tokens) / effectiveRate) * 1000)
+      : 0;
+    return Math.max(tokenWaitMs, startSpacingWaitMs(policy, observation));
+  }
+
+  function grantQueuedAcquire(entry: QueuedAcquire): void {
+    const cooldownKey = cooldownMapKey(entry.input.profileId, entry.input.endpointClass);
+    transitionToHalfOpenIfReady(cooldownKey, entry.input.endpointClass);
+    const policy = policyForEndpoint(entry.input.endpointClass);
+    tokens = Math.max(0, tokens - 1);
+    inFlightByPriority.set(
+      policy.priorityClass,
+      (inFlightByPriority.get(policy.priorityClass) ?? 0) + 1,
+    );
+    const startedAt = now();
+    lastGlobalStartAtMs = startedAt;
+    lastStartAtMsByPriority.set(policy.priorityClass, startedAt);
+    entry.resolve();
+  }
+
+  function assertNotLocallyBlocked(
     observation: CooldownObservation | undefined,
     endpointClass: KisEndpointClass | undefined,
   ): void {
+    if (observation === undefined) return;
+    const current = now();
+    if (observation.state === 'normal' || observation.state === 'recovering') return;
+    const retryAt = observation.circuitBreakerUntilMs ?? observation.nextRetryAtMs ?? 0;
+    if (retryAt > current || observation.state === 'half_open') {
+      throw localCooldownError(endpointClass, retryAt, observation.state);
+    }
+  }
+
+  function transitionToHalfOpenIfReady(
+    cooldownKey: string,
+    endpointClass: KisEndpointClass | undefined,
+  ): void {
+    const observation = observationsByKey.get(cooldownKey);
     if (observation === undefined) return;
     const current = now();
     if (observation.state === 'normal' || observation.state === 'recovering') return;
@@ -399,16 +534,10 @@ export function createKisOutboundLimiter(
     });
   }
 
-  async function waitForClassCapacity(policy: ResolvedKisClassPolicy): Promise<void> {
-    while ((inFlightByPriority.get(policy.priorityClass) ?? 0) >= policy.maxInFlight) {
-      await sleep(10);
-    }
-  }
-
-  async function waitForStartSpacing(
+  function startSpacingWaitMs(
     policy: ResolvedKisClassPolicy,
     observation: CooldownObservation | undefined,
-  ): Promise<void> {
+  ): number {
     const minStartGapMs = effectiveMinStartGapMs(policy, observation);
     const current = now();
     const lastClassStartAtMs = lastStartAtMsByPriority.get(policy.priorityClass) ?? 0;
@@ -416,11 +545,7 @@ export function createKisOutboundLimiter(
       lastGlobalStartAtMs + globalMinStartGapMs,
       lastClassStartAtMs + minStartGapMs,
     );
-    const waitMs = Math.max(0, target - current);
-    if (waitMs > 0) await sleep(waitMs);
-    const startedAt = now();
-    lastGlobalStartAtMs = startedAt;
-    lastStartAtMsByPriority.set(policy.priorityClass, startedAt);
+    return Math.max(0, target - current);
   }
 
   function recordLimited(
@@ -463,6 +588,9 @@ export function createKisOutboundLimiter(
     const current = inFlightByPriority.get(policy.priorityClass) ?? 0;
     if (current <= 0) return;
     inFlightByPriority.set(policy.priorityClass, current - 1);
+    if (acquireQueue.length > 0) {
+      void drainAcquireQueue();
+    }
   }
 
   function backoffMsForEndpoint(
@@ -531,6 +659,27 @@ export function createKisOutboundLimiter(
   }
 
   return { acquire, recordFailure, recordSuccess, snapshot };
+}
+
+function compareQueuedAcquires(a: QueuedAcquire, b: QueuedAcquire): number {
+  const priorityOrder =
+    PRIORITY_ORDER[priorityClassForEndpoint(a.input.endpointClass)]
+    - PRIORITY_ORDER[priorityClassForEndpoint(b.input.endpointClass)];
+  if (priorityOrder !== 0) return priorityOrder;
+  return a.sequence - b.sequence;
+}
+
+function emptyPriorityCounts(): Record<KisPriorityClass, number> {
+  return {
+    auth: 0,
+    foreground: 0,
+    selected_backfill: 0,
+    polling: 0,
+    ranking: 0,
+    background_backfill: 0,
+    master_refresh: 0,
+    maintenance: 0,
+  };
 }
 
 function cooldownMapKey(profileId: string, endpointClass: KisEndpointClass | undefined): string {

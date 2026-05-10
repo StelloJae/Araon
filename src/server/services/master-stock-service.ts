@@ -27,6 +27,7 @@ import {
   type FetchMasterResult,
   type MasterStockRow,
 } from '../kis/kis-master-fetcher.js';
+import type { KisOutboundLimiter } from '../kis/kis-outbound-limiter.js';
 import type {
   MasterStockEntry,
   MasterStockMetaRepository,
@@ -67,6 +68,7 @@ export interface MasterStockServiceDeps {
   repo: MasterStockRepository;
   meta: MasterStockMetaRepository;
   fetcher?: (opts?: Parameters<typeof fetchMaster>[0]) => Promise<FetchMasterResult>;
+  outboundLimiter?: () => KisOutboundLimiter | null;
   /** Override `Date.now()` for tests. */
   now?: () => number;
 }
@@ -132,7 +134,8 @@ export function createMasterStockService(
     refreshing = true;
     try {
       log.info('master refresh starting');
-      const result = await fetcher();
+      const outboundLimiter = deps.outboundLimiter?.() ?? undefined;
+      const result = await fetcher(outboundLimiter === undefined ? undefined : { outboundLimiter });
       if (result.combined.length === 0) {
         throw new KisMasterFetchError('parsed master result is empty');
       }

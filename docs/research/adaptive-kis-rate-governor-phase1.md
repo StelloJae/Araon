@@ -1,6 +1,6 @@
-# Adaptive KIS Rate Governor Phase 1
+# Adaptive KIS Rate Governor
 
-## Goal
+## Phase 1 Goal
 
 Araon treats KIS `EGW00201` / "초당 거래건수를 초과하였습니다." as a
 second-window REST throttle, not as a generic upstream outage. Phase 1 replaces
@@ -16,7 +16,7 @@ the old fixed long cooldown path with a conservative adaptive governor:
 This is not a full priority-queue rewrite and does not attempt aggressive RPS
 tuning.
 
-## State Model
+## Phase 1 State Model
 
 The governor tracks each app-key profile plus endpoint class through these
 states:
@@ -33,7 +33,7 @@ delays. Repeated failures escalate to the 30s circuit breaker. A canary success
 does not return traffic to full speed immediately; recovery uses a reduced
 allowed RPS until enough stable successes have been observed.
 
-## Request Spacing
+## Phase 1 Request Spacing
 
 Phase 1 keeps the global token budget but adds start-spacing and in-flight
 limits. Initial policies are intentionally conservative:
@@ -53,9 +53,32 @@ Foreground calls receive higher priority metadata, but they still go through the
 same global governor. Backfill and ranking use lower spacing and pause first
 when throttling is observed.
 
+## Phase 2 Queue And Integration
+
+Phase 2 adds an in-process priority queue in front of governor grants. Requests
+still share the same app-key budget, but pending work is ordered by priority:
+
+1. `auth`
+2. `foreground`
+3. `selected_backfill`
+4. `polling`
+5. `ranking`
+6. `background_backfill`
+7. `master_refresh`
+8. `maintenance`
+
+The queue is conservative rather than aggressive:
+
+- token availability, start spacing, and max in-flight limits still apply
+- foreground can jump ahead of queued background work, but it cannot bypass the
+  global governor
+- queued work for a class that enters throttle is rejected with the local
+  cooldown error instead of leaking through before the throttle state is recorded
+- queue depth and priority counts are exposed through data health
+
 ## Integration Inventory
 
-Covered by the Phase 1 governor:
+Covered by the governor after Phase 2:
 
 - OAuth token issuance: `token`
 - WebSocket approval-key issuance: `approval`
@@ -64,12 +87,10 @@ Covered by the Phase 1 governor:
 - selected daily/minute chart backfill: `daily-backfill` / `selected-minute`
 - background daily backfill through the daily candle client plus batch pause
 - market top-movers/ranking calls: `ranking`
+- KIS public master `.mst` downloads: `master_refresh`
 
-Still outside or not fully solved in Phase 1:
+Still outside or not fully solved after Phase 2:
 
-- the full priority queue is not implemented yet
-- master file refresh remains a separate low-frequency refresh path unless it is
-  routed through the KIS REST client in a later slice
 - persistent governor telemetry is not stored yet
 - AIMD auto-tuning is not enabled
 
@@ -78,6 +99,7 @@ Still outside or not fully solved in Phase 1:
 `GET /runtime/data-health` exposes sanitized KIS outbound governor diagnostics:
 
 - current state and per-class state
+- queue depth and queued counts by priority
 - current allowed RPS estimate
 - configured rate/burst/tokens
 - min start gap and max in-flight
@@ -97,7 +119,5 @@ during normal use after deploy; it should not intentionally create `EGW00201`.
 
 ## Follow-Up
 
-- Phase 2: full priority queue and complete scheduler integration
-- Phase 2: explicit foreground vs background fairness policy
 - Phase 3: AIMD auto-tuning
 - Phase 3: persistent governor telemetry and normal-operation live observation

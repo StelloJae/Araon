@@ -1635,6 +1635,9 @@ function formatKisLimiterSummary(
   if (activeCooldowns.length > 0) {
     return { label: `쿨다운 ${activeCooldowns.length}개`, chipColor: 'var(--gold-text)' };
   }
+  if (limiter.queueDepth > 0) {
+    return { label: `대기 ${limiter.queueDepth}개`, chipColor: 'var(--gold-text)' };
+  }
   const latestRecovery = latestObservedRecoveryMs(limiter);
   if (latestRecovery !== null) {
     return {

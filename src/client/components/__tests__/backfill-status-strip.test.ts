@@ -43,6 +43,8 @@ function health(
       ratePerSec: null,
       burst: null,
       tokens: null,
+      queueDepth: 0,
+      queuedByPriority: {},
       currentAllowedRps: null,
       lastThrottleAt: null,
       lastThrottleClass: null,

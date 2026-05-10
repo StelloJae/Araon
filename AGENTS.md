@@ -63,6 +63,8 @@ Credentials/data/runtime state는 커밋하지 않는다.
 - `EGW00201` / "초당 거래건수 초과"는 second-window throttle로 다룬다. 단순
   고정 cooldown으로 치환하지 말고 canary recovery, backoff, start spacing,
   circuit breaker 정책을 유지한다.
+- Governor queue에서는 foreground가 background/ranking/master refresh보다 먼저
+  나가야 하지만, token/start spacing/max in-flight 제한은 계속 지킨다.
 - live KIS stress test나 의도적인 throttle 유도는 사용자의 명시 승인 없이 금지한다.
 
 ## 주요 명령

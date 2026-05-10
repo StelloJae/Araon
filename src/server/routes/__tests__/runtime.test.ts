@@ -469,6 +469,8 @@ describe('GET /runtime/data-health', () => {
           ratePerSec: null,
           burst: null,
           tokens: null,
+          queueDepth: 0,
+          queuedByPriority: {},
           currentAllowedRps: null,
           lastThrottleAt: null,
           lastThrottleClass: null,
@@ -578,6 +580,11 @@ describe('GET /runtime/data-health', () => {
               ratePerSec: 15,
               burst: 15,
               tokens: 7.5,
+              queueDepth: 2,
+              queuedByPriority: {
+                foreground: 1,
+                background_backfill: 1,
+              },
               profiles: [
                 {
                   profileId: 'primary',
@@ -616,6 +623,11 @@ describe('GET /runtime/data-health', () => {
       ratePerSec: 15,
       burst: 15,
       tokens: 7.5,
+      queueDepth: 2,
+      queuedByPriority: {
+        foreground: 1,
+        background_backfill: 1,
+      },
       currentAllowedRps: 4,
       lastThrottleAt: '2026-05-08T14:01:00.000Z',
       lastThrottleClass: 'polling',

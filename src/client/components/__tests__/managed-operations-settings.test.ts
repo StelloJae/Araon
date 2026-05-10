@@ -164,6 +164,8 @@ describe('managed operations settings copy', () => {
             ratePerSec: 15,
             burst: 15,
             tokens: 7.5,
+            queueDepth: 0,
+            queuedByPriority: {},
             currentAllowedRps: 4,
             lastThrottleAt: '2026-05-08T14:01:00.000Z',
             lastThrottleClass: 'polling',

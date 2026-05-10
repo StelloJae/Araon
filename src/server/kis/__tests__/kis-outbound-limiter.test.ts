@@ -477,4 +477,135 @@ describe('createKisOutboundLimiter', () => {
 
     expect(sleep).toHaveBeenCalledWith(80);
   });
+
+  it('prioritizes foreground over queued background work when shared capacity opens', async () => {
+    let now = 0;
+    const sleeps: Array<{ ms: number; resolve: () => void }> = [];
+    const sleep = vi.fn((ms: number) => new Promise<void>((resolve) => {
+      sleeps.push({ ms, resolve });
+    }));
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 1,
+      burst: 1,
+      now: () => now,
+      sleep,
+      classPolicies: {
+        foreground: { minStartGapMs: 0, maxInFlight: 1 },
+        background_backfill: { minStartGapMs: 0, maxInFlight: 1 },
+        polling: { minStartGapMs: 0, maxInFlight: 1 },
+      },
+    });
+    const started: string[] = [];
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+
+    const background = limiter
+      .acquire({ profileId: 'primary', endpointClass: 'daily-backfill' })
+      .then(() => {
+        started.push('background');
+      });
+    await flushMicrotasks();
+
+    const foreground = limiter
+      .acquire({ profileId: 'primary', endpointClass: 'foreground' })
+      .then(() => {
+        started.push('foreground');
+      });
+    await flushMicrotasks();
+
+    expect(sleeps[0]?.ms).toBe(1000);
+    now = 1000;
+    sleeps[0]?.resolve();
+    await flushMicrotasks();
+
+    const firstStarted = started[0];
+    if (firstStarted === 'foreground') {
+      limiter.recordSuccess({ profileId: 'primary', endpointClass: 'foreground' });
+    }
+    for (let index = 1; index < sleeps.length; index += 1) {
+      const pending = sleeps[index]!;
+      now += pending.ms;
+      pending.resolve();
+      await flushMicrotasks();
+    }
+    await Promise.allSettled([background, foreground]);
+
+    expect(firstStarted).toBe('foreground');
+  });
+
+  it('reports queued request depth by priority class', async () => {
+    let now = 0;
+    const sleep = vi.fn(() => new Promise<void>(() => undefined));
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 1,
+      burst: 1,
+      now: () => now,
+      sleep,
+      classPolicies: {
+        foreground: { minStartGapMs: 0, maxInFlight: 1 },
+        background_backfill: { minStartGapMs: 0, maxInFlight: 1 },
+        polling: { minStartGapMs: 0, maxInFlight: 1 },
+      },
+    });
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+    void limiter.acquire({ profileId: 'primary', endpointClass: 'daily-backfill' });
+    await flushMicrotasks();
+    void limiter.acquire({ profileId: 'primary', endpointClass: 'foreground' });
+    await flushMicrotasks();
+
+    expect(limiter.snapshot()).toEqual(expect.objectContaining({
+      queueDepth: 2,
+      queuedByPriority: expect.objectContaining({
+        foreground: 1,
+        background_backfill: 1,
+      }),
+    }));
+  });
+
+  it('records throttle state before draining queued work for the same class', async () => {
+    let now = 0;
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 10,
+      burst: 2,
+      now: () => now,
+      sleep: vi.fn(async (ms: number) => {
+        now += ms;
+      }),
+      classPolicies: {
+        polling: { minStartGapMs: 0, maxInFlight: 1 },
+      },
+    });
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    const queued = limiter
+      .acquire({ profileId: 'primary', endpointClass: 'polling' })
+      .then(
+        () => 'started' as const,
+        (err: unknown) => err,
+      );
+    await flushMicrotasks();
+
+    limiter.recordFailure({
+      profileId: 'primary',
+      endpointClass: 'polling',
+      error: new KisRestError('limited', 500, null, 'EGW00201', null),
+    });
+    await flushMicrotasks();
+
+    const result = await queued;
+    expect(result).toBeInstanceOf(KisRestError);
+    expect(result).toMatchObject({
+      status: 429,
+      msgCd: 'EGW00201',
+      payload: { localCooldown: true },
+    });
+  });
 });
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}

@@ -41,6 +41,7 @@
 import iconv from 'iconv-lite';
 import AdmZip from 'adm-zip';
 import { createChildLogger } from '@shared/logger.js';
+import type { KisOutboundLimiter } from './kis-outbound-limiter.js';
 
 const log = createChildLogger('kis-master-fetcher');
 
@@ -431,6 +432,7 @@ export interface FetchMasterResult {
 export interface FetchMasterDeps {
   /** Defaults to global `fetch` if omitted (used by tests to stub). */
   download?: (url: string) => Promise<Buffer>;
+  outboundLimiter?: Pick<KisOutboundLimiter, 'acquire' | 'recordFailure' | 'recordSuccess'>;
 }
 
 async function defaultDownload(url: string): Promise<Buffer> {
@@ -449,8 +451,8 @@ export async function fetchMaster(deps: FetchMasterDeps = {}): Promise<FetchMast
   let kosdaqZip: Buffer;
   try {
     [kospiZip, kosdaqZip] = await Promise.all([
-      download(KOSPI_URL),
-      download(KOSDAQ_URL),
+      downloadWithGovernor(KOSPI_URL, download, deps.outboundLimiter),
+      downloadWithGovernor(KOSDAQ_URL, download, deps.outboundLimiter),
     ]);
   } catch (err) {
     throw new KisMasterFetchError('failed to download KIS master files', { cause: err });
@@ -477,6 +479,23 @@ export async function fetchMaster(deps: FetchMasterDeps = {}): Promise<FetchMast
   );
 
   return { kospi, kosdaq, combined };
+}
+
+async function downloadWithGovernor(
+  url: string,
+  download: (url: string) => Promise<Buffer>,
+  outboundLimiter: FetchMasterDeps['outboundLimiter'],
+): Promise<Buffer> {
+  const limiterContext = { endpointClass: 'master_refresh' as const };
+  await outboundLimiter?.acquire(limiterContext);
+  try {
+    const buffer = await download(url);
+    outboundLimiter?.recordSuccess?.(limiterContext);
+    return buffer;
+  } catch (err: unknown) {
+    outboundLimiter?.recordFailure({ ...limiterContext, error: err });
+    throw err;
+  }
 }
 
 // === Test-only exports ========================================================

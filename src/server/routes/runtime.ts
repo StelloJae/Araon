@@ -196,6 +196,8 @@ export interface RuntimeKisOutboundLimiterPayload {
   readonly ratePerSec: number | null;
   readonly burst: number | null;
   readonly tokens: number | null;
+  readonly queueDepth: number;
+  readonly queuedByPriority: Readonly<Record<string, number>>;
   readonly currentAllowedRps: number | null;
   readonly lastThrottleAt: string | null;
   readonly lastThrottleClass: string | null;
@@ -750,6 +752,8 @@ function buildKisOutboundLimiterPayload(
       ratePerSec: null,
       burst: null,
       tokens: null,
+      queueDepth: 0,
+      queuedByPriority: {},
       currentAllowedRps: null,
       lastThrottleAt: null,
       lastThrottleClass: null,
@@ -798,6 +802,8 @@ function buildKisOutboundLimiterPayload(
     ratePerSec: snapshot.ratePerSec,
     burst: snapshot.burst,
     tokens: snapshot.tokens,
+    queueDepth: snapshot.queueDepth ?? 0,
+    queuedByPriority: snapshot.queuedByPriority ?? {},
     currentAllowedRps: mostRestrictiveRps,
     lastThrottleAt: lastThrottle?.lastLimitedAt ?? null,
     lastThrottleClass: lastThrottle?.priorityClass ?? null,

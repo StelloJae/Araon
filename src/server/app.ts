@@ -168,16 +168,19 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const favoriteRepo = new FavoriteRepository(db);
   const masterRepo = new MasterStockRepository(db);
   const masterMetaRepo = new MasterStockMetaRepository(db);
-  const masterService = createMasterStockService({
-    repo: masterRepo,
-    meta: masterMetaRepo,
-  });
-  const marketSummaryService = createMarketSummaryService();
-
   const runtimeRef = createKisRuntimeRef(
     { db, settingsStore, credentialStore, priceStore, snapshotStore, stockRepo, favoriteRepo },
     { actuallyStart: defaultActuallyStart },
   );
+  const masterService = createMasterStockService({
+    repo: masterRepo,
+    meta: masterMetaRepo,
+    outboundLimiter: () => {
+      const state = runtimeRef.get();
+      return state.status === 'started' ? state.runtime.outboundLimiter : null;
+    },
+  });
+  const marketSummaryService = createMarketSummaryService();
   const backfillCooldownEndpointClasses = new Set<KisEndpointClass>([
     'daily-backfill',
     'selected-minute',
