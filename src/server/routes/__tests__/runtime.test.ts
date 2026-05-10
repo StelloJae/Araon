@@ -479,6 +479,13 @@ describe('GET /runtime/data-health', () => {
           circuitBreakerUntil: null,
           recentThrottleCount: 0,
           recentSuccessCount: 0,
+          telemetry: {
+            capacity: 0,
+            eventCount: 0,
+            oldestAt: null,
+            newestAt: null,
+            recent: [],
+          },
           profiles: [],
         },
         volumeBaseline: {
@@ -585,6 +592,26 @@ describe('GET /runtime/data-health', () => {
                 foreground: 1,
                 background_backfill: 1,
               },
+              telemetry: {
+                capacity: 3,
+                eventCount: 1,
+                recent: [
+                  {
+                    atMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 250,
+                    maxInFlight: 2,
+                  },
+                ],
+              },
               profiles: [
                 {
                   profileId: 'primary',
@@ -636,6 +663,28 @@ describe('GET /runtime/data-health', () => {
       circuitBreakerUntil: null,
       recentThrottleCount: 1,
       recentSuccessCount: 3,
+      telemetry: {
+        capacity: 3,
+        eventCount: 1,
+        oldestAt: '2026-05-08T14:01:00.000Z',
+        newestAt: '2026-05-08T14:01:00.000Z',
+        recent: [
+          {
+            at: '2026-05-08T14:01:00.000Z',
+            event: 'throttle',
+            profileId: 'primary',
+            endpointClass: 'polling',
+            priorityClass: 'polling',
+            state: 'throttled',
+            throttleCode: 'EGW00201',
+            recoveryAttemptCount: 0,
+            observedRecoveryMs: null,
+            currentAllowedRps: 15,
+            minStartGapMs: 250,
+            maxInFlight: 2,
+          },
+        ],
+      },
       profiles: [
         {
           profileId: 'primary',

@@ -205,6 +205,7 @@ import {
   createKisOutboundLimiter,
   type CreateKisOutboundLimiterOptions,
 } from './kis/kis-outbound-limiter.js';
+import { createFileKisGovernorTelemetryStore } from './kis/kis-governor-telemetry.js';
 import { createKisWsClient } from './kis/kis-ws-client.js';
 import {
   createRealtimeBridge,
@@ -378,7 +379,23 @@ export async function defaultActuallyStart(
   credentials: KisCredentials,
 ): Promise<KisRuntime> {
   const outboundLimiterOptions = buildDefaultKisOutboundLimiterOptions(credentials);
-  const outboundLimiter = createKisOutboundLimiter(outboundLimiterOptions);
+  const governorTelemetryStore = createFileKisGovernorTelemetryStore();
+  const governorTelemetry = await governorTelemetryStore.load();
+  const outboundLimiter = createKisOutboundLimiter({
+    ...outboundLimiterOptions,
+    telemetry: {
+      capacity: governorTelemetry.capacity,
+      initialEvents: governorTelemetry.recent,
+      onSnapshot: (snapshot) => {
+        void governorTelemetryStore.save(snapshot).catch((err: unknown) => {
+          log.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'KIS governor telemetry persistence failed',
+          );
+        });
+      },
+    },
+  });
   const ratePerSec = outboundLimiterOptions.ratePerSec;
   const tokenRest = createKisRestClient({
     isPaper: credentials.isPaper,

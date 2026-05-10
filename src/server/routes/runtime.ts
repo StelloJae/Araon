@@ -67,6 +67,7 @@ import {
   createPhoneDeliveryLog,
   type PhoneDeliveryLog,
 } from '../notifications/phone-delivery-log.js';
+import type { KisGovernorTelemetrySnapshot } from '../kis/kis-outbound-limiter.js';
 
 export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
@@ -206,6 +207,26 @@ export interface RuntimeKisOutboundLimiterPayload {
   readonly circuitBreakerUntil: string | null;
   readonly recentThrottleCount: number;
   readonly recentSuccessCount: number;
+  readonly telemetry: {
+    readonly capacity: number;
+    readonly eventCount: number;
+    readonly oldestAt: string | null;
+    readonly newestAt: string | null;
+    readonly recent: readonly {
+      readonly at: string | null;
+      readonly event: string;
+      readonly profileId: string;
+      readonly endpointClass: string | null;
+      readonly priorityClass: string;
+      readonly state: string;
+      readonly throttleCode: string | null;
+      readonly recoveryAttemptCount: number;
+      readonly observedRecoveryMs: number | null;
+      readonly currentAllowedRps: number;
+      readonly minStartGapMs: number;
+      readonly maxInFlight: number;
+    }[];
+  };
   readonly profiles: readonly {
     readonly profileId: string;
     readonly endpointClass: string | null;
@@ -762,6 +783,7 @@ function buildKisOutboundLimiterPayload(
       circuitBreakerUntil: null,
       recentThrottleCount: 0,
       recentSuccessCount: 0,
+      telemetry: buildKisGovernorTelemetryPayload(undefined),
       profiles: [],
     };
   }
@@ -816,7 +838,43 @@ function buildKisOutboundLimiterPayload(
     circuitBreakerUntil: circuitBreaker?.circuitBreakerUntil ?? null,
     recentThrottleCount: profiles.reduce((sum, profile) => sum + profile.recentThrottleCount, 0),
     recentSuccessCount: profiles.reduce((sum, profile) => sum + profile.recentSuccessCount, 0),
+    telemetry: buildKisGovernorTelemetryPayload(snapshot.telemetry),
     profiles,
+  };
+}
+
+function buildKisGovernorTelemetryPayload(
+  telemetry: KisGovernorTelemetrySnapshot | undefined,
+): RuntimeKisOutboundLimiterPayload['telemetry'] {
+  if (telemetry === undefined) {
+    return {
+      capacity: 0,
+      eventCount: 0,
+      oldestAt: null,
+      newestAt: null,
+      recent: [],
+    };
+  }
+  const recent = telemetry.recent.map((event) => ({
+    at: millisToIso(event.atMs),
+    event: event.event,
+    profileId: event.profileId,
+    endpointClass: event.endpointClass,
+    priorityClass: event.priorityClass,
+    state: event.state,
+    throttleCode: event.throttleCode,
+    recoveryAttemptCount: event.recoveryAttemptCount,
+    observedRecoveryMs: event.observedRecoveryMs,
+    currentAllowedRps: event.currentAllowedRps,
+    minStartGapMs: event.minStartGapMs,
+    maxInFlight: event.maxInFlight,
+  }));
+  return {
+    capacity: telemetry.capacity,
+    eventCount: telemetry.eventCount,
+    oldestAt: recent[0]?.at ?? null,
+    newestAt: recent.at(-1)?.at ?? null,
+    recent,
   };
 }
 

@@ -91,7 +91,6 @@ Covered by the governor after Phase 2:
 
 Still outside or not fully solved after Phase 2:
 
-- persistent governor telemetry is not stored yet
 - AIMD auto-tuning is not enabled
 
 ## Data Health
@@ -108,9 +107,23 @@ Still outside or not fully solved after Phase 2:
 - circuit breaker deadline
 - recent throttle and success counts
 - observed recovery timing when available
+- bounded recent governor telemetry events persisted in
+  `data/kis-governor-telemetry.json`
 
 The payload must not contain raw KIS response bodies, tokens, app keys, app
 secrets, approval keys, or account values.
+
+## Persistent Telemetry
+
+Phase 3 prep stores a bounded sanitized ring of recent governor transition
+events. The persisted events include transition time, event type, endpoint
+class, priority class, governor state, throttle code, recovery attempt count,
+observed recovery timing, current allowed RPS, start gap, and max in-flight.
+They intentionally exclude raw KIS response bodies, tokens, app keys, app
+secrets, approval keys, and account values.
+
+Telemetry events are operational breadcrumbs for normal-use observation. They
+are not used as an automatic tuning source yet.
 
 ## Live Boundary
 
@@ -137,4 +150,4 @@ normal-operation telemetry and should not intentionally generate throttles.
 ## Follow-Up
 
 - Phase 3: AIMD auto-tuning
-- Phase 3: persistent governor telemetry and normal-operation live observation
+- Phase 3: normal-operation telemetry review after deploy

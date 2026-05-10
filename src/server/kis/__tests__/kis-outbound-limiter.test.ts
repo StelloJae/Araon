@@ -419,6 +419,84 @@ describe('createKisOutboundLimiter', () => {
     }));
   });
 
+  it('records sanitized telemetry for throttle recovery transitions', () => {
+    let now = Date.parse('2026-05-10T06:00:00.000Z');
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 10,
+      burst: 10,
+      now: () => now,
+      recoveryBackoffMs: [150],
+      recoverySuccessThreshold: 1,
+      recoveryStableMs: 0,
+      telemetry: { capacity: 3 },
+    });
+
+    limiter.recordFailure({
+      profileId: 'primary',
+      endpointClass: 'polling',
+      error: new KisRestError(
+        'limited appSecret=SHOULD_NOT_APPEAR',
+        500,
+        null,
+        'EGW00201',
+        { appKey: 'SHOULD_NOT_APPEAR' },
+      ),
+    });
+    now += 150;
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+
+    expect(limiter.snapshot().telemetry).toEqual({
+      capacity: 3,
+      eventCount: 3,
+      recent: [
+        {
+          atMs: Date.parse('2026-05-10T06:00:00.000Z'),
+          event: 'throttle',
+          profileId: 'primary',
+          endpointClass: 'polling',
+          priorityClass: 'polling',
+          state: 'throttled',
+          throttleCode: 'EGW00201',
+          recoveryAttemptCount: 0,
+          observedRecoveryMs: null,
+          currentAllowedRps: 10,
+          minStartGapMs: 120,
+          maxInFlight: 2,
+        },
+        {
+          atMs: Date.parse('2026-05-10T06:00:00.150Z'),
+          event: 'recovered',
+          profileId: 'primary',
+          endpointClass: 'polling',
+          priorityClass: 'polling',
+          state: 'recovering',
+          throttleCode: 'EGW00201',
+          recoveryAttemptCount: 0,
+          observedRecoveryMs: 150,
+          currentAllowedRps: 4,
+          minStartGapMs: 250,
+          maxInFlight: 2,
+        },
+        {
+          atMs: Date.parse('2026-05-10T06:00:00.150Z'),
+          event: 'normal',
+          profileId: 'primary',
+          endpointClass: 'polling',
+          priorityClass: 'polling',
+          state: 'normal',
+          throttleCode: 'EGW00201',
+          recoveryAttemptCount: 0,
+          observedRecoveryMs: 150,
+          currentAllowedRps: 10,
+          minStartGapMs: 120,
+          maxInFlight: 2,
+        },
+      ],
+    });
+    expect(JSON.stringify(limiter.snapshot().telemetry)).not.toContain('SHOULD_NOT_APPEAR');
+  });
+
   it('backs off if recovering traffic throttles before returning to normal', () => {
     let now = 1_000;
     const limiter = createKisOutboundLimiter({

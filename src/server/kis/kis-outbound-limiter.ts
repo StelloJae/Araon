@@ -35,6 +35,34 @@ export type KisPriorityClass =
   | 'master_refresh'
   | 'maintenance';
 
+export type KisGovernorTelemetryEventType =
+  | 'throttle'
+  | 'half_open'
+  | 'recovered'
+  | 'normal'
+  | 'circuit_breaker';
+
+export interface KisGovernorTelemetryEvent {
+  atMs: number;
+  event: KisGovernorTelemetryEventType;
+  profileId: string;
+  endpointClass: KisEndpointClass | null;
+  priorityClass: KisPriorityClass;
+  state: KisGovernorState;
+  throttleCode: string | null;
+  recoveryAttemptCount: number;
+  observedRecoveryMs: number | null;
+  currentAllowedRps: number;
+  minStartGapMs: number;
+  maxInFlight: number;
+}
+
+export interface KisGovernorTelemetrySnapshot {
+  capacity: number;
+  eventCount: number;
+  recent: readonly KisGovernorTelemetryEvent[];
+}
+
 export interface KisOutboundLimiterAcquireInput {
   profileId?: string;
   endpointClass?: KisEndpointClass;
@@ -72,6 +100,7 @@ export interface KisOutboundLimiterSnapshot {
   tokens: number;
   queueDepth?: number;
   queuedByPriority?: Partial<Record<KisPriorityClass, number>>;
+  telemetry?: KisGovernorTelemetrySnapshot;
   profiles: KisOutboundLimiterProfileSnapshot[];
 }
 
@@ -102,6 +131,11 @@ export interface CreateKisOutboundLimiterOptions {
   circuitBreakerMs?: number;
   globalMinStartGapMs?: number;
   classPolicies?: Partial<Record<KisEndpointClass, KisClassPolicyInput>>;
+  telemetry?: {
+    capacity?: number;
+    initialEvents?: readonly KisGovernorTelemetryEvent[];
+    onSnapshot?: (snapshot: KisGovernorTelemetrySnapshot) => void;
+  };
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -113,6 +147,7 @@ const DEFAULT_RECOVERY_SUCCESS_THRESHOLD = 10;
 const DEFAULT_RECOVERY_STABLE_MS = 10_000;
 const DEFAULT_CIRCUIT_BREAKER_AFTER_FAILURES = 6;
 const DEFAULT_CIRCUIT_BREAKER_MS = 30_000;
+const DEFAULT_TELEMETRY_CAPACITY = 200;
 
 interface ResolvedKisClassPolicy {
   priorityClass: KisPriorityClass;
@@ -241,6 +276,10 @@ export function createKisOutboundLimiter(
   const cooldownMsByEndpointClass = options.cooldownMsByEndpointClass ?? {};
   const now = options.now ?? (() => Date.now());
   const sleep = options.sleep ?? defaultSleep;
+  const telemetryEnabled = options.telemetry !== undefined;
+  const telemetryCapacity = telemetryEnabled
+    ? Math.max(0, Math.trunc(options.telemetry?.capacity ?? DEFAULT_TELEMETRY_CAPACITY))
+    : 0;
 
   let tokens = burst;
   let lastRefillAtMs = now();
@@ -250,6 +289,10 @@ export function createKisOutboundLimiter(
   const lastStartAtMsByPriority = new Map<KisPriorityClass, number>();
   const inFlightByPriority = new Map<KisPriorityClass, number>();
   const acquireQueue: QueuedAcquire[] = [];
+  let telemetryEvents = trimTelemetryEvents(
+    options.telemetry?.initialEvents ?? [],
+    telemetryCapacity,
+  );
   let nextSequence = 0;
   let drainActive = false;
 
@@ -309,7 +352,7 @@ export function createKisOutboundLimiter(
       || observation.state === 'circuit_breaker'
     ) {
       const recoveredAtMs = current;
-      observationsByKey.set(cooldownKey, {
+      const nextObservation: CooldownObservation = {
         ...observation,
         state: 'recovering',
         recoveredAtMs,
@@ -318,8 +361,15 @@ export function createKisOutboundLimiter(
         recoverySuccessCount: 1,
         recentSuccessCount: observation.recentSuccessCount + 1,
         circuitBreakerUntilMs: null,
-      });
+      };
+      observationsByKey.set(cooldownKey, nextObservation);
       cooldownUntilByKey.set(cooldownKey, Math.max(cooldownUntilByKey.get(cooldownKey) ?? 0, current));
+      appendTelemetryEvent(
+        'recovered',
+        profileId,
+        input.endpointClass,
+        nextObservation,
+      );
       return;
     }
 
@@ -329,14 +379,23 @@ export function createKisOutboundLimiter(
       const stable =
         recoverySuccessCount >= recoverySuccessThreshold
         && current - recoveryStartedAtMs >= recoveryStableMs;
-      observationsByKey.set(cooldownKey, {
+      const nextObservation: CooldownObservation = {
         ...observation,
         state: stable ? 'normal' : 'recovering',
         recoverySuccessCount,
         recentSuccessCount: observation.recentSuccessCount + 1,
         nextRetryAtMs: null,
         circuitBreakerUntilMs: null,
-      });
+      };
+      observationsByKey.set(cooldownKey, nextObservation);
+      if (stable) {
+        appendTelemetryEvent(
+          'normal',
+          profileId,
+          input.endpointClass,
+          nextObservation,
+        );
+      }
       return;
     }
 
@@ -354,6 +413,7 @@ export function createKisOutboundLimiter(
       tokens,
       queueDepth: acquireQueue.length,
       queuedByPriority: queuedByPrioritySnapshot(),
+      ...(telemetryEnabled ? { telemetry: telemetrySnapshot() } : {}),
       profiles: Array.from(cooldownUntilByKey.entries())
         .map(([key, cooldownUntilMs]) => ({
           ...parseCooldownMapKey(key),
@@ -528,10 +588,17 @@ export function createKisOutboundLimiter(
     if (retryAt > current || observation.state === 'half_open') {
       throw localCooldownError(endpointClass, retryAt, observation.state);
     }
-    observationsByKey.set(cooldownKey, {
+    const nextObservation: CooldownObservation = {
       ...observation,
       state: 'half_open',
-    });
+    };
+    observationsByKey.set(cooldownKey, nextObservation);
+    appendTelemetryEvent(
+      'half_open',
+      parseCooldownMapKey(cooldownKey).profileId,
+      endpointClass,
+      nextObservation,
+    );
   }
 
   function startSpacingWaitMs(
@@ -565,7 +632,7 @@ export function createKisOutboundLimiter(
     const nextRetryAtMs = current + delayMs;
     const state: KisGovernorState = shouldCircuitBreak ? 'circuit_breaker' : 'throttled';
 
-    observationsByKey.set(cooldownKey, {
+    const nextObservation: CooldownObservation = {
       firstLimitedAtMs: startsNewWindow ? current : existing.firstLimitedAtMs,
       lastLimitedAtMs: current,
       recoveredAtMs: startsNewWindow ? existing?.recoveredAtMs ?? null : existing.recoveredAtMs,
@@ -579,8 +646,15 @@ export function createKisOutboundLimiter(
       recentSuccessCount: existing?.recentSuccessCount ?? 0,
       recoveryStartedAtMs: null,
       recoverySuccessCount: 0,
-    });
+    };
+    observationsByKey.set(cooldownKey, nextObservation);
     cooldownUntilByKey.set(cooldownKey, Math.max(cooldownUntilByKey.get(cooldownKey) ?? 0, nextRetryAtMs));
+    appendTelemetryEvent(
+      shouldCircuitBreak ? 'circuit_breaker' : 'throttle',
+      parseCooldownMapKey(cooldownKey).profileId,
+      endpointClass,
+      nextObservation,
+    );
   }
 
   function release(endpointClass: KisEndpointClass | undefined): void {
@@ -658,7 +732,71 @@ export function createKisOutboundLimiter(
     return Math.max(globalMinStartGapMs, policy.minStartGapMs, recoveryGap);
   }
 
+  function appendTelemetryEvent(
+    event: KisGovernorTelemetryEventType,
+    profileId: string,
+    endpointClass: KisEndpointClass | undefined,
+    observation: CooldownObservation,
+  ): void {
+    if (!telemetryEnabled || telemetryCapacity <= 0) return;
+    const policy = policyForEndpoint(endpointClass);
+    const item: KisGovernorTelemetryEvent = {
+      atMs: now(),
+      event,
+      profileId,
+      endpointClass: endpointClass ?? null,
+      priorityClass: policy.priorityClass,
+      state: observation.state,
+      throttleCode: observation.lastThrottleCode,
+      recoveryAttemptCount: observation.recoveryAttemptCount,
+      observedRecoveryMs: observation.observedRecoveryMs,
+      currentAllowedRps: effectiveRatePerSec(observation, policy),
+      minStartGapMs: effectiveMinStartGapMs(policy, observation),
+      maxInFlight: policy.maxInFlight,
+    };
+    telemetryEvents = trimTelemetryEvents([...telemetryEvents, item], telemetryCapacity);
+    try {
+      options.telemetry?.onSnapshot?.(telemetrySnapshot());
+    } catch {
+      // Telemetry must never affect live request pacing.
+    }
+  }
+
+  function telemetrySnapshot(): KisGovernorTelemetrySnapshot {
+    return {
+      capacity: telemetryCapacity,
+      eventCount: telemetryEvents.length,
+      recent: telemetryEvents.map((event) => ({ ...event })),
+    };
+  }
+
   return { acquire, recordFailure, recordSuccess, snapshot };
+}
+
+function trimTelemetryEvents(
+  events: readonly KisGovernorTelemetryEvent[],
+  capacity: number,
+): KisGovernorTelemetryEvent[] {
+  if (capacity <= 0) return [];
+  return events
+    .filter((event) => Number.isFinite(event.atMs))
+    .slice(-capacity)
+    .map((event) => ({
+      atMs: Math.trunc(event.atMs),
+      event: event.event,
+      profileId: String(event.profileId),
+      endpointClass: event.endpointClass,
+      priorityClass: event.priorityClass,
+      state: event.state,
+      throttleCode: event.throttleCode,
+      recoveryAttemptCount: Math.max(0, Math.trunc(event.recoveryAttemptCount)),
+      observedRecoveryMs: event.observedRecoveryMs === null
+        ? null
+        : Math.max(0, Math.trunc(event.observedRecoveryMs)),
+      currentAllowedRps: event.currentAllowedRps,
+      minStartGapMs: Math.max(0, Math.trunc(event.minStartGapMs)),
+      maxInFlight: Math.max(1, Math.trunc(event.maxInFlight)),
+    }));
 }
 
 function compareQueuedAcquires(a: QueuedAcquire, b: QueuedAcquire): number {

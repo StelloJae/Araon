@@ -65,11 +65,15 @@ as `database locked` or `maintenance_failed`.
 - existing candle coverage, daily backfill call count/cooldown, and volume baseline
   readiness
 - KIS outbound rate governor state, priority queue depth, throttle/recovery
-  timing, and sanitized per-class diagnostics
+  timing, sanitized per-class diagnostics, and bounded recent telemetry events
 
 The Settings connection tab renders these as diagnostics under the data-health
 panel. Raw keys, tokens, approval keys, and account values must never appear in
 this response or UI.
+
+KIS governor telemetry is persisted under `data/kis-governor-telemetry.json` as
+a small sanitized transition-event ring. It is intended for normal-operation
+review after a throttle/recovery incident, not for forcing live stress tests.
 
 Observation notes/plans/timeline were removed from the product surface on
 2026-05-07. Existing migration tables may remain for deployed DB compatibility,
