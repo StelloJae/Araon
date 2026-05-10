@@ -778,6 +778,40 @@ export interface RuntimeDataHealthPayload {
       maxInFlight: number;
     }>;
   };
+  kisRestProfiles: {
+    configured: boolean;
+    primaryProfileId: string | null;
+    profileCount: number;
+    eligibleProfileCount: number;
+    endpointPolicies: Array<{
+      endpointClass: string;
+      selection: string;
+      failoverEnabled: boolean;
+    }>;
+    profiles: Array<{
+      profileId: string;
+      label: string;
+      isPaper: boolean;
+      enabled: boolean;
+      eligible: boolean;
+      ineligibleReason: string | null;
+      selectedCount: number;
+      successCount: number;
+      failureCount: number;
+      failoverFromCount: number;
+      failoverToCount: number;
+      lastSelectedAt: string | null;
+      lastSuccessAt: string | null;
+      lastFailureAt: string | null;
+      lastFailureKind: string | null;
+      lastFailureCode: string | null;
+      lastThrottleAt: string | null;
+      governorState: string;
+      cooldownActive: boolean;
+      activeEndpointClasses: string[];
+      currentAllowedRps: number | null;
+    }>;
+  };
   marketTopMovers: {
     configured: boolean;
     status: string;

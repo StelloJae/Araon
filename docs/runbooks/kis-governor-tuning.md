@@ -165,11 +165,39 @@ Active AIMD behavior:
   stays ahead of background budget in the governor queue
 - data-health exposes sanitized effective `policies` so these class settings
   can be checked even when no throttle profile exists yet
+- data-health exposes `kisRestProfiles`, which should be checked when multiple
+  KIS credential profiles are configured. A throttle in one profile should show
+  that profile's governor state without forcing every other eligible profile
+  into cooldown.
 - data-health diagnostics are anchored to the same active evaluation window, so
   old pre-adjustment throttle events do not look like a fresh proposal
 
 The design is tracked in
 [`docs/research/kis-governor-aimd-design.md`](../research/kis-governor-aimd-design.md).
+
+## Multi-Key Operating Notes
+
+Multiple KIS credential profiles are treated as separate REST governor lanes.
+This is an efficiency and recovery tool, not an order/trading path.
+
+Normal checks:
+
+- `kisRestProfiles.eligibleProfileCount` should match the number of enabled
+  profiles with the same live/paper mode as the active runtime
+- disabled or live/paper-mismatched profiles should be visible as ineligible,
+  not silently used
+- `auth`, `token`, and `approval` remain primary-only
+- foreground calls are primary-first and may fail over only on classified KIS
+  second-window throttles
+- polling/ranking/backfill calls round-robin across eligible profiles and may
+  fail over only on classified KIS second-window throttles
+- `kisOutboundLimiter.profiles` should show profile-specific cooldown/recovery
+  rows instead of a single global cooldown row for every key
+
+If one profile repeatedly throttles while another stays clean, keep observing
+before changing global defaults. Treat it as profile pressure first, not a
+universal KIS contract. If all profiles throttle together, tighten the relevant
+endpointClass policy as a shared upstream pressure signal.
 
 ## 2026-05-10 Live AIMD Observation
 

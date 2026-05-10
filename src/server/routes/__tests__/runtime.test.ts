@@ -69,6 +69,7 @@ function startedRuntime(
       getStats?: ReturnType<typeof vi.fn>;
     };
     outboundLimiter?: KisRuntime['outboundLimiter'];
+    restProfileRouter?: KisRuntime['restProfileRouter'];
     governorAimd?: Partial<NonNullable<KisRuntime['governorAimd']>> & { snapshot(): unknown };
     marketPhase?: MarketPhase;
     pollingStatus?: Partial<PollingSchedulerStatus>;
@@ -109,6 +110,7 @@ function startedRuntime(
         profiles: [],
       })),
     },
+    restProfileRouter: overrides.restProfileRouter,
     settingsStore: undefined,
     pollingScheduler: {
       stop: overrides.pollingStop ?? vi.fn(async () => undefined),
@@ -556,6 +558,14 @@ describe('GET /runtime/data-health', () => {
           policies: [],
           profiles: [],
         },
+        kisRestProfiles: {
+          configured: false,
+          primaryProfileId: null,
+          profileCount: 0,
+          eligibleProfileCount: 0,
+          endpointPolicies: [],
+          profiles: [],
+        },
         marketTopMovers: {
           configured: false,
           status: 'unconfigured',
@@ -903,6 +913,148 @@ describe('GET /runtime/data-health', () => {
         },
       ],
     });
+  });
+
+  it('exposes sanitized KIS REST profile routing health', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          restProfileRouter: {
+            request: vi.fn(),
+            requestWithMeta: vi.fn(),
+            postToken: vi.fn(),
+            snapshot: vi.fn(() => ({
+              configured: true,
+              primaryProfileId: 'primary',
+              profileCount: 3,
+              eligibleProfileCount: 2,
+              endpointPolicies: [
+                {
+                  endpointClass: 'foreground',
+                  selection: 'primary_first',
+                  failoverEnabled: true,
+                },
+              ],
+              profiles: [
+                {
+                  profileId: 'primary',
+                  label: 'Primary',
+                  isPaper: false,
+                  enabled: true,
+                  eligible: true,
+                  ineligibleReason: null,
+                  selectedCount: 3,
+                  successCount: 2,
+                  failureCount: 1,
+                  failoverFromCount: 1,
+                  failoverToCount: 0,
+                  lastSelectedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  lastSuccessAtMs: Date.parse('2026-05-08T14:01:01.000Z'),
+                  lastFailureAtMs: Date.parse('2026-05-08T14:01:02.000Z'),
+                  lastFailureKind: 'KIS_RATE_LIMIT_SECOND_WINDOW',
+                  lastFailureCode: 'EGW00201',
+                  lastThrottleAtMs: Date.parse('2026-05-08T14:01:02.000Z'),
+                  governorState: 'recovering',
+                  cooldownActive: false,
+                  activeEndpointClasses: ['polling'],
+                  currentAllowedRps: 3,
+                },
+                {
+                  profileId: 'secondary',
+                  label: 'Secondary',
+                  isPaper: false,
+                  enabled: true,
+                  eligible: true,
+                  ineligibleReason: null,
+                  selectedCount: 1,
+                  successCount: 1,
+                  failureCount: 0,
+                  failoverFromCount: 0,
+                  failoverToCount: 1,
+                  lastSelectedAtMs: Date.parse('2026-05-08T14:01:03.000Z'),
+                  lastSuccessAtMs: Date.parse('2026-05-08T14:01:04.000Z'),
+                  lastFailureAtMs: null,
+                  lastFailureKind: null,
+                  lastFailureCode: null,
+                  lastThrottleAtMs: null,
+                  governorState: 'normal',
+                  cooldownActive: false,
+                  activeEndpointClasses: [],
+                  currentAllowedRps: null,
+                },
+                {
+                  profileId: 'paper-profile',
+                  label: 'Paper',
+                  isPaper: true,
+                  enabled: true,
+                  eligible: false,
+                  ineligibleReason: 'paper_mismatch',
+                  selectedCount: 0,
+                  successCount: 0,
+                  failureCount: 0,
+                  failoverFromCount: 0,
+                  failoverToCount: 0,
+                  lastSelectedAtMs: null,
+                  lastSuccessAtMs: null,
+                  lastFailureAtMs: null,
+                  lastFailureKind: null,
+                  lastFailureCode: null,
+                  lastThrottleAtMs: null,
+                  governorState: 'normal',
+                  cooldownActive: false,
+                  activeEndpointClasses: [],
+                  currentAllowedRps: null,
+                },
+              ],
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.kisRestProfiles).toEqual({
+      configured: true,
+      primaryProfileId: 'primary',
+      profileCount: 3,
+      eligibleProfileCount: 2,
+      endpointPolicies: [
+        {
+          endpointClass: 'foreground',
+          selection: 'primary_first',
+          failoverEnabled: true,
+        },
+      ],
+      profiles: [
+        expect.objectContaining({
+          profileId: 'primary',
+          label: 'Primary',
+          eligible: true,
+          lastFailureKind: 'KIS_RATE_LIMIT_SECOND_WINDOW',
+          lastFailureCode: 'EGW00201',
+          lastThrottleAt: '2026-05-08T14:01:02.000Z',
+          governorState: 'recovering',
+          activeEndpointClasses: ['polling'],
+        }),
+        expect.objectContaining({
+          profileId: 'secondary',
+          eligible: true,
+          failoverToCount: 1,
+          lastSuccessAt: '2026-05-08T14:01:04.000Z',
+        }),
+        expect.objectContaining({
+          profileId: 'paper-profile',
+          eligible: false,
+          ineligibleReason: 'paper_mismatch',
+        }),
+      ],
+    });
+    expect(JSON.stringify(res.json().data.kisRestProfiles)).not.toMatch(
+      /appKey|appSecret|accessToken|approvalKey/i,
+    );
   });
 
   it('exposes sanitized observe-only AIMD diagnostics', async () => {

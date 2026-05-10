@@ -10,7 +10,11 @@
 
 import type { Database } from 'better-sqlite3';
 import type { SettingsStore } from './settings-store.js';
-import type { CredentialStore, KisCredentials } from './credential-store.js';
+import type {
+  CredentialStore,
+  KisCredentialProfile,
+  KisCredentials,
+} from './credential-store.js';
 import type { PriceStore } from './price/price-store.js';
 import type { SnapshotStore } from './price/snapshot-store.js';
 import type { StockRepository, FavoriteRepository } from './db/repositories.js';
@@ -35,6 +39,7 @@ export interface KisRuntime {
   auth: KisAuth;
   restClient: KisRestClient;
   outboundLimiter: KisOutboundLimiter;
+  restProfileRouter?: KisRestProfileRouter;
   governorAimd?: KisGovernorAimdStateStore;
   approvalIssuer: ApprovalIssuer;
   wsClient: KisWsClient;
@@ -196,6 +201,7 @@ import {
   REST_RATE_LIMIT_PER_SEC_LIVE,
   REST_RATE_LIMIT_PER_SEC_PAPER,
   REST_RATE_LIMIT_SAFETY_FACTOR,
+  TOKEN_ENDPOINT_PATH,
   WS_MAX_SUBSCRIPTIONS,
 } from '@shared/kis-constraints.js';
 import type { Price } from '@shared/types.js';
@@ -203,9 +209,15 @@ import type { Price } from '@shared/types.js';
 import { createKisAuth } from './kis/kis-auth.js';
 import { createKisRestClient } from './kis/kis-rest-client.js';
 import {
-  createKisOutboundLimiter,
   type CreateKisOutboundLimiterOptions,
 } from './kis/kis-outbound-limiter.js';
+import { createKisMultiProfileOutboundLimiter } from './kis/kis-multi-profile-outbound-limiter.js';
+import {
+  createInMemoryKisCredentialStore,
+  createKisRestProfileRouter,
+  type KisRestProfileRouter,
+  type KisRestProfileRouterProfile,
+} from './kis/kis-rest-profile-router.js';
 import {
   createFileKisGovernorAimdStateStore,
   type KisGovernorAimdStateStore,
@@ -395,17 +407,69 @@ export function buildDefaultKisOutboundLimiterOptions(
   };
 }
 
+interface RuntimeRestCredentialProfile {
+  profileId: string;
+  label: string;
+  credentials: KisCredentials;
+  enabled: boolean;
+  ineligibleReason?: KisRestProfileRouterProfile['ineligibleReason'];
+}
+
+function buildRuntimeRestCredentialProfiles(
+  credentials: KisCredentials,
+  storedProfiles: readonly KisCredentialProfile[] | undefined,
+): RuntimeRestCredentialProfile[] {
+  const primary = storedProfiles?.find((profile) => profile.id === 'primary');
+  const result: RuntimeRestCredentialProfile[] = [
+    {
+      profileId: 'primary',
+      label: primary?.label ?? 'Primary KIS',
+      credentials,
+      enabled: true,
+    },
+  ];
+  for (const profile of storedProfiles ?? []) {
+    if (profile.id === 'primary') continue;
+    result.push({
+      profileId: profile.id,
+      label: profile.label,
+      credentials: {
+        appKey: profile.appKey,
+        appSecret: profile.appSecret,
+        isPaper: profile.isPaper,
+      },
+      enabled: profile.enabled,
+      ...(!profile.enabled
+        ? { ineligibleReason: 'disabled' as const }
+        : profile.isPaper !== credentials.isPaper
+          ? { ineligibleReason: 'paper_mismatch' as const }
+          : {}),
+    });
+  }
+  return result;
+}
+
 export async function defaultActuallyStart(
   deps: KisRuntimeStaticDeps,
   credentials: KisCredentials,
 ): Promise<KisRuntime> {
-  const outboundLimiterOptions = buildDefaultKisOutboundLimiterOptions(credentials);
+  const credentialPayload = await deps.credentialStore.load();
+  const restCredentialProfiles = buildRuntimeRestCredentialProfiles(
+    credentials,
+    credentialPayload?.profiles,
+  );
+  const eligibleRestCredentialProfiles = restCredentialProfiles.filter(
+    (profile) => profile.ineligibleReason === undefined,
+  );
   const governorTelemetryStore = createFileKisGovernorTelemetryStore();
   const governorTelemetry = await governorTelemetryStore.load();
   const governorAimd = createFileKisGovernorAimdStateStore();
   await governorAimd.load();
-  const outboundLimiter = createKisOutboundLimiter({
-    ...outboundLimiterOptions,
+  const outboundLimiter = createKisMultiProfileOutboundLimiter({
+    profiles: eligibleRestCredentialProfiles.map((profile) => ({
+      profileId: profile.profileId,
+      options: buildDefaultKisOutboundLimiterOptions(profile.credentials),
+    })),
     telemetry: {
       capacity: governorTelemetry.capacity,
       initialEvents: governorTelemetry.recent,
@@ -419,21 +483,72 @@ export async function defaultActuallyStart(
       },
     },
   });
-  const ratePerSec = outboundLimiterOptions.ratePerSec;
-  const tokenRest = createKisRestClient({
-    isPaper: credentials.isPaper,
-    outboundLimiter,
-  });
-  const auth = createKisAuth({ store: deps.credentialStore, transport: tokenRest });
+  const profileRouterProfiles: KisRestProfileRouterProfile[] = [];
+  let auth: KisAuth | null = null;
+  let primaryRestClient: KisRestClient | null = null;
+  for (const profile of restCredentialProfiles) {
+    if (profile.ineligibleReason !== undefined) {
+      profileRouterProfiles.push({
+        profileId: profile.profileId,
+        label: profile.label,
+        isPaper: profile.credentials.isPaper,
+        enabled: profile.enabled,
+        ineligibleReason: profile.ineligibleReason,
+      });
+      continue;
+    }
+
+    const tokenRest = createKisRestClient({
+      isPaper: profile.credentials.isPaper,
+      outboundLimiter,
+    });
+    const profileStore = profile.profileId === 'primary'
+      ? deps.credentialStore
+      : createInMemoryKisCredentialStore(profile.credentials);
+    const profileAuth = createKisAuth({
+      store: profileStore,
+      transport: {
+        postToken: (body) =>
+          tokenRest.request({
+            method: 'POST',
+            path: TOKEN_ENDPOINT_PATH,
+            body,
+            unauthenticated: true,
+            endpointClass: 'token',
+            profileId: profile.profileId,
+          }),
+      },
+    });
+    const profileRestClient = createKisRestClient({
+      isPaper: profile.credentials.isPaper,
+      auth: profileAuth,
+      outboundLimiter,
+    });
+    profileRouterProfiles.push({
+      profileId: profile.profileId,
+      label: profile.label,
+      isPaper: profile.credentials.isPaper,
+      enabled: profile.enabled,
+      client: profileRestClient,
+    });
+    if (profile.profileId === 'primary') {
+      auth = profileAuth;
+      primaryRestClient = profileRestClient;
+    }
+  }
+  if (auth === null || primaryRestClient === null) {
+    throw new Error('primary KIS REST profile is not available');
+  }
   await auth.getAccessToken();
 
   await primeStoreFromSnapshot(deps.priceStore, deps.snapshotStore);
 
-  const restClient = createKisRestClient({
-    isPaper: credentials.isPaper,
-    auth,
+  const restClient = createKisRestProfileRouter({
+    primaryProfileId: 'primary',
+    profiles: profileRouterProfiles,
     outboundLimiter,
   });
+  const ratePerSec = outboundLimiter.snapshot().ratePerSec;
 
   // KIS WebSocket requires a one-time approval key from POST /oauth2/Approval.
   // The issuer module enforces a Zod-validated response, the correct
@@ -445,7 +560,11 @@ export async function defaultActuallyStart(
     appSecret: credentials.appSecret,
     transport: {
       request: <T>(req: ApprovalRequest): Promise<T> =>
-        restClient.request<T>({ ...req, endpointClass: 'approval' }),
+        primaryRestClient.request<T>({
+          ...req,
+          endpointClass: 'approval',
+          profileId: 'primary',
+        }),
     },
   });
 
@@ -520,11 +639,10 @@ export async function defaultActuallyStart(
     cap: WS_MAX_SUBSCRIPTIONS,
   });
 
-  // burst = ceil(rate) = 15 live / 4 paper. Larger burst + concurrent workers
-  // occasionally triggers KIS throttle, but kis-rest-client's built-in 3-attempt
-  // backoff absorbs most (steady-state ~1/10 ticker fail rate observed live).
-  // Don't drop burst to 1 — counter-intuitively that spikes failures because
-  // workers line up into a near-simultaneous multi-request pattern.
+  // Keep the polling scheduler's local budget aligned with the aggregate REST
+  // governor. With multiple eligible KIS profiles this is the sum of independent
+  // profile budgets; each outbound call still passes through its selected
+  // profile's limiter before leaving the process.
   const rateLimiter = createRateLimiter({
     ratePerSec,
     burst: Math.ceil(ratePerSec),
@@ -651,6 +769,7 @@ export async function defaultActuallyStart(
     auth,
     restClient,
     outboundLimiter,
+    restProfileRouter: restClient,
     governorAimd,
     approvalIssuer,
     wsClient,

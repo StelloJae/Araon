@@ -78,6 +78,44 @@ The queue is conservative rather than aggressive:
   cooldown error instead of leaking through before the throttle state is recorded
 - queue depth and priority counts are exposed through data health
 
+## Phase 2 Multi-Key Routing
+
+Araon now treats each eligible KIS credential profile as its own outbound
+governor lane. This is the important difference from the first profile-aware
+diagnostics work: the limiter no longer has one shared token bucket for every
+profile. Each eligible profile has independent tokens, start spacing,
+in-flight counts, cooldown, half-open recovery, and circuit-breaker state.
+
+Runtime profile eligibility is conservative:
+
+- `primary` is always built from the active runtime credentials
+- enabled secondary profiles are eligible only when their live/paper mode
+  matches the active runtime
+- disabled profiles and live/paper mismatches stay visible in diagnostics but
+  are not used for REST routing
+- secondary profile OAuth tokens are kept in memory for this phase rather than
+  extending the encrypted credential schema
+
+REST routing policy:
+
+| Endpoint class | Selection | Failover |
+|---|---|---|
+| `auth` / `token` / `approval` | primary only | no |
+| `foreground` | primary first | throttle-only |
+| `polling` / `ranking` / selected backfill / background backfill | round robin | throttle-only |
+| `master_refresh` / `maintenance` | round robin if routed through REST router | throttle-only |
+
+Failover is intentionally narrow. It is triggered only by the classified
+second-window throttle path, including the local governor cooldown error. Auth
+failures, malformed responses, and generic network failures do not bounce across
+keys automatically. Foreground requests still go through the selected profile's
+governor; the router only changes which eligible profile is tried first or next.
+
+The legacy public `.mst` master refresh path is governor-paced as
+`master_refresh` but is not a credentialed REST-client call, so it remains on the
+default profile lane. That keeps the low-priority guard without pretending that
+the public file download can be authenticated with another app key.
+
 ## Integration Inventory
 
 Covered by the governor after Phase 2:
@@ -92,6 +130,16 @@ Covered by the governor after Phase 2:
 - market top-movers/ranking calls: `ranking`
 - KIS public master `.mst` downloads: `master_refresh`
 
+Multi-key routing coverage after Phase 2:
+
+- routed through profile selection: OAuth token issuance per profile,
+  foreground quote refresh/import, REST polling, ranking/top movers, selected
+  daily/minute chart calls, and background daily backfill calls
+- primary-only by design: WebSocket approval-key issuance and approval
+  requests, because the approval issuer is bound to the primary WebSocket
+  session credentials
+- default lane only: public `.mst` master downloads
+
 Still outside or not fully solved after Phase 2:
 
 - AIMD auto-tuning started as a follow-up and is now implemented for polling-only
@@ -99,6 +147,8 @@ Still outside or not fully solved after Phase 2:
   be set explicitly for bounded experiments.
 - AIMD design and live observations are tracked in
   [`docs/research/kis-governor-aimd-design.md`](kis-governor-aimd-design.md)
+- persistent per-secondary-profile OAuth token storage is intentionally not part
+  of this phase; secondary tokens are runtime-memory only
 
 ## Data Health
 
@@ -120,6 +170,20 @@ Still outside or not fully solved after Phase 2:
 
 The payload must not contain raw KIS response bodies, tokens, app keys, app
 secrets, approval keys, or account values.
+
+`GET /runtime/data-health` also exposes `kisRestProfiles`:
+
+- configured profile count and eligible profile count
+- profile id, label, live/paper mode, enabled/eligible flags, and ineligible
+  reason
+- endpoint routing policies (`primary_only`, `primary_first`, `round_robin`)
+- per-profile selected/success/failure/failover counters
+- last selected/success/failure/throttle timestamps
+- sanitized failure kind/code only
+- aggregate governor state for that profile
+
+The profile health payload intentionally omits app keys, app secrets, tokens,
+approval keys, account values, and raw KIS bodies.
 
 ## Persistent Telemetry
 

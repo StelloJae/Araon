@@ -65,6 +65,11 @@ Credentials/data/runtime state는 커밋하지 않는다.
   circuit breaker 정책을 유지한다.
 - Governor queue에서는 foreground가 background/ranking/master refresh보다 먼저
   나가야 하지만, token/start spacing/max in-flight 제한은 계속 지킨다.
+- 여러 KIS credential profile이 있으면 REST 호출은 profile-aware router를 통해
+  endpointClass별 정책으로 분산한다. 각 profile은 독립 outbound governor/cooldown/
+  recovery 상태를 가진다. `auth`/`token`/`approval`은 primary-only로 두고,
+  foreground는 primary-first + throttle failover를 허용하되 governor를 우회하지
+  않는다. live/paper profile은 같은 runtime budget 안에서 섞지 않는다.
 - TOP100 화면은 KIS ranking endpoint에서 받은 전체시장 랭킹만 TOP100으로 표시한다.
   현재 화면/watchlist 종목으로 빈 랭킹을 보강해 "전체시장 TOP100"처럼 보이게 만들지
   않는다. 부분 수신이면 `coverage.guaranteedTop100=false`로 노출한다.

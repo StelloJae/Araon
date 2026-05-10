@@ -84,6 +84,7 @@ import type {
   MarketTopMoversService,
   MarketTopMoversServiceSnapshot,
 } from '../market/market-top-movers-service.js';
+import type { KisRestProfileRouterSnapshot } from '../kis/kis-rest-profile-router.js';
 
 export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
@@ -272,6 +273,41 @@ export interface RuntimeKisOutboundLimiterPayload {
     readonly currentAllowedRps: number;
     readonly minStartGapMs: number;
     readonly maxInFlight: number;
+  }[];
+}
+
+export interface RuntimeKisRestProfilesPayload {
+  readonly configured: boolean;
+  readonly primaryProfileId: string | null;
+  readonly profileCount: number;
+  readonly eligibleProfileCount: number;
+  readonly endpointPolicies: readonly {
+    readonly endpointClass: string;
+    readonly selection: string;
+    readonly failoverEnabled: boolean;
+  }[];
+  readonly profiles: readonly {
+    readonly profileId: string;
+    readonly label: string;
+    readonly isPaper: boolean;
+    readonly enabled: boolean;
+    readonly eligible: boolean;
+    readonly ineligibleReason: string | null;
+    readonly selectedCount: number;
+    readonly successCount: number;
+    readonly failureCount: number;
+    readonly failoverFromCount: number;
+    readonly failoverToCount: number;
+    readonly lastSelectedAt: string | null;
+    readonly lastSuccessAt: string | null;
+    readonly lastFailureAt: string | null;
+    readonly lastFailureKind: string | null;
+    readonly lastFailureCode: string | null;
+    readonly lastThrottleAt: string | null;
+    readonly governorState: string;
+    readonly cooldownActive: boolean;
+    readonly activeEndpointClasses: readonly string[];
+    readonly currentAllowedRps: number | null;
   }[];
 }
 
@@ -612,6 +648,7 @@ export async function runtimeRoutes(
           recent: backgroundBackfill.recent,
         },
         kisOutboundLimiter: buildKisOutboundLimiterPayload(opts.runtimeRef.get()),
+        kisRestProfiles: buildKisRestProfilesPayload(opts.runtimeRef.get()),
         marketTopMovers: buildMarketTopMoversPayload(opts.marketTopMoversService?.snapshot()),
         volumeBaseline: baselineCounts,
         growth: {
@@ -1000,6 +1037,64 @@ function buildKisOutboundLimiterPayload(
       recoveryRatePerSec: policy.recoveryRatePerSec,
     })),
     profiles,
+  };
+}
+
+function buildKisRestProfilesPayload(
+  runtimeState: KisRuntimeState,
+): RuntimeKisRestProfilesPayload {
+  if (
+    runtimeState.status !== 'started'
+    || runtimeState.runtime.restProfileRouter === undefined
+  ) {
+    return {
+      configured: false,
+      primaryProfileId: null,
+      profileCount: 0,
+      eligibleProfileCount: 0,
+      endpointPolicies: [],
+      profiles: [],
+    };
+  }
+  return mapKisRestProfilesSnapshot(runtimeState.runtime.restProfileRouter.snapshot());
+}
+
+function mapKisRestProfilesSnapshot(
+  snapshot: KisRestProfileRouterSnapshot,
+): RuntimeKisRestProfilesPayload {
+  return {
+    configured: snapshot.configured,
+    primaryProfileId: snapshot.primaryProfileId,
+    profileCount: snapshot.profileCount,
+    eligibleProfileCount: snapshot.eligibleProfileCount,
+    endpointPolicies: snapshot.endpointPolicies.map((policy) => ({
+      endpointClass: policy.endpointClass,
+      selection: policy.selection,
+      failoverEnabled: policy.failoverEnabled,
+    })),
+    profiles: snapshot.profiles.map((profile) => ({
+      profileId: profile.profileId,
+      label: profile.label,
+      isPaper: profile.isPaper,
+      enabled: profile.enabled,
+      eligible: profile.eligible,
+      ineligibleReason: profile.ineligibleReason,
+      selectedCount: profile.selectedCount,
+      successCount: profile.successCount,
+      failureCount: profile.failureCount,
+      failoverFromCount: profile.failoverFromCount,
+      failoverToCount: profile.failoverToCount,
+      lastSelectedAt: millisToIso(profile.lastSelectedAtMs),
+      lastSuccessAt: millisToIso(profile.lastSuccessAtMs),
+      lastFailureAt: millisToIso(profile.lastFailureAtMs),
+      lastFailureKind: profile.lastFailureKind,
+      lastFailureCode: profile.lastFailureCode,
+      lastThrottleAt: millisToIso(profile.lastThrottleAtMs),
+      governorState: profile.governorState,
+      cooldownActive: profile.cooldownActive,
+      activeEndpointClasses: profile.activeEndpointClasses,
+      currentAllowedRps: profile.currentAllowedRps,
+    })),
   };
 }
 
