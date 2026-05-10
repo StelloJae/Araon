@@ -53,6 +53,16 @@ Not allowed to adjust:
 The first implementation should expose AIMD as disabled by default. Production
 enable requires PM approval.
 
+## Implementation Status
+
+As of 2026-05-10:
+
+- pure polling AIMD evaluator is implemented behind tests
+- local JSON state store is implemented with disabled observe-only defaults
+- `/runtime/data-health` exposes sanitized AIMD diagnostics
+- no runtime polling gap is changed by AIMD
+- production activation still requires PM approval
+
 ## Inputs
 
 Use sanitized, persisted telemetry and current health snapshots only:

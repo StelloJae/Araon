@@ -35,6 +35,7 @@ export interface KisRuntime {
   auth: KisAuth;
   restClient: KisRestClient;
   outboundLimiter: KisOutboundLimiter;
+  governorAimd?: KisGovernorAimdStateStore;
   approvalIssuer: ApprovalIssuer;
   wsClient: KisWsClient;
   bridge: RealtimeBridge;
@@ -205,6 +206,10 @@ import {
   createKisOutboundLimiter,
   type CreateKisOutboundLimiterOptions,
 } from './kis/kis-outbound-limiter.js';
+import {
+  createFileKisGovernorAimdStateStore,
+  type KisGovernorAimdStateStore,
+} from './kis/kis-governor-aimd-state.js';
 import { createFileKisGovernorTelemetryStore } from './kis/kis-governor-telemetry.js';
 import { createKisWsClient } from './kis/kis-ws-client.js';
 import {
@@ -381,6 +386,8 @@ export async function defaultActuallyStart(
   const outboundLimiterOptions = buildDefaultKisOutboundLimiterOptions(credentials);
   const governorTelemetryStore = createFileKisGovernorTelemetryStore();
   const governorTelemetry = await governorTelemetryStore.load();
+  const governorAimd = createFileKisGovernorAimdStateStore();
+  await governorAimd.load();
   const outboundLimiter = createKisOutboundLimiter({
     ...outboundLimiterOptions,
     telemetry: {
@@ -599,6 +606,7 @@ export async function defaultActuallyStart(
     auth,
     restClient,
     outboundLimiter,
+    governorAimd,
     approvalIssuer,
     wsClient,
     bridge,

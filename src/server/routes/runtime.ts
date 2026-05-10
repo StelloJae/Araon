@@ -68,6 +68,10 @@ import {
   type PhoneDeliveryLog,
 } from '../notifications/phone-delivery-log.js';
 import type { KisGovernorTelemetrySnapshot } from '../kis/kis-outbound-limiter.js';
+import {
+  defaultKisGovernorAimdState,
+  type KisGovernorAimdStateSnapshot,
+} from '../kis/kis-governor-aimd-state.js';
 
 export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
@@ -207,6 +211,7 @@ export interface RuntimeKisOutboundLimiterPayload {
   readonly circuitBreakerUntil: string | null;
   readonly recentThrottleCount: number;
   readonly recentSuccessCount: number;
+  readonly aimd: RuntimeKisGovernorAimdPayload;
   readonly telemetry: {
     readonly capacity: number;
     readonly eventCount: number;
@@ -248,6 +253,23 @@ export interface RuntimeKisOutboundLimiterPayload {
     readonly minStartGapMs: number;
     readonly maxInFlight: number;
   }[];
+}
+
+export interface RuntimeKisGovernorAimdPayload {
+  readonly enabled: boolean;
+  readonly mode: string;
+  readonly currentPollingMinStartGapMs: number;
+  readonly baselinePollingMinStartGapMs: number;
+  readonly lastAdjustmentAt: string | null;
+  readonly lastAdjustmentDirection: string;
+  readonly lastAdjustmentReason: string | null;
+  readonly nextEvaluationAt: string | null;
+  readonly cleanRegularMarketWindowCount: number;
+  readonly degradedWindowCount: number;
+  readonly rollbackBaseline: {
+    readonly pollingMinStartGapMs: number;
+    readonly pollingRecoveryRatePerSec: number;
+  };
 }
 
 const sessionEnableBodySchema = z.object({
@@ -783,6 +805,7 @@ function buildKisOutboundLimiterPayload(
       circuitBreakerUntil: null,
       recentThrottleCount: 0,
       recentSuccessCount: 0,
+      aimd: buildKisGovernorAimdPayload(undefined),
       telemetry: buildKisGovernorTelemetryPayload(undefined),
       profiles: [],
     };
@@ -838,8 +861,31 @@ function buildKisOutboundLimiterPayload(
     circuitBreakerUntil: circuitBreaker?.circuitBreakerUntil ?? null,
     recentThrottleCount: profiles.reduce((sum, profile) => sum + profile.recentThrottleCount, 0),
     recentSuccessCount: profiles.reduce((sum, profile) => sum + profile.recentSuccessCount, 0),
+    aimd: buildKisGovernorAimdPayload(runtimeState.runtime.governorAimd?.snapshot()),
     telemetry: buildKisGovernorTelemetryPayload(snapshot.telemetry),
     profiles,
+  };
+}
+
+function buildKisGovernorAimdPayload(
+  state: KisGovernorAimdStateSnapshot | undefined,
+): RuntimeKisGovernorAimdPayload {
+  const snapshot = state ?? defaultKisGovernorAimdState();
+  return {
+    enabled: snapshot.enabled,
+    mode: snapshot.mode,
+    currentPollingMinStartGapMs: snapshot.currentPollingMinStartGapMs,
+    baselinePollingMinStartGapMs: snapshot.baselinePollingMinStartGapMs,
+    lastAdjustmentAt: millisToIso(snapshot.lastAdjustmentAtMs),
+    lastAdjustmentDirection: snapshot.lastAdjustmentDirection,
+    lastAdjustmentReason: snapshot.lastAdjustmentReason,
+    nextEvaluationAt: millisToIso(snapshot.nextEvaluationAtMs),
+    cleanRegularMarketWindowCount: snapshot.cleanRegularMarketWindowCount,
+    degradedWindowCount: snapshot.degradedWindowCount,
+    rollbackBaseline: {
+      pollingMinStartGapMs: snapshot.rollbackBaseline.pollingMinStartGapMs,
+      pollingRecoveryRatePerSec: snapshot.rollbackBaseline.pollingRecoveryRatePerSec,
+    },
   };
 }
 

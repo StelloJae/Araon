@@ -67,6 +67,7 @@ function startedRuntime(
       getStats?: ReturnType<typeof vi.fn>;
     };
     outboundLimiter?: KisRuntime['outboundLimiter'];
+    governorAimd?: { snapshot(): unknown };
     pollingStop?: ReturnType<typeof vi.fn>;
     sessionGate?: RealtimeSessionGate;
   } = {},
@@ -121,7 +122,27 @@ function startedRuntime(
     approvalIssuer: {
       getState: vi.fn(() => ({ status: 'none' })),
     },
+    governorAimd: overrides.governorAimd,
   } as unknown as KisRuntime;
+}
+
+function defaultAimdPayload() {
+  return {
+    enabled: false,
+    mode: 'observe_only',
+    currentPollingMinStartGapMs: 350,
+    baselinePollingMinStartGapMs: 350,
+    lastAdjustmentAt: null,
+    lastAdjustmentDirection: 'none',
+    lastAdjustmentReason: null,
+    nextEvaluationAt: null,
+    cleanRegularMarketWindowCount: 0,
+    degradedWindowCount: 0,
+    rollbackBaseline: {
+      pollingMinStartGapMs: 350,
+      pollingRecoveryRatePerSec: 3,
+    },
+  };
 }
 
 async function build(
@@ -479,6 +500,7 @@ describe('GET /runtime/data-health', () => {
           circuitBreakerUntil: null,
           recentThrottleCount: 0,
           recentSuccessCount: 0,
+          aimd: defaultAimdPayload(),
           telemetry: {
             capacity: 0,
             eventCount: 0,
@@ -663,6 +685,7 @@ describe('GET /runtime/data-health', () => {
       circuitBreakerUntil: null,
       recentThrottleCount: 1,
       recentSuccessCount: 3,
+      aimd: defaultAimdPayload(),
       telemetry: {
         capacity: 3,
         eventCount: 1,
@@ -709,6 +732,61 @@ describe('GET /runtime/data-health', () => {
         },
       ],
     });
+  });
+
+  it('exposes sanitized observe-only AIMD diagnostics', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          governorAimd: {
+            snapshot: vi.fn(() => ({
+              enabled: true,
+              mode: 'observe_only',
+              currentPollingMinStartGapMs: 325,
+              baselinePollingMinStartGapMs: 350,
+              lastAdjustmentAtMs: Date.parse('2026-05-08T14:30:00.000Z'),
+              lastAdjustmentDirection: 'decrease_gap',
+              lastAdjustmentReason: 'clean_regular_market_windows',
+              nextEvaluationAtMs: Date.parse('2026-05-08T14:40:00.000Z'),
+              cleanRegularMarketWindowCount: 3,
+              degradedWindowCount: 0,
+              rollbackBaseline: {
+                pollingMinStartGapMs: 350,
+                pollingRecoveryRatePerSec: 3,
+              },
+              rawBody: 'SHOULD_NOT_APPEAR',
+              appKey: 'SHOULD_NOT_APPEAR',
+              appSecret: 'SHOULD_NOT_APPEAR',
+              token: 'SHOULD_NOT_APPEAR',
+              account: 'SHOULD_NOT_APPEAR',
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const body = res.json();
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.kisOutboundLimiter.aimd).toEqual({
+      enabled: true,
+      mode: 'observe_only',
+      currentPollingMinStartGapMs: 325,
+      baselinePollingMinStartGapMs: 350,
+      lastAdjustmentAt: '2026-05-08T14:30:00.000Z',
+      lastAdjustmentDirection: 'decrease_gap',
+      lastAdjustmentReason: 'clean_regular_market_windows',
+      nextEvaluationAt: '2026-05-08T14:40:00.000Z',
+      cleanRegularMarketWindowCount: 3,
+      degradedWindowCount: 0,
+      rollbackBaseline: {
+        pollingMinStartGapMs: 350,
+        pollingRecoveryRatePerSec: 3,
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain('SHOULD_NOT_APPEAR');
   });
 
   it('does not summarize a pending throttle probe as normal when cooldown time has elapsed', async () => {
