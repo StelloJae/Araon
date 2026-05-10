@@ -661,6 +661,56 @@ describe('GET /runtime/data-health', () => {
       ],
     });
   });
+
+  it('does not summarize a pending throttle probe as normal when cooldown time has elapsed', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 12,
+              queueDepth: 0,
+              queuedByPriority: {},
+              profiles: [
+                {
+                  profileId: 'primary',
+                  endpointClass: 'polling',
+                  priorityClass: 'polling',
+                  state: 'throttled',
+                  cooldownUntilMs: Date.parse('2026-05-08T14:01:00.150Z'),
+                  cooldownActive: false,
+                  firstLimitedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  lastLimitedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  recoveredAtMs: null,
+                  observedRecoveryMs: null,
+                  nextRetryAtMs: Date.parse('2026-05-08T14:01:00.150Z'),
+                  circuitBreakerUntilMs: null,
+                  lastThrottleCode: 'EGW00201',
+                  recoveryAttemptCount: 0,
+                  recentThrottleCount: 1,
+                  recentSuccessCount: 0,
+                  currentAllowedRps: 15,
+                  minStartGapMs: 120,
+                  maxInFlight: 2,
+                },
+              ],
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.kisOutboundLimiter.currentState).toBe('throttled');
+  });
 });
 
 describe('runtime local backup routes', () => {

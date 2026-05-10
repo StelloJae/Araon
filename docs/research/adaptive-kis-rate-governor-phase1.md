@@ -42,7 +42,7 @@ limits. Initial policies are intentionally conservative:
 |---|---:|---:|
 | `auth` / `token` / `approval` | 1000ms | 1 |
 | `foreground` | 80ms | 2 |
-| `polling` | 120ms | 2 |
+| `polling` | 350ms | 2 |
 | `ranking` | 750ms | 1 |
 | `selected-minute` | 1000ms | 1 |
 | `daily-backfill` | 1500ms | 1 |
@@ -116,6 +116,23 @@ secrets, approval keys, or account values.
 
 No live KIS stress test was part of Phase 1. The governor should be observed
 during normal use after deploy; it should not intentionally create `EGW00201`.
+
+## Normal-Operation Live Observation
+
+On 2026-05-10, normal runtime startup with existing live credentials was
+observed. No deliberate stress test, WebSocket cap test, full watchlist
+background run, or daily/minute backfill live run was performed.
+
+Local observation showed that 250ms polling spacing could complete a 105-ticker
+cycle near 4rps, but repeated continuous cycles still hit `EGW00201`. The live
+polling policy was therefore tuned to 350ms minimum start spacing and 3rps
+recovery for the polling class. With that setting, the first startup cycle still
+hit one throttle after prior observation had already warmed the upstream window,
+then recovery returned to `normal` and two consecutive 105-ticker polling cycles
+completed with 0 throttles at about 2.87 effective rps.
+
+This is local operational evidence, not a KIS contract. Future tuning should use
+normal-operation telemetry and should not intentionally generate throttles.
 
 ## Follow-Up
 

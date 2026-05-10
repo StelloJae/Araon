@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  buildDefaultKisOutboundLimiterOptions,
   connectRealtimeFavoritesOnWarmup,
   createKisRuntimeRef,
   fetchRuntimeRestQuoteWithFallback,
@@ -10,6 +11,16 @@ import {
 function makeStubDeps(): KisRuntimeStaticDeps {
   return {} as KisRuntimeStaticDeps; // 현 단계에선 사용 안 함
 }
+
+describe('default KIS outbound limiter options', () => {
+  it('keeps live polling below the observed repeated throttle threshold', () => {
+    const options = buildDefaultKisOutboundLimiterOptions({ isPaper: false });
+
+    expect(options.recoveryStableMs).toBeGreaterThanOrEqual(30_000);
+    expect(options.classPolicies?.polling?.minStartGapMs).toBeGreaterThanOrEqual(350);
+    expect(options.classPolicies?.polling?.recoveryRatePerSec).toBeLessThanOrEqual(3);
+  });
+});
 
 describe('KisRuntimeRef — initial state', () => {
   it('starts in unconfigured state', () => {

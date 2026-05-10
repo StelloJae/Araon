@@ -796,9 +796,10 @@ function buildKisOutboundLimiterPayload(
   const circuitBreaker = profiles.find((profile) => profile.state === 'circuit_breaker');
   const active = profiles.find((profile) => profile.cooldownActive)
     ?? profiles.find((profile) => profile.state === 'recovering');
+  const pending = profiles.find((profile) => profile.state !== 'normal');
   return {
     configured: true,
-    currentState: circuitBreaker?.state ?? active?.state ?? 'normal',
+    currentState: circuitBreaker?.state ?? active?.state ?? pending?.state ?? 'normal',
     ratePerSec: snapshot.ratePerSec,
     burst: snapshot.burst,
     tokens: snapshot.tokens,

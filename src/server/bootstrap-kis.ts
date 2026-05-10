@@ -201,7 +201,10 @@ import type { Price } from '@shared/types.js';
 
 import { createKisAuth } from './kis/kis-auth.js';
 import { createKisRestClient } from './kis/kis-rest-client.js';
-import { createKisOutboundLimiter } from './kis/kis-outbound-limiter.js';
+import {
+  createKisOutboundLimiter,
+  type CreateKisOutboundLimiterOptions,
+} from './kis/kis-outbound-limiter.js';
 import { createKisWsClient } from './kis/kis-ws-client.js';
 import {
   createRealtimeBridge,
@@ -329,25 +332,25 @@ function isUsableRuntimeQuote(price: Price): boolean {
   return Number.isFinite(price.price) && price.price > 0;
 }
 
-export async function defaultActuallyStart(
-  deps: KisRuntimeStaticDeps,
-  credentials: KisCredentials,
-): Promise<KisRuntime> {
+export function buildDefaultKisOutboundLimiterOptions(
+  credentials: Pick<KisCredentials, 'isPaper'>,
+): CreateKisOutboundLimiterOptions {
   const rawRate = credentials.isPaper
     ? REST_RATE_LIMIT_PER_SEC_PAPER
     : REST_RATE_LIMIT_PER_SEC_LIVE;
   const ratePerSec = rawRate * REST_RATE_LIMIT_SAFETY_FACTOR;
-  const outboundLimiter = createKisOutboundLimiter({
+  return {
     ratePerSec,
     burst: Math.ceil(ratePerSec),
     globalMinStartGapMs: 25,
     recoveryBackoffMs: [150, 300, 700, 1_500, 3_000, 5_000, 10_000],
     recoveryRatePerSec: Math.min(4, ratePerSec),
+    recoveryStableMs: 30_000,
     classPolicies: {
       token: { minStartGapMs: 1_000, maxInFlight: 1, recoveryRatePerSec: 1 },
       approval: { minStartGapMs: 1_000, maxInFlight: 1, recoveryRatePerSec: 1 },
       foreground: { minStartGapMs: 80, maxInFlight: 2 },
-      polling: { minStartGapMs: 120, maxInFlight: 2 },
+      polling: { minStartGapMs: 350, maxInFlight: 2, recoveryRatePerSec: 3 },
       ranking: {
         minStartGapMs: 750,
         maxInFlight: 1,
@@ -367,7 +370,16 @@ export async function defaultActuallyStart(
         recoveryBackoffMs: [3_000, 5_000, 10_000, 30_000],
       },
     },
-  });
+  };
+}
+
+export async function defaultActuallyStart(
+  deps: KisRuntimeStaticDeps,
+  credentials: KisCredentials,
+): Promise<KisRuntime> {
+  const outboundLimiterOptions = buildDefaultKisOutboundLimiterOptions(credentials);
+  const outboundLimiter = createKisOutboundLimiter(outboundLimiterOptions);
+  const ratePerSec = outboundLimiterOptions.ratePerSec;
   const tokenRest = createKisRestClient({
     isPaper: credentials.isPaper,
     outboundLimiter,
