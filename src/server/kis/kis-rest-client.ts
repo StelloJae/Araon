@@ -8,9 +8,9 @@
  *   - Retry idempotent failures with exponential backoff (3 attempts).
  *   - Map KIS-specific error envelopes into typed errors.
  *
- * Rate limiting lives in Phase 4a's dedicated layer and is NOT implemented
- * here. The token call intentionally bypasses the bearer header since the
- * point of the call is to mint that token.
+ * Shared outbound pacing lives in the injected governor. The token call
+ * intentionally bypasses the bearer header since the point of the call is to
+ * mint that token.
  */
 
 import { URL } from 'node:url';
@@ -340,8 +340,9 @@ function limiterContext(req: KisRestRequest): {
   profileId?: string;
   endpointClass?: KisEndpointClass;
 } {
+  const endpointClass = req.endpointClass ?? 'maintenance';
   return {
     ...(req.profileId !== undefined ? { profileId: req.profileId } : {}),
-    ...(req.endpointClass !== undefined ? { endpointClass: req.endpointClass } : {}),
+    endpointClass,
   };
 }

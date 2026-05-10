@@ -44,14 +44,16 @@ limits. Initial policies are intentionally conservative:
 | `foreground` | 80ms | 2 |
 | `polling` | 350ms | 2 |
 | `ranking` | 750ms | 1 |
-| `selected-minute` | 1000ms | 1 |
-| `daily-backfill` | 1500ms | 1 |
+| `selected_backfill` / `selected-minute` | 1000ms | 1 |
+| `background_backfill` / `daily-backfill` | 1500ms | 1 |
 | `master_refresh` | 2000ms | 1 |
 | `maintenance` | 1500ms | 1 |
 
 Foreground calls receive higher priority metadata, but they still go through the
 same global governor. Backfill and ranking use lower spacing and pause first
-when throttling is observed.
+when throttling is observed. Any future KIS REST request that omits
+`endpointClass` is normalized to `maintenance` instead of appearing as a
+`null` class in governor diagnostics.
 
 ## Phase 2 Queue And Integration
 

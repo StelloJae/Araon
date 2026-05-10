@@ -135,6 +135,36 @@ describe('createKisRestClient — authenticated header contract', () => {
     expect(recordSuccess).toHaveBeenCalledWith({ endpointClass: 'polling' });
   });
 
+  it('classifies requests without endpoint metadata as maintenance', async () => {
+    const fetchFn = vi.fn(async () => (
+      new Response(JSON.stringify({ rt_cd: '0', output: {} }), { status: 200 })
+    )) as unknown as typeof fetch;
+    const acquire = vi.fn(async () => {});
+    const recordFailure = vi.fn();
+    const recordSuccess = vi.fn();
+    const client = createKisRestClient({
+      isPaper: false,
+      auth: makeAuth(creds),
+      fetchFn,
+      outboundLimiter: {
+        acquire,
+        recordFailure,
+        recordSuccess,
+        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
+      },
+    });
+
+    await client.request({
+      method: 'GET',
+      path: '/uapi/domestic-stock/v1/quotations/inquire-price',
+    });
+
+    expect(acquire).toHaveBeenCalledWith({ endpointClass: 'maintenance' });
+    expect(fetchFn).toHaveBeenCalledOnce();
+    expect(recordFailure).not.toHaveBeenCalled();
+    expect(recordSuccess).toHaveBeenCalledWith({ endpointClass: 'maintenance' });
+  });
+
   it('does not retry when the local outbound limiter is already cooling down', async () => {
     const fetchFn = vi.fn(async () => (
       new Response(JSON.stringify({ rt_cd: '0', output: {} }), { status: 200 })
