@@ -20,6 +20,7 @@ export interface KisGovernorAimdWindow {
   telemetryMalformed: boolean;
   dataHealthDisagrees: boolean;
   cleanRegularMarketWindowCount: number;
+  degradedWindowCount: number;
 }
 
 export interface KisGovernorAimdEvaluationInput {
@@ -48,6 +49,7 @@ export interface KisGovernorAimdDecision {
     | 'throttle_after_normal'
     | 'recovery_attempts_high'
     | 'queue_stuck_after_recovery'
+    | 'degraded_window_pressure'
     | 'single_throttle_observed'
     | 'clean_regular_market_windows'
     | 'minimum_gap_reached'
@@ -59,6 +61,7 @@ export interface KisGovernorAimdObservationState {
   mode: KisGovernorAimdMode;
   currentPollingMinStartGapMs: number;
   cleanRegularMarketWindowCount: number;
+  degradedWindowCount?: number;
 }
 
 export interface KisGovernorAimdObservationTelemetryEvent {
@@ -127,13 +130,12 @@ export function evaluateKisGovernorAimd(
     return unchanged(mode, currentGap, 'hold', 'mixed_window');
   }
 
-  const tighten = tighteningSignal(window);
+  const tighten = tighteningSignal(window, currentGap);
   if (tighten !== null) {
-    const maxGapMs = tighten.reason === 'circuit_breaker' ? EMERGENCY_MAX_GAP_MS : NORMAL_MAX_GAP_MS;
     return changed(
       mode,
       currentGap,
-      clampGap(Math.ceil(currentGap * tighten.factor), MIN_GAP_MS, maxGapMs),
+      clampGap(Math.ceil(currentGap * tighten.factor), MIN_GAP_MS, tighten.maxGapMs),
       'tighten',
       tighten.reason,
     );
@@ -171,14 +173,13 @@ export function evaluateKisGovernorAimdProtectiveTighten(
   if (window.completedPollingCycles < MIN_COMPLETED_POLLING_CYCLES) return null;
   if (window.classification === 'startup_warm' || window.classification === 'mixed') return null;
 
-  const tighten = tighteningSignal(window);
+  const tighten = tighteningSignal(window, currentGap);
   if (tighten === null) return null;
 
-  const maxGapMs = tighten.reason === 'circuit_breaker' ? EMERGENCY_MAX_GAP_MS : NORMAL_MAX_GAP_MS;
   return changed(
     mode,
     currentGap,
-    clampGap(Math.ceil(currentGap * tighten.factor), MIN_GAP_MS, maxGapMs),
+    clampGap(Math.ceil(currentGap * tighten.factor), MIN_GAP_MS, tighten.maxGapMs),
     'tighten',
     tighten.reason,
   );
@@ -221,6 +222,7 @@ export function buildKisGovernorAimdObservation(
       throttleCount === 0 && circuitBreakerCount === 0
         ? input.state.cleanRegularMarketWindowCount + 1
         : 0,
+    degradedWindowCount: Math.max(0, Math.trunc(input.state.degradedWindowCount ?? 0)),
   };
 
   return {
@@ -247,21 +249,49 @@ function completedPollingCycles(
 
 function tighteningSignal(
   window: KisGovernorAimdWindow,
-): { factor: number; reason: KisGovernorAimdDecision['reason'] } | null {
+  currentGap: number,
+): { factor: number; maxGapMs: number; reason: KisGovernorAimdDecision['reason'] } | null {
   if (window.circuitBreakerCount > 0) {
-    return { factor: 1.5, reason: 'circuit_breaker' };
+    return { factor: 1.5, maxGapMs: EMERGENCY_MAX_GAP_MS, reason: 'circuit_breaker' };
   }
   if (window.throttleCount >= 2) {
-    return { factor: 1.25, reason: 'repeated_throttle' };
+    return {
+      factor: 1.25,
+      maxGapMs: currentGap >= NORMAL_MAX_GAP_MS ? EMERGENCY_MAX_GAP_MS : NORMAL_MAX_GAP_MS,
+      reason: 'repeated_throttle',
+    };
   }
   if (window.throttleImmediatelyAfterNormal) {
-    return { factor: 1.25, reason: 'throttle_after_normal' };
+    return {
+      factor: 1.25,
+      maxGapMs: currentGap >= NORMAL_MAX_GAP_MS ? EMERGENCY_MAX_GAP_MS : NORMAL_MAX_GAP_MS,
+      reason: 'throttle_after_normal',
+    };
   }
   if (window.maxRecoveryAttemptCount > 2) {
-    return { factor: 1.25, reason: 'recovery_attempts_high' };
+    return {
+      factor: 1.25,
+      maxGapMs: currentGap >= NORMAL_MAX_GAP_MS ? EMERGENCY_MAX_GAP_MS : NORMAL_MAX_GAP_MS,
+      reason: 'recovery_attempts_high',
+    };
   }
   if (window.queueStuckAfterRecovery) {
-    return { factor: 1.15, reason: 'queue_stuck_after_recovery' };
+    return {
+      factor: 1.15,
+      maxGapMs: currentGap >= NORMAL_MAX_GAP_MS ? EMERGENCY_MAX_GAP_MS : NORMAL_MAX_GAP_MS,
+      reason: 'queue_stuck_after_recovery',
+    };
+  }
+  if (
+    window.throttleCount > 0
+    && window.degradedWindowCount >= 2
+    && currentGap >= NORMAL_MAX_GAP_MS
+  ) {
+    return {
+      factor: 1.15,
+      maxGapMs: EMERGENCY_MAX_GAP_MS,
+      reason: 'degraded_window_pressure',
+    };
   }
   return null;
 }

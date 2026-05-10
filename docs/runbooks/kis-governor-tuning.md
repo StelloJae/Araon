@@ -150,6 +150,9 @@ Active AIMD behavior:
 - protective early tighten when the current evaluation window already has a
   strong pressure signal such as repeated `EGW00201`
 - no early loosen; loosening still requires clean windows
+- if polling is already at the 800ms normal maximum, repeated throttle or
+  accumulated degraded-window pressure can enter the emergency band up to
+  1200ms
 - `pollingRecoveryRatePerSec` is accepted by the control route for bounded
   experiments, but is not auto-tuned by AIMD
 - selected daily chart backfill uses `selected_backfill`, while managed
@@ -186,6 +189,13 @@ Observed polling sequence:
 - during that observation, polling pressure tightened active AIMD from 685ms to
   800ms after another `EGW00201`; this is a local observation, not a KIS
   guarantee
+- a follow-up 800ms observation saw one polling `EGW00201` and recovered in
+  about 861ms; no immediate repeated throttle appeared in the next roughly
+  75 seconds, but degraded-window pressure was already accumulating, so the
+  emergency band was added as a protective fallback
+- a controlled active override to 920ms then completed one 105-ticker polling
+  cycle with 105 attempted, 105 succeeded, 0 failures, 0 throttles, and about
+  1.0 effective rps
 
 These are local observations, not a permanent KIS timing guarantee.
 

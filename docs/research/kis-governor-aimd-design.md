@@ -157,7 +157,9 @@ Clamp the result:
 
 - minimum: 300ms, unless PM approves lower
 - normal maximum: 800ms
-- emergency maximum: 1200ms after circuit breaker
+- emergency maximum: 1200ms after circuit breaker, repeated throttle at the
+  normal maximum, or accumulated degraded-window pressure while already at the
+  normal maximum
 
 ### Additive Increase In Speed
 
@@ -208,6 +210,13 @@ Observed values:
   request, and one foreground quote refresh; all returned HTTP 200
 - during the same later observation, polling pressure tightened active AIMD from
   685ms to 800ms after another `EGW00201`
+- a follow-up normal-runtime observation still saw one polling `EGW00201` at
+  800ms, with observed recovery around 861ms and no immediate repeated throttle
+  in the next roughly 75 seconds; this motivated emergency-band handling for
+  degraded pressure that accumulates at the normal maximum
+- after adding emergency-band handling, a controlled active override to 920ms
+  completed one 105-ticker polling cycle with 105 attempted, 105 succeeded,
+  0 failures, 0 throttles, and about 1.0 effective rps
 
 These are local observations, not a KIS contract.
 

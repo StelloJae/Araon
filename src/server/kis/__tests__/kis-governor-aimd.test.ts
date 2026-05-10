@@ -93,6 +93,43 @@ describe('evaluateKisGovernorAimd', () => {
     });
   });
 
+  it('can enter the emergency band when repeated throttles occur at the normal maximum', () => {
+    const decision = evaluateKisGovernorAimd({
+      mode: 'active',
+      currentPollingMinStartGapMs: 800,
+      window: cleanWindow({
+        cleanRegularMarketWindowCount: 0,
+        throttleCount: 2,
+      }),
+    });
+
+    expect(decision).toMatchObject({
+      action: 'tighten',
+      proposedPollingMinStartGapMs: 1000,
+      applyRuntimeChange: true,
+      reason: 'repeated_throttle',
+    });
+  });
+
+  it('protectively tightens above the normal maximum after degraded windows accumulate', () => {
+    const decision = evaluateKisGovernorAimd({
+      mode: 'active',
+      currentPollingMinStartGapMs: 800,
+      window: cleanWindow({
+        cleanRegularMarketWindowCount: 0,
+        degradedWindowCount: 2,
+        throttleCount: 1,
+      }),
+    });
+
+    expect(decision).toMatchObject({
+      action: 'tighten',
+      proposedPollingMinStartGapMs: 920,
+      applyRuntimeChange: true,
+      reason: 'degraded_window_pressure',
+    });
+  });
+
   it('tightens more strongly after circuit breaker evidence', () => {
     const decision = evaluateKisGovernorAimd({
       currentPollingMinStartGapMs: 700,
@@ -289,6 +326,7 @@ function cleanWindow(
     telemetryMalformed: false,
     dataHealthDisagrees: false,
     cleanRegularMarketWindowCount: 0,
+    degradedWindowCount: 0,
     ...overrides,
   };
 }

@@ -168,6 +168,51 @@ describe('applyKisGovernorAimdRuntime', () => {
     }));
   });
 
+  it('moves into the emergency band after degraded windows accumulate at the normal maximum', async () => {
+    const nowMs = Date.parse('2026-05-10T01:47:30.000Z');
+    const store = stateStore({
+      ...defaultKisGovernorAimdState(),
+      enabled: true,
+      mode: 'active',
+      currentPollingMinStartGapMs: 800,
+      nextEvaluationAtMs: nowMs,
+      degradedWindowCount: 2,
+    });
+    const setClassPolicyOverride = vi.fn();
+
+    const result = await applyKisGovernorAimdRuntime({
+      stateStore: store,
+      outboundLimiter: { setClassPolicyOverride },
+      telemetry: {
+        capacity: 10,
+        eventCount: 2,
+        recent: [
+          telemetryEvent(nowMs - 100_000, 'throttle'),
+          telemetryEvent(nowMs - 99_000, 'recovered'),
+        ],
+      },
+      classification: 'regular_market',
+      pollingCycleCount: 2,
+      nowMs,
+    });
+
+    expect(result.decision).toMatchObject({
+      action: 'tighten',
+      reason: 'degraded_window_pressure',
+      proposedPollingMinStartGapMs: 920,
+      applyRuntimeChange: true,
+    });
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 920, recoveryRatePerSec: 3 });
+    expect(store.save).toHaveBeenCalledWith(expect.objectContaining({
+      currentPollingMinStartGapMs: 920,
+      lastAdjustmentAtMs: nowMs,
+      lastAdjustmentDirection: 'increase_gap',
+      lastAdjustmentReason: 'degraded_window_pressure',
+      nextEvaluationAtMs: nowMs + 600_000,
+      degradedWindowCount: 3,
+    }));
+  });
+
   it('does not tune early on a single throttle', async () => {
     const nowMs = Date.parse('2026-05-10T01:48:00.000Z');
     const store = stateStore({
