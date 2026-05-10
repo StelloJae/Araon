@@ -18,6 +18,7 @@ import type { KisRuntimeRef, KisRuntimeState } from '../bootstrap-kis.js';
 import type { KisRuntime } from '../bootstrap-kis.js';
 import type { CredentialStore, KisCredentialProfileSummary } from '../credential-store.js';
 import type { SettingsStore } from '../settings-store.js';
+import type { MarketPhase } from '../lifecycle/market-hours-scheduler.js';
 import type {
   BackgroundBackfillSchedulerSnapshot,
   BackgroundBackfillStateStore,
@@ -72,6 +73,7 @@ import {
   buildKisGovernorAimdObservation,
   type KisGovernorAimdDecision,
   type KisGovernorAimdWindow,
+  type KisGovernorAimdWindowClassification,
 } from '../kis/kis-governor-aimd.js';
 import {
   defaultKisGovernorAimdState,
@@ -895,6 +897,9 @@ function buildKisOutboundLimiterPayload(
     aimd: buildKisGovernorAimdPayload(
       runtimeState.runtime.governorAimd?.snapshot(),
       snapshot.telemetry,
+      classifyAimdWindowFromMarketPhase(
+        runtimeState.runtime.marketHoursScheduler?.getCurrentPhase?.(),
+      ),
     ),
     telemetry: buildKisGovernorTelemetryPayload(snapshot.telemetry),
     profiles,
@@ -904,6 +909,7 @@ function buildKisOutboundLimiterPayload(
 function buildKisGovernorAimdPayload(
   state: KisGovernorAimdStateSnapshot | undefined,
   telemetry: KisGovernorTelemetrySnapshot | undefined,
+  classification: KisGovernorAimdWindowClassification = 'mixed',
 ): RuntimeKisGovernorAimdPayload {
   const snapshot = state ?? defaultKisGovernorAimdState();
   const observation =
@@ -911,6 +917,7 @@ function buildKisGovernorAimdPayload(
       ? buildKisGovernorAimdObservation({
           state: snapshot,
           telemetry,
+          classification,
         })
       : null;
   return {
@@ -935,6 +942,14 @@ function buildKisGovernorAimdPayload(
       pollingRecoveryRatePerSec: snapshot.rollbackBaseline.pollingRecoveryRatePerSec,
     },
   };
+}
+
+function classifyAimdWindowFromMarketPhase(
+  phase: MarketPhase | undefined,
+): KisGovernorAimdWindowClassification {
+  if (phase === 'open') return 'regular_market';
+  if (phase === 'pre-open') return 'startup_warm';
+  return 'mixed';
 }
 
 function buildKisGovernorAimdDecisionPayload(

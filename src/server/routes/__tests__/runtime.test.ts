@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 
 import type { KisRuntime, KisRuntimeRef } from '../../bootstrap-kis.js';
 import type { CredentialStore } from '../../credential-store.js';
+import type { MarketPhase } from '../../lifecycle/market-hours-scheduler.js';
 import {
   DEFAULT_SETTINGS,
   type Settings,
@@ -68,6 +69,7 @@ function startedRuntime(
     };
     outboundLimiter?: KisRuntime['outboundLimiter'];
     governorAimd?: { snapshot(): unknown };
+    marketPhase?: MarketPhase;
     pollingStop?: ReturnType<typeof vi.fn>;
     sessionGate?: RealtimeSessionGate;
   } = {},
@@ -121,6 +123,11 @@ function startedRuntime(
     },
     approvalIssuer: {
       getState: vi.fn(() => ({ status: 'none' })),
+    },
+    marketHoursScheduler: {
+      start: vi.fn(),
+      stop: vi.fn(),
+      getCurrentPhase: vi.fn(() => overrides.marketPhase ?? 'closed'),
     },
     governorAimd: overrides.governorAimd,
   } as unknown as KisRuntime;
@@ -913,6 +920,98 @@ describe('GET /runtime/data-health', () => {
       throttleCount: 2,
       circuitBreakerCount: 0,
       cleanRegularMarketWindowCount: 0,
+    });
+  });
+
+  it('classifies AIMD telemetry as regular market only while the market phase is open', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          marketPhase: 'open',
+          governorAimd: {
+            snapshot: vi.fn(() => ({
+              enabled: true,
+              mode: 'observe_only',
+              currentPollingMinStartGapMs: 350,
+              baselinePollingMinStartGapMs: 350,
+              lastAdjustmentAtMs: null,
+              lastAdjustmentDirection: 'none',
+              lastAdjustmentReason: null,
+              nextEvaluationAtMs: null,
+              cleanRegularMarketWindowCount: 0,
+              degradedWindowCount: 0,
+              rollbackBaseline: {
+                pollingMinStartGapMs: 350,
+                pollingRecoveryRatePerSec: 3,
+              },
+            })),
+          },
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 10,
+              profiles: [],
+              telemetry: {
+                capacity: 10,
+                eventCount: 2,
+                recent: [
+                  {
+                    atMs: Date.parse('2026-05-08T14:00:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 350,
+                    maxInFlight: 2,
+                  },
+                  {
+                    atMs: Date.parse('2026-05-08T14:10:00.000Z'),
+                    event: 'throttle',
+                    profileId: 'primary',
+                    endpointClass: 'polling',
+                    priorityClass: 'polling',
+                    state: 'throttled',
+                    throttleCode: 'EGW00201',
+                    recoveryAttemptCount: 0,
+                    observedRecoveryMs: null,
+                    currentAllowedRps: 15,
+                    minStartGapMs: 350,
+                    maxInFlight: 2,
+                  },
+                ],
+              },
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const aimd = res.json().data.kisOutboundLimiter.aimd;
+
+    expect(res.statusCode).toBe(200);
+    expect(aimd.observationWindow).toMatchObject({
+      classification: 'regular_market',
+      completedPollingCycles: 2,
+      throttleCount: 2,
+    });
+    expect(aimd.lastDecision).toMatchObject({
+      source: 'telemetry_snapshot',
+      action: 'tighten',
+      reason: 'repeated_throttle',
+      currentPollingMinStartGapMs: 350,
+      proposedPollingMinStartGapMs: 438,
+      applyRuntimeChange: false,
     });
   });
 

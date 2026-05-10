@@ -62,6 +62,9 @@ As of 2026-05-10:
 - `/runtime/data-health` exposes sanitized AIMD diagnostics
 - data-health derives an observe-only `lastDecision` from sanitized governor
   telemetry snapshots
+- data-health classifies telemetry windows as `regular_market` only when the
+  runtime market phase is `open`; non-open/unknown phases remain conservative
+  `mixed` or `startup_warm`
 - no runtime polling gap is changed by AIMD
 - production activation still requires PM approval
 
