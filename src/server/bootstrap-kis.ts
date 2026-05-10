@@ -210,6 +210,10 @@ import {
   createFileKisGovernorAimdStateStore,
   type KisGovernorAimdStateStore,
 } from './kis/kis-governor-aimd-state.js';
+import {
+  applyKisGovernorAimdRuntime,
+  classifyKisGovernorAimdWindowFromMarketPhase,
+} from './kis/kis-governor-aimd-runtime.js';
 import { createFileKisGovernorTelemetryStore } from './kis/kis-governor-telemetry.js';
 import { createKisWsClient } from './kis/kis-ws-client.js';
 import {
@@ -589,9 +593,37 @@ export async function defaultActuallyStart(
     getMarketStatus: () => marketHoursScheduler.getCurrentPhase(),
   });
 
+  const syncGovernorAimdRuntime = (): void => {
+    void applyKisGovernorAimdRuntime({
+      stateStore: governorAimd,
+      outboundLimiter,
+      telemetry: outboundLimiter.snapshot().telemetry,
+      classification: classifyKisGovernorAimdWindowFromMarketPhase(
+        marketHoursScheduler.getCurrentPhase(),
+      ),
+      pollingCycleCount: pollingScheduler.getStatus().cycleCount,
+    }).catch((err: unknown) => {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'KIS governor AIMD runtime sync failed',
+      );
+    });
+  };
+
+  const initialGovernorAimdState = governorAimd.snapshot();
+  if (initialGovernorAimdState.enabled && initialGovernorAimdState.mode === 'active') {
+    outboundLimiter.setClassPolicyOverride?.('polling', {
+      minStartGapMs: initialGovernorAimdState.currentPollingMinStartGapMs,
+    });
+  } else {
+    outboundLimiter.setClassPolicyOverride?.('polling', null);
+  }
+
   pollingScheduler.start();
   const stopSnapshotTimer = deps.snapshotStore.startPeriodicSave(deps.priceStore);
   marketHoursScheduler.start();
+  const governorAimdTimer = setInterval(syncGovernorAimdRuntime, 60_000);
+  governorAimdTimer.unref?.();
   const realtimeFeedRouteTimer = setInterval(() => {
     if (!deps.settingsStore.snapshot().websocketEnabled) return;
     void syncRealtimeFeedRoute().catch((err: unknown) => {
@@ -616,6 +648,7 @@ export async function defaultActuallyStart(
     sseManager,
     marketHoursScheduler,
     stopSnapshotTimer: () => {
+      clearInterval(governorAimdTimer);
       clearInterval(realtimeFeedRouteTimer);
       stopSnapshotTimer();
     },

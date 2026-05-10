@@ -79,6 +79,7 @@ export interface KisGovernorAimdObservationPollingSummary {
 
 export interface KisGovernorAimdObservationInput {
   nowMs?: number;
+  windowStartedAtMs?: number;
   classification?: KisGovernorAimdWindowClassification;
   state: KisGovernorAimdObservationState;
   telemetry?: KisGovernorAimdObservationTelemetry;
@@ -165,11 +166,16 @@ export function buildKisGovernorAimdObservation(
   const evaluatedAtMs = Math.max(0, Math.trunc(input.nowMs ?? Date.now()));
   const telemetryEvents = input.telemetry?.recent ?? [];
   const telemetryMalformed = telemetryEvents.some((event) => !Number.isFinite(event.atMs));
+  const windowStartedAtMs = input.windowStartedAtMs !== undefined
+    ? Math.max(0, Math.trunc(input.windowStartedAtMs))
+    : null;
   const pollingEvents = telemetryEvents
     .filter((event) => event.endpointClass === 'polling' || event.priorityClass === 'polling')
     .filter((event) => Number.isFinite(event.atMs))
+    .filter((event) => windowStartedAtMs === null || event.atMs >= windowStartedAtMs)
+    .filter((event) => event.atMs <= evaluatedAtMs)
     .sort((a, b) => a.atMs - b.atMs);
-  const firstEventAtMs = pollingEvents[0]?.atMs ?? evaluatedAtMs;
+  const firstEventAtMs = windowStartedAtMs ?? pollingEvents[0]?.atMs ?? evaluatedAtMs;
   const throttleCount = pollingEvents.filter((event) => event.event === 'throttle').length;
   const circuitBreakerCount = pollingEvents.filter((event) => event.event === 'circuit_breaker').length;
   const maxRecoveryAttemptCount = pollingEvents.reduce(
@@ -189,7 +195,7 @@ export function buildKisGovernorAimdObservation(
     dataHealthDisagrees: false,
     cleanRegularMarketWindowCount:
       throttleCount === 0 && circuitBreakerCount === 0
-        ? input.state.cleanRegularMarketWindowCount
+        ? input.state.cleanRegularMarketWindowCount + 1
         : 0,
   };
 
