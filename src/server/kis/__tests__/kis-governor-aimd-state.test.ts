@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyKisGovernorAimdDecisionToState,
   createFileKisGovernorAimdStateStore,
   defaultKisGovernorAimdState,
   type KisGovernorAimdStateSnapshot,
@@ -76,5 +77,66 @@ describe('createFileKisGovernorAimdStateStore', () => {
 
     expect(store.snapshot()).toEqual(defaultKisGovernorAimdState());
     await expect(readFile(path, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('applyKisGovernorAimdDecisionToState', () => {
+  it('persists an active tighten decision as a gap-increase adjustment', () => {
+    const next = applyKisGovernorAimdDecisionToState(
+      {
+        ...defaultKisGovernorAimdState(),
+        enabled: true,
+        mode: 'active',
+        currentPollingMinStartGapMs: 350,
+        cleanRegularMarketWindowCount: 2,
+        degradedWindowCount: 0,
+      },
+      {
+        mode: 'active',
+        action: 'tighten',
+        currentPollingMinStartGapMs: 350,
+        proposedPollingMinStartGapMs: 438,
+        applyRuntimeChange: true,
+        reason: 'repeated_throttle',
+      },
+      { evaluatedAtMs: 1_700_000_000_000 },
+    );
+
+    expect(next).toEqual({
+      ...defaultKisGovernorAimdState(),
+      enabled: true,
+      mode: 'active',
+      currentPollingMinStartGapMs: 438,
+      lastAdjustmentAtMs: 1_700_000_000_000,
+      lastAdjustmentDirection: 'increase_gap',
+      lastAdjustmentReason: 'repeated_throttle',
+      nextEvaluationAtMs: 1_700_000_600_000,
+      cleanRegularMarketWindowCount: 0,
+      degradedWindowCount: 1,
+    });
+  });
+
+  it('leaves state unchanged when the decision is observe-only', () => {
+    const current = {
+      ...defaultKisGovernorAimdState(),
+      enabled: true,
+      mode: 'observe_only' as const,
+      currentPollingMinStartGapMs: 350,
+    };
+
+    expect(
+      applyKisGovernorAimdDecisionToState(
+        current,
+        {
+          mode: 'observe_only',
+          action: 'tighten',
+          currentPollingMinStartGapMs: 350,
+          proposedPollingMinStartGapMs: 438,
+          applyRuntimeChange: false,
+          reason: 'repeated_throttle',
+        },
+        { evaluatedAtMs: 1_700_000_000_000 },
+      ),
+    ).toEqual(current);
   });
 });

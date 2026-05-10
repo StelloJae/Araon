@@ -4,12 +4,16 @@ import { z } from 'zod';
 
 import { createChildLogger } from '@shared/logger.js';
 import { resolveDataPath } from '../runtime-paths.js';
-import type { KisGovernorAimdMode } from './kis-governor-aimd.js';
+import type {
+  KisGovernorAimdDecision,
+  KisGovernorAimdMode,
+} from './kis-governor-aimd.js';
 
 const log = createChildLogger('kis-governor-aimd-state');
 const DEFAULT_AIMD_STATE_FILE = 'kis-governor-aimd-state.json';
 const DEFAULT_POLLING_MIN_START_GAP_MS = 350;
 const DEFAULT_POLLING_RECOVERY_RATE_PER_SEC = 3;
+const DEFAULT_EVALUATION_INTERVAL_MS = 10 * 60 * 1_000;
 
 export type KisGovernorAimdAdjustmentDirection =
   | 'increase_gap'
@@ -42,6 +46,11 @@ export interface KisGovernorAimdStateStore {
 
 export interface FileKisGovernorAimdStateStoreOptions {
   path?: string;
+}
+
+export interface ApplyKisGovernorAimdDecisionOptions {
+  evaluatedAtMs: number;
+  nextEvaluationDelayMs?: number;
 }
 
 const stateSchema = z.object({
@@ -82,6 +91,48 @@ export function defaultKisGovernorAimdState(): KisGovernorAimdStateSnapshot {
       pollingMinStartGapMs: DEFAULT_POLLING_MIN_START_GAP_MS,
       pollingRecoveryRatePerSec: DEFAULT_POLLING_RECOVERY_RATE_PER_SEC,
     },
+  };
+}
+
+export function applyKisGovernorAimdDecisionToState(
+  state: KisGovernorAimdStateSnapshot,
+  decision: KisGovernorAimdDecision,
+  options: ApplyKisGovernorAimdDecisionOptions,
+): KisGovernorAimdStateSnapshot {
+  if (!decision.applyRuntimeChange || decision.mode !== 'active') {
+    return cloneState(state);
+  }
+
+  const proposedGap = Math.max(0, Math.trunc(decision.proposedPollingMinStartGapMs));
+  const currentGap = Math.max(0, Math.trunc(state.currentPollingMinStartGapMs));
+  if (proposedGap === currentGap) {
+    return cloneState(state);
+  }
+
+  const direction: KisGovernorAimdAdjustmentDirection =
+    proposedGap > currentGap ? 'increase_gap' : 'decrease_gap';
+  const evaluatedAtMs = Math.max(0, Math.trunc(options.evaluatedAtMs));
+  const delayMs = Math.max(
+    0,
+    Math.trunc(options.nextEvaluationDelayMs ?? DEFAULT_EVALUATION_INTERVAL_MS),
+  );
+
+  return {
+    ...state,
+    enabled: true,
+    mode: 'active',
+    currentPollingMinStartGapMs: proposedGap,
+    lastAdjustmentAtMs: evaluatedAtMs,
+    lastAdjustmentDirection: direction,
+    lastAdjustmentReason: decision.reason,
+    nextEvaluationAtMs: evaluatedAtMs + delayMs,
+    cleanRegularMarketWindowCount: direction === 'increase_gap'
+      ? 0
+      : state.cleanRegularMarketWindowCount,
+    degradedWindowCount: direction === 'increase_gap'
+      ? state.degradedWindowCount + 1
+      : 0,
+    rollbackBaseline: { ...state.rollbackBaseline },
   };
 }
 
@@ -167,6 +218,13 @@ function normalizeState(input: KisGovernorAimdStateSnapshot): KisGovernorAimdSta
       pollingRecoveryRatePerSec: input.rollbackBaseline.pollingRecoveryRatePerSec,
     },
   } satisfies KisGovernorAimdStateSnapshot;
+}
+
+function cloneState(state: KisGovernorAimdStateSnapshot): KisGovernorAimdStateSnapshot {
+  return {
+    ...state,
+    rollbackBaseline: { ...state.rollbackBaseline },
+  };
 }
 
 function isMissingFile(err: unknown): boolean {
