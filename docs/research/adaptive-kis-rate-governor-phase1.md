@@ -92,6 +92,8 @@ Covered by the governor after Phase 2:
 Still outside or not fully solved after Phase 2:
 
 - AIMD auto-tuning is not enabled
+- AIMD design is tracked in
+  [`docs/research/kis-governor-aimd-design.md`](kis-governor-aimd-design.md)
 
 ## Data Health
 

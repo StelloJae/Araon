@@ -140,6 +140,11 @@ Initial AIMD scope should be polling only. Ranking, backfill, auth, approval,
 foreground, and master refresh should stay manually configured until polling is
 proven stable.
 
+The current design draft is
+[`docs/research/kis-governor-aimd-design.md`](../research/kis-governor-aimd-design.md).
+It keeps the first implementation disabled by default and treats observe-only
+diagnostics plus mock tests as non-PM-gated work.
+
 ## PM Check Required
 
 Ask PM before:
