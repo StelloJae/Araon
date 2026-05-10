@@ -694,6 +694,7 @@ export interface RuntimeDataHealthPayload {
       enabled: boolean;
       mode: 'observe_only' | 'active';
       currentPollingMinStartGapMs: number;
+      currentPollingRecoveryRatePerSec: number;
       baselinePollingMinStartGapMs: number;
       lastAdjustmentAt: string | null;
       lastAdjustmentDirection: 'increase_gap' | 'decrease_gap' | 'none';

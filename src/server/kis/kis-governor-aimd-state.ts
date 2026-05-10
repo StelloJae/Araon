@@ -24,6 +24,7 @@ export interface KisGovernorAimdStateSnapshot {
   enabled: boolean;
   mode: KisGovernorAimdMode;
   currentPollingMinStartGapMs: number;
+  currentPollingRecoveryRatePerSec: number;
   baselinePollingMinStartGapMs: number;
   lastAdjustmentAtMs: number | null;
   lastAdjustmentDirection: KisGovernorAimdAdjustmentDirection;
@@ -57,6 +58,7 @@ const stateSchema = z.object({
   enabled: z.boolean(),
   mode: z.enum(['observe_only', 'active']),
   currentPollingMinStartGapMs: z.number().int().min(0),
+  currentPollingRecoveryRatePerSec: z.number().min(0.1).default(DEFAULT_POLLING_RECOVERY_RATE_PER_SEC),
   baselinePollingMinStartGapMs: z.number().int().min(0),
   lastAdjustmentAtMs: z.number().int().min(0).nullable(),
   lastAdjustmentDirection: z.enum(['increase_gap', 'decrease_gap', 'none']),
@@ -80,6 +82,7 @@ export function defaultKisGovernorAimdState(): KisGovernorAimdStateSnapshot {
     enabled: false,
     mode: 'observe_only',
     currentPollingMinStartGapMs: DEFAULT_POLLING_MIN_START_GAP_MS,
+    currentPollingRecoveryRatePerSec: DEFAULT_POLLING_RECOVERY_RATE_PER_SEC,
     baselinePollingMinStartGapMs: DEFAULT_POLLING_MIN_START_GAP_MS,
     lastAdjustmentAtMs: null,
     lastAdjustmentDirection: 'none',
@@ -199,6 +202,10 @@ export function createFileKisGovernorAimdStateStore(
 
 function normalizeState(input: KisGovernorAimdStateSnapshot): KisGovernorAimdStateSnapshot {
   const baseline = Math.trunc(input.baselinePollingMinStartGapMs);
+  const rollbackRecoveryRate = Math.max(
+    0.1,
+    input.rollbackBaseline.pollingRecoveryRatePerSec,
+  );
   const enabled = input.enabled;
   return {
     enabled,
@@ -206,6 +213,9 @@ function normalizeState(input: KisGovernorAimdStateSnapshot): KisGovernorAimdSta
     currentPollingMinStartGapMs: enabled
       ? Math.trunc(input.currentPollingMinStartGapMs)
       : baseline,
+    currentPollingRecoveryRatePerSec: enabled
+      ? Math.max(0.1, input.currentPollingRecoveryRatePerSec)
+      : rollbackRecoveryRate,
     baselinePollingMinStartGapMs: baseline,
     lastAdjustmentAtMs: input.lastAdjustmentAtMs,
     lastAdjustmentDirection: input.lastAdjustmentDirection,
@@ -215,7 +225,7 @@ function normalizeState(input: KisGovernorAimdStateSnapshot): KisGovernorAimdSta
     degradedWindowCount: Math.trunc(input.degradedWindowCount),
     rollbackBaseline: {
       pollingMinStartGapMs: Math.trunc(input.rollbackBaseline.pollingMinStartGapMs),
-      pollingRecoveryRatePerSec: input.rollbackBaseline.pollingRecoveryRatePerSec,
+      pollingRecoveryRatePerSec: rollbackRecoveryRate,
     },
   } satisfies KisGovernorAimdStateSnapshot;
 }

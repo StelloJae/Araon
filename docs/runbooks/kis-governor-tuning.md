@@ -10,7 +10,7 @@ Current live polling baseline:
 
 - manual polling min start gap: 350ms
 - active AIMD observed polling override: 548ms
-- polling recovery rate: 3rps
+- manual polling recovery rate: 3rps
 - recovery stable window: 30s
 - polling max in-flight: 2 at the governor layer
 
@@ -18,7 +18,9 @@ These values come from local normal-operation evidence on 2026-05-10. They are
 not a KIS contract.
 
 The code baseline remains 350ms. Active AIMD may layer a runtime override on top
-of that baseline; rollback returns polling to the baseline.
+of that baseline; rollback returns polling to the baseline. Recovery rps can be
+overridden for explicit experiments, but automatic AIMD decisions still tune the
+gap only.
 
 ## Data Sources
 
@@ -147,6 +149,8 @@ Active AIMD behavior:
 - protective early tighten when the current evaluation window already has a
   strong pressure signal such as repeated `EGW00201`
 - no early loosen; loosening still requires clean windows
+- `pollingRecoveryRatePerSec` is accepted by the control route for bounded
+  experiments, but is not auto-tuned by AIMD
 - data-health diagnostics are anchored to the same active evaluation window, so
   old pre-adjustment throttle events do not look like a fresh proposal
 
@@ -180,6 +184,14 @@ Preferred runtime rollback:
 curl -s -X POST http://127.0.0.1:3000/runtime/kis-governor/aimd \
   -H 'content-type: application/json' \
   -d '{"action":"rollback"}'
+```
+
+Explicit recovery-rps experiment example:
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/runtime/kis-governor/aimd \
+  -H 'content-type: application/json' \
+  -d '{"action":"enable_active","pollingMinStartGapMs":548,"pollingRecoveryRatePerSec":4.5}'
 ```
 
 Fallback rollback:

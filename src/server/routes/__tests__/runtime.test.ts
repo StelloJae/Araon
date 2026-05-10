@@ -150,6 +150,7 @@ function defaultAimdPayload() {
     enabled: false,
     mode: 'observe_only',
     currentPollingMinStartGapMs: 350,
+    currentPollingRecoveryRatePerSec: 3,
     baselinePollingMinStartGapMs: 350,
     lastAdjustmentAt: null,
     lastAdjustmentDirection: 'none',
@@ -171,6 +172,7 @@ function defaultAimdState() {
     enabled: false,
     mode: 'observe_only' as const,
     currentPollingMinStartGapMs: 350,
+    currentPollingRecoveryRatePerSec: 3,
     baselinePollingMinStartGapMs: 350,
     lastAdjustmentAtMs: null,
     lastAdjustmentDirection: 'none' as const,
@@ -830,6 +832,7 @@ describe('GET /runtime/data-health', () => {
       enabled: true,
       mode: 'observe_only',
       currentPollingMinStartGapMs: 325,
+      currentPollingRecoveryRatePerSec: 3,
       baselinePollingMinStartGapMs: 350,
       lastAdjustmentAt: '2026-05-08T14:30:00.000Z',
       lastAdjustmentDirection: 'decrease_gap',
@@ -1334,6 +1337,7 @@ describe('POST /runtime/kis-governor/aimd', () => {
       payload: {
         action: 'enable_active',
         pollingMinStartGapMs: 320,
+        pollingRecoveryRatePerSec: 4.5,
       },
     });
     const body = res.json();
@@ -1343,15 +1347,20 @@ describe('POST /runtime/kis-governor/aimd', () => {
       enabled: true,
       mode: 'active',
       currentPollingMinStartGapMs: 320,
+      currentPollingRecoveryRatePerSec: 4.5,
       nextEvaluationAtMs: null,
       cleanRegularMarketWindowCount: 0,
       degradedWindowCount: 0,
     }));
-    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 320 });
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', {
+      minStartGapMs: 320,
+      recoveryRatePerSec: 4.5,
+    });
     expect(body.data.aimd).toMatchObject({
       enabled: true,
       mode: 'active',
       currentPollingMinStartGapMs: 320,
+      currentPollingRecoveryRatePerSec: 4.5,
       nextEvaluationAt: null,
     });
     expect(JSON.stringify(body)).not.toContain('SHOULD_NOT_APPEAR');

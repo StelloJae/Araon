@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
@@ -77,6 +77,44 @@ describe('createFileKisGovernorAimdStateStore', () => {
 
     expect(store.snapshot()).toEqual(defaultKisGovernorAimdState());
     await expect(readFile(path, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('loads older state files without a current recovery-rate field', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'araon-kis-governor-aimd-'));
+    const path = join(dir, 'aimd-state.json');
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        version: 1,
+        state: {
+          enabled: true,
+          mode: 'active',
+          currentPollingMinStartGapMs: 548,
+          baselinePollingMinStartGapMs: 350,
+          lastAdjustmentAtMs: null,
+          lastAdjustmentDirection: 'none',
+          lastAdjustmentReason: null,
+          nextEvaluationAtMs: null,
+          cleanRegularMarketWindowCount: 0,
+          degradedWindowCount: 0,
+          rollbackBaseline: {
+            pollingMinStartGapMs: 350,
+            pollingRecoveryRatePerSec: 3,
+          },
+        },
+      })}\n`,
+      'utf8',
+    );
+
+    const store = createFileKisGovernorAimdStateStore({ path });
+    await store.load();
+
+    expect(store.snapshot()).toMatchObject({
+      enabled: true,
+      mode: 'active',
+      currentPollingMinStartGapMs: 548,
+      currentPollingRecoveryRatePerSec: 3,
+    });
   });
 });
 

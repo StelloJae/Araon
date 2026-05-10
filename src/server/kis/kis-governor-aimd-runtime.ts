@@ -48,7 +48,7 @@ export async function applyKisGovernorAimdRuntime(
     return { decision: null, observation: null, state, skippedReason: 'observe_only' };
   }
 
-  applyPollingGapOverride(input.outboundLimiter, state.currentPollingMinStartGapMs);
+  applyPollingPolicyOverride(input.outboundLimiter, state);
   if (state.nextEvaluationAtMs === null) {
     const scheduledState = {
       ...state,
@@ -77,7 +77,7 @@ export async function applyKisGovernorAimdRuntime(
   });
   const nextState = nextStateForObservation(state, observation);
   await input.stateStore.save(nextState);
-  applyPollingGapOverride(input.outboundLimiter, nextState.currentPollingMinStartGapMs);
+  applyPollingPolicyOverride(input.outboundLimiter, nextState);
 
   return {
     decision: observation.decision,
@@ -112,7 +112,7 @@ async function applyEarlyProtectiveTighten(
   const protectiveObservation = { ...observation, decision };
   const nextState = nextStateForObservation(state, protectiveObservation);
   await input.stateStore.save(nextState);
-  applyPollingGapOverride(input.outboundLimiter, nextState.currentPollingMinStartGapMs);
+  applyPollingPolicyOverride(input.outboundLimiter, nextState);
 
   return {
     decision,
@@ -192,11 +192,12 @@ function evaluationWindowStartedAtMs(
   return Math.max(0, nowMs - KIS_GOVERNOR_AIMD_EVALUATION_INTERVAL_MS);
 }
 
-function applyPollingGapOverride(
+function applyPollingPolicyOverride(
   outboundLimiter: Pick<KisOutboundLimiter, 'setClassPolicyOverride'>,
-  minStartGapMs: number,
+  state: KisGovernorAimdStateSnapshot,
 ): void {
   outboundLimiter.setClassPolicyOverride?.('polling', {
-    minStartGapMs: Math.max(0, Math.trunc(minStartGapMs)),
+    minStartGapMs: Math.max(0, Math.trunc(state.currentPollingMinStartGapMs)),
+    recoveryRatePerSec: Math.max(0.1, state.currentPollingRecoveryRatePerSec),
   });
 }

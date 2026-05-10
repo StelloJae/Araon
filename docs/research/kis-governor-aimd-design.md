@@ -40,6 +40,7 @@ Initial AIMD scope should be polling only.
 Allowed to adjust:
 
 - polling min start gap
+- polling recovery rps only through explicit control input
 
 Not allowed to adjust:
 
@@ -48,7 +49,6 @@ Not allowed to adjust:
 - ranking policy
 - selected or background backfill policy
 - master refresh policy
-- polling recovery rate
 - polling max in-flight
 - global token budget
 - WebSocket subscription caps
@@ -79,6 +79,8 @@ As of 2026-05-10:
 - data-health anchors diagnostics to the active evaluation window so old
   pre-adjustment throttle events do not become stale proposals
 - runtime rollback clears the AIMD override and returns to the manual baseline
+- `pollingRecoveryRatePerSec` can be set explicitly for bounded experiments;
+  automatic AIMD still adjusts only the polling gap
 
 ## Inputs
 
@@ -98,6 +100,7 @@ The controller should consume derived facts, not raw KIS bodies:
 - polling cycle success/failure counts
 - queue depth trend
 - current polling min start gap
+- current polling recovery rps
 
 ## State
 
@@ -105,6 +108,7 @@ The AIMD controller needs small local state:
 
 - enabled flag
 - current polling gap override
+- current polling recovery rps override
 - last adjustment time
 - last adjustment direction: `increase_gap`, `decrease_gap`, or `none`
 - last adjustment reason

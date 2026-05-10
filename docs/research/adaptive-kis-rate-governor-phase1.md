@@ -92,7 +92,8 @@ Covered by the governor after Phase 2:
 Still outside or not fully solved after Phase 2:
 
 - AIMD auto-tuning started as a follow-up and is now implemented for polling-only
-  explicit active mode
+  explicit active mode. Automatic AIMD tunes polling gap only; recovery rps can
+  be set explicitly for bounded experiments.
 - AIMD design and live observations are tracked in
   [`docs/research/kis-governor-aimd-design.md`](kis-governor-aimd-design.md)
 

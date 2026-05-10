@@ -267,6 +267,7 @@ export interface RuntimeKisGovernorAimdPayload {
   readonly enabled: boolean;
   readonly mode: string;
   readonly currentPollingMinStartGapMs: number;
+  readonly currentPollingRecoveryRatePerSec: number;
   readonly baselinePollingMinStartGapMs: number;
   readonly lastAdjustmentAt: string | null;
   readonly lastAdjustmentDirection: string;
@@ -350,6 +351,7 @@ const localBackupPayloadSchema = z.object({
 const kisGovernorAimdControlBodySchema = z.object({
   action: z.enum(['enable_active', 'enable_observe_only', 'disable', 'rollback']),
   pollingMinStartGapMs: z.number().int().min(0).max(1_200).optional(),
+  pollingRecoveryRatePerSec: z.number().min(0.1).max(10).optional(),
 });
 
 const sessionTimers = new WeakMap<KisRuntime, ReturnType<typeof setTimeout>>();
@@ -985,6 +987,7 @@ async function applyKisGovernorAimdControl(
   if (nextState.enabled && nextState.mode === 'active') {
     runtime.outboundLimiter.setClassPolicyOverride?.('polling', {
       minStartGapMs: nextState.currentPollingMinStartGapMs,
+      recoveryRatePerSec: nextState.currentPollingRecoveryRatePerSec,
     });
   } else {
     runtime.outboundLimiter.setClassPolicyOverride?.('polling', null);
@@ -1001,6 +1004,10 @@ function buildControlledKisGovernorAimdState(
     0,
     Math.trunc(input.pollingMinStartGapMs ?? current.currentPollingMinStartGapMs),
   );
+  const requestedRecoveryRate = Math.max(
+    0.1,
+    input.pollingRecoveryRatePerSec ?? current.currentPollingRecoveryRatePerSec,
+  );
 
   if (input.action === 'disable') {
     return {
@@ -1008,6 +1015,7 @@ function buildControlledKisGovernorAimdState(
       enabled: false,
       mode: 'observe_only',
       currentPollingMinStartGapMs: current.baselinePollingMinStartGapMs,
+      currentPollingRecoveryRatePerSec: current.rollbackBaseline.pollingRecoveryRatePerSec,
       nextEvaluationAtMs: null,
       cleanRegularMarketWindowCount: 0,
       degradedWindowCount: 0,
@@ -1020,6 +1028,7 @@ function buildControlledKisGovernorAimdState(
     enabled: true,
     mode: input.action === 'enable_active' ? 'active' : 'observe_only',
     currentPollingMinStartGapMs: requestedGap,
+    currentPollingRecoveryRatePerSec: requestedRecoveryRate,
     nextEvaluationAtMs: null,
     cleanRegularMarketWindowCount: 0,
     degradedWindowCount: 0,
@@ -1034,6 +1043,9 @@ function knownKisGovernorAimdState(
     enabled: state.enabled,
     mode: state.mode,
     currentPollingMinStartGapMs: state.currentPollingMinStartGapMs,
+    currentPollingRecoveryRatePerSec:
+      state.currentPollingRecoveryRatePerSec
+      ?? state.rollbackBaseline.pollingRecoveryRatePerSec,
     baselinePollingMinStartGapMs: state.baselinePollingMinStartGapMs,
     lastAdjustmentAtMs: state.lastAdjustmentAtMs,
     lastAdjustmentDirection: state.lastAdjustmentDirection,
@@ -1051,7 +1063,9 @@ function buildKisGovernorAimdPayload(
   classification: KisGovernorAimdWindowClassification = 'mixed',
   pollingCycleCount?: number,
 ): RuntimeKisGovernorAimdPayload {
-  const snapshot = state ?? defaultKisGovernorAimdState();
+  const snapshot = state !== undefined
+    ? knownKisGovernorAimdState(state)
+    : defaultKisGovernorAimdState();
   const windowStartedAtMs = aimdObservationWindowStartedAtMs(snapshot);
   const observation =
     telemetry !== undefined && telemetry.recent.length > 0
@@ -1069,6 +1083,7 @@ function buildKisGovernorAimdPayload(
     enabled: snapshot.enabled,
     mode: snapshot.mode,
     currentPollingMinStartGapMs: snapshot.currentPollingMinStartGapMs,
+    currentPollingRecoveryRatePerSec: snapshot.currentPollingRecoveryRatePerSec,
     baselinePollingMinStartGapMs: snapshot.baselinePollingMinStartGapMs,
     lastAdjustmentAt: millisToIso(snapshot.lastAdjustmentAtMs),
     lastAdjustmentDirection: snapshot.lastAdjustmentDirection,

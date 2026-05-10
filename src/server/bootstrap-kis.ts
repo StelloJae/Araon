@@ -614,6 +614,7 @@ export async function defaultActuallyStart(
   if (initialGovernorAimdState.enabled && initialGovernorAimdState.mode === 'active') {
     outboundLimiter.setClassPolicyOverride?.('polling', {
       minStartGapMs: initialGovernorAimdState.currentPollingMinStartGapMs,
+      recoveryRatePerSec: initialGovernorAimdState.currentPollingRecoveryRatePerSec,
     });
   } else {
     outboundLimiter.setClassPolicyOverride?.('polling', null);

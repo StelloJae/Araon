@@ -46,7 +46,7 @@ describe('applyKisGovernorAimdRuntime', () => {
       proposedPollingMinStartGapMs: 438,
       applyRuntimeChange: true,
     });
-    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 438 });
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 438, recoveryRatePerSec: 3 });
     expect(store.save).toHaveBeenCalledWith(expect.objectContaining({
       currentPollingMinStartGapMs: 438,
       lastAdjustmentAtMs: nowMs,
@@ -84,7 +84,7 @@ describe('applyKisGovernorAimdRuntime', () => {
       reason: 'waiting_for_clean_windows',
       applyRuntimeChange: false,
     });
-    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 350 });
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 350, recoveryRatePerSec: 3 });
     expect(store.save).toHaveBeenCalledWith(expect.objectContaining({
       currentPollingMinStartGapMs: 350,
       nextEvaluationAtMs: nowMs + 600_000,
@@ -115,7 +115,7 @@ describe('applyKisGovernorAimdRuntime', () => {
 
     expect(result.decision).toBeNull();
     expect(result.skippedReason).toBe('too_early');
-    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 350 });
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 350, recoveryRatePerSec: 3 });
     expect(store.save).toHaveBeenCalledWith(expect.objectContaining({
       nextEvaluationAtMs: nowMs + 600_000,
       cleanRegularMarketWindowCount: 0,
@@ -157,7 +157,7 @@ describe('applyKisGovernorAimdRuntime', () => {
       proposedPollingMinStartGapMs: 548,
       applyRuntimeChange: true,
     });
-    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 548 });
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 548, recoveryRatePerSec: 3 });
     expect(store.save).toHaveBeenCalledWith(expect.objectContaining({
       currentPollingMinStartGapMs: 548,
       lastAdjustmentAtMs: nowMs,
@@ -197,7 +197,7 @@ describe('applyKisGovernorAimdRuntime', () => {
 
     expect(result.decision).toBeNull();
     expect(result.skippedReason).toBe('too_early');
-    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 438 });
+    expect(setClassPolicyOverride).toHaveBeenCalledWith('polling', { minStartGapMs: 438, recoveryRatePerSec: 3 });
     expect(store.save).not.toHaveBeenCalled();
   });
 

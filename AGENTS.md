@@ -65,9 +65,10 @@ Credentials/data/runtime state는 커밋하지 않는다.
   circuit breaker 정책을 유지한다.
 - Governor queue에서는 foreground가 background/ranking/master refresh보다 먼저
   나가야 하지만, token/start spacing/max in-flight 제한은 계속 지킨다.
-- KIS AIMD는 polling gap override만 조정한다. Active AIMD는 명시 승인된 목표나
-  운영 절차에서만 켜고, 문제 시 `/runtime/kis-governor/aimd` rollback으로 baseline
-  상태로 되돌린다.
+- KIS AIMD는 polling policy override만 조정한다. 자동 판단은 polling gap에
+  제한하고, recovery rps는 명시 실험값으로만 바꾼다. Active AIMD는 명시 승인된
+  목표나 운영 절차에서만 켜고, 문제 시 `/runtime/kis-governor/aimd` rollback으로
+  baseline 상태로 되돌린다.
 - live KIS stress test나 의도적인 throttle 유도는 사용자의 명시 승인 없이 금지한다.
 
 ## 주요 명령
