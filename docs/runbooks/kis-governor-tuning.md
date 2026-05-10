@@ -224,6 +224,11 @@ Fallback rollback:
 - restart
 - verify `/runtime/data-health` shows the baseline polling gap again
 
+Rollback smoke verified on 2026-05-10: active 920ms / 3rps returned to
+350ms / 3rps observe-only via the runtime rollback route, then re-applied active
+920ms / 3rps successfully. This did not call trading/order/account-changing
+endpoints.
+
 ## PM Check Required
 
 Ask PM before:

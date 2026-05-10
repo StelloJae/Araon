@@ -227,6 +227,8 @@ Manual rollback must be simple:
 - call `POST /runtime/kis-governor/aimd` with `{"action":"rollback"}`
 - or stop runtime, remove `data/kis-governor-aimd-state.json`, and restart
 - verify polling baseline is back to 350ms / 3rps recovery
+- 2026-05-10 runtime smoke verified rollback from active 920ms / 3rps to
+  350ms / 3rps observe-only and then re-applied active 920ms / 3rps
 
 The baseline should remain in code and docs. AIMD overrides should be layered on
 top, not replace defaults.
