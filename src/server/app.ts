@@ -183,6 +183,8 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const marketSummaryService = createMarketSummaryService();
   const backfillCooldownEndpointClasses = new Set<KisEndpointClass>([
     'daily-backfill',
+    'selected_backfill',
+    'background_backfill',
     'selected-minute',
   ]);
   const rankingCooldownEndpointClasses = new Set<KisEndpointClass>(['ranking']);
@@ -226,7 +228,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   };
   const dailyBackfillService = createDailyBackfillService({
     repo: candleRepo,
-    fetchDailyCandles: async ({ ticker, fromYmd, toYmd, now }) => {
+    fetchDailyCandles: async ({ ticker, fromYmd, toYmd, now, endpointClass }) => {
       const state = runtimeRef.get();
       if (state.status !== 'started') {
         throw new Error('KIS runtime is not started');
@@ -236,6 +238,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
         fromYmd,
         toYmd,
         restClient: state.runtime.restClient,
+        ...(endpointClass !== undefined ? { endpointClass } : {}),
         now: () => now,
       });
     },

@@ -154,11 +154,13 @@ describe('createBackgroundDailyBackfillScheduler', () => {
       ticker: '000660',
       range: '6m',
       now: new Date('2026-05-05T11:05:00.000Z'),
+      endpointClass: 'background_backfill',
     });
     expect(backfillDailyCandles).toHaveBeenNthCalledWith(2, {
       ticker: '005930',
       range: '6m',
       now: new Date('2026-05-05T11:05:00.000Z'),
+      endpointClass: 'background_backfill',
     });
   });
 
@@ -329,6 +331,7 @@ describe('createBackgroundDailyBackfillScheduler', () => {
       ticker: '042700',
       range: '3m',
       now: new Date('2026-05-05T11:05:00.000Z'),
+      endpointClass: 'background_backfill',
     });
   });
 
@@ -414,11 +417,13 @@ describe('createBackgroundDailyBackfillScheduler', () => {
       ticker: '010620',
       range: '3m',
       now: new Date('2026-05-05T11:05:00.000Z'),
+      endpointClass: 'background_backfill',
     });
     expect(backfillDailyCandles).toHaveBeenNthCalledWith(2, {
       ticker: '005930',
       range: '3m',
       now: new Date('2026-05-05T11:06:00.000Z'),
+      endpointClass: 'background_backfill',
     });
   });
 

@@ -105,6 +105,7 @@ function startedRuntime(
         ratePerSec: 15,
         burst: 15,
         tokens: 15,
+        policies: [],
         profiles: [],
       })),
     },
@@ -550,6 +551,7 @@ describe('GET /runtime/data-health', () => {
             newestAt: null,
             recent: [],
           },
+          policies: [],
           profiles: [],
         },
         volumeBaseline: {
@@ -676,6 +678,22 @@ describe('GET /runtime/data-health', () => {
                   },
                 ],
               },
+              policies: [
+                {
+                  endpointClass: 'selected_backfill',
+                  priorityClass: 'selected_backfill',
+                  minStartGapMs: 1_000,
+                  maxInFlight: 1,
+                  recoveryRatePerSec: 1,
+                },
+                {
+                  endpointClass: 'background_backfill',
+                  priorityClass: 'background_backfill',
+                  minStartGapMs: 1_500,
+                  maxInFlight: 1,
+                  recoveryRatePerSec: 1,
+                },
+              ],
               profiles: [
                 {
                   profileId: 'primary',
@@ -766,6 +784,22 @@ describe('GET /runtime/data-health', () => {
           },
         ],
       },
+      policies: [
+        {
+          endpointClass: 'selected_backfill',
+          priorityClass: 'selected_backfill',
+          minStartGapMs: 1_000,
+          maxInFlight: 1,
+          recoveryRatePerSec: 1,
+        },
+        {
+          endpointClass: 'background_backfill',
+          priorityClass: 'background_backfill',
+          minStartGapMs: 1_500,
+          maxInFlight: 1,
+          recoveryRatePerSec: 1,
+        },
+      ],
       profiles: [
         {
           profileId: 'primary',

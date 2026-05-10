@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { PriceCandle } from '@shared/types.js';
 import { KisRestError, type KisRestClient } from './kis-rest-client.js';
+import type { KisEndpointClass } from './kis-outbound-limiter.js';
 
 const DAILY_CHART_PATH = '/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice';
 const DAILY_CHART_TR_ID = 'FHKST03010100';
@@ -24,6 +25,7 @@ export interface FetchKisDailyCandlesOptions {
   fromYmd: string;
   toYmd: string;
   restClient: Pick<KisRestClient, 'request'>;
+  endpointClass?: Extract<KisEndpointClass, 'daily-backfill' | 'selected_backfill' | 'background_backfill'>;
   now?: () => Date;
 }
 
@@ -104,7 +106,7 @@ export async function fetchKisDailyCandles(
     method: 'GET',
     path: DAILY_CHART_PATH,
     trId: DAILY_CHART_TR_ID,
-    endpointClass: 'daily-backfill',
+    endpointClass: options.endpointClass ?? 'daily-backfill',
     query: {
       FID_COND_MRKT_DIV_CODE: 'J',
       FID_INPUT_ISCD: options.ticker,

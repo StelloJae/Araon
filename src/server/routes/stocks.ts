@@ -466,6 +466,7 @@ export async function stockRoutes(
         ticker,
         range: parsed.data.range as DailyBackfillRange,
         now,
+        endpointClass: 'selected_backfill',
       });
       return reply.send({ success: true, data: result });
     } catch (err: unknown) {
@@ -586,6 +587,7 @@ export async function stockRoutes(
           ticker,
           range,
           now,
+          endpointClass: 'selected_backfill',
         });
         if (opts.candleCoverageRepo !== undefined && result.requested > 0) {
           opts.candleCoverageRepo.upsertSegment({

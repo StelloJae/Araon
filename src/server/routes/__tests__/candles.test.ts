@@ -478,6 +478,7 @@ describe('GET /stocks/:ticker/candles', () => {
       ticker: '005930',
       range: '3m',
       now: new Date('2026-05-05T11:05:00.000Z'),
+      endpointClass: 'selected_backfill',
     });
     expect(JSON.parse(res.body).data).toMatchObject({
       ticker: '005930',
@@ -651,6 +652,7 @@ describe('GET /stocks/:ticker/candles', () => {
       ticker: '005930',
       range: '1m',
       now: new Date('2026-05-05T11:10:00.000Z'),
+      endpointClass: 'selected_backfill',
     });
     expect(JSON.parse(res.body).data).toMatchObject({
       state: 'backfilled',

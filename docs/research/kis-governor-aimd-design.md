@@ -183,8 +183,9 @@ Hold is a first-class decision, not a failure.
 
 ## 2026-05-10 Controlled Live Observation
 
-Under an explicit user `$goal`, controlled live polling observation was allowed.
-No order/account-changing endpoints were used.
+Under an explicit user `$goal`, controlled live polling observation and bounded
+class-smoke requests were allowed without an intermediate PM checkpoint. No
+order/account-changing endpoints were used.
 
 Observed values:
 
@@ -197,6 +198,16 @@ Observed values:
   effective rps
 - diagnostics-window anchoring then reported `throttleCount: 0` for the current
   post-adjustment window instead of carrying pre-adjustment pressure forward
+- a later recovery-rate override smoke set polling recovery to 4.5rps briefly;
+  data-health reflected the override, no new throttle was attributed to that
+  short window, and runtime was rolled back to 3rps recovery
+- a later class-smoke pass verified sanitized effective policies for
+  `selected_backfill`, `background_backfill`, `ranking`, `foreground`, and
+  `polling`
+- that class-smoke made one selected daily backfill request, one top-movers
+  request, and one foreground quote refresh; all returned HTTP 200
+- during the same later observation, polling pressure tightened active AIMD from
+  685ms to 800ms after another `EGW00201`
 
 These are local observations, not a KIS contract.
 
@@ -270,7 +281,7 @@ Required tests:
 
 ## PM Gate
 
-PM approval is required before:
+PM approval is normally required before:
 
 - enabling active AIMD in production
 - allowing the gap below 300ms
@@ -279,6 +290,11 @@ PM approval is required before:
   refresh
 - running live stress tests
 - changing multi-key capacity strategy
+
+An explicit persistent user goal can temporarily authorize bounded live
+observation or tuning work without an intermediate PM checkpoint. The same
+absolute bans still apply: no trading/order/account-changing endpoints, no
+secret/raw KIS body exposure, and no credentials/runtime state commits.
 
 PM approval is not required for:
 

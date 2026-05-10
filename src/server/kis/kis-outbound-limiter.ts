@@ -94,6 +94,14 @@ export interface KisOutboundLimiterProfileSnapshot {
   maxInFlight: number;
 }
 
+export interface KisOutboundLimiterPolicySnapshot {
+  endpointClass: KisEndpointClass;
+  priorityClass: KisPriorityClass;
+  minStartGapMs: number;
+  maxInFlight: number;
+  recoveryRatePerSec: number;
+}
+
 export interface KisOutboundLimiterSnapshot {
   ratePerSec: number;
   burst: number;
@@ -101,6 +109,7 @@ export interface KisOutboundLimiterSnapshot {
   queueDepth?: number;
   queuedByPriority?: Partial<Record<KisPriorityClass, number>>;
   telemetry?: KisGovernorTelemetrySnapshot;
+  policies: KisOutboundLimiterPolicySnapshot[];
   profiles: KisOutboundLimiterProfileSnapshot[];
 }
 
@@ -193,6 +202,21 @@ const PRIORITY_ORDER: Record<KisPriorityClass, number> = {
   master_refresh: 6,
   maintenance: 7,
 };
+
+const POLICY_SNAPSHOT_ENDPOINT_CLASSES: readonly KisEndpointClass[] = [
+  'auth',
+  'token',
+  'approval',
+  'foreground',
+  'selected_backfill',
+  'selected-minute',
+  'polling',
+  'ranking',
+  'background_backfill',
+  'daily-backfill',
+  'master_refresh',
+  'maintenance',
+];
 
 const DEFAULT_CLASS_POLICIES: Record<KisPriorityClass, ResolvedKisClassPolicy> = {
   auth: {
@@ -416,6 +440,7 @@ export function createKisOutboundLimiter(
       queueDepth: acquireQueue.length,
       queuedByPriority: queuedByPrioritySnapshot(),
       ...(telemetryEnabled ? { telemetry: telemetrySnapshot() } : {}),
+      policies: policySnapshot(),
       profiles: Array.from(cooldownUntilByKey.entries())
         .map(([key, cooldownUntilMs]) => ({
           ...parseCooldownMapKey(key),
@@ -456,6 +481,19 @@ export function createKisOutboundLimiter(
           };
         }),
     };
+  }
+
+  function policySnapshot(): KisOutboundLimiterPolicySnapshot[] {
+    return POLICY_SNAPSHOT_ENDPOINT_CLASSES.map((endpointClass) => {
+      const policy = policyForEndpoint(endpointClass);
+      return {
+        endpointClass,
+        priorityClass: policy.priorityClass,
+        minStartGapMs: policy.minStartGapMs,
+        maxInFlight: policy.maxInFlight,
+        recoveryRatePerSec: policy.recoveryRatePerSec,
+      };
+    });
   }
 
   function setClassPolicyOverride(

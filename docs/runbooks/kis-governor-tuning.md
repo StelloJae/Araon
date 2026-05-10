@@ -9,7 +9,8 @@ instruction to create throttles on purpose.
 Current live polling baseline:
 
 - manual polling min start gap: 350ms
-- active AIMD observed polling override: 548ms
+- active AIMD observed polling override: 548ms, later 800ms after repeated
+  polling throttle pressure
 - manual polling recovery rate: 3rps
 - recovery stable window: 30s
 - polling max in-flight: 2 at the governor layer
@@ -151,6 +152,11 @@ Active AIMD behavior:
 - no early loosen; loosening still requires clean windows
 - `pollingRecoveryRatePerSec` is accepted by the control route for bounded
   experiments, but is not auto-tuned by AIMD
+- selected daily chart backfill uses `selected_backfill`, while managed
+  background daily backfill uses `background_backfill`, so chart-visible work
+  stays ahead of background budget in the governor queue
+- data-health exposes sanitized effective `policies` so these class settings
+  can be checked even when no throttle profile exists yet
 - data-health diagnostics are anchored to the same active evaluation window, so
   old pre-adjustment throttle events do not look like a fresh proposal
 
@@ -173,6 +179,13 @@ Observed polling sequence:
   polling cycle completed with 0 throttles at about 1.62 effective rps
 - data-health after the diagnostics-window fix reported the current window with
   `throttleCount: 0` and no sensitive-field names
+- later class smoke exposed sanitized policies for `selected_backfill`,
+  `background_backfill`, `ranking`, `foreground`, and `polling`
+- the same smoke ran one selected daily backfill, one top-movers request, and
+  one foreground quote refresh; all returned HTTP 200
+- during that observation, polling pressure tightened active AIMD from 685ms to
+  800ms after another `EGW00201`; this is a local observation, not a KIS
+  guarantee
 
 These are local observations, not a permanent KIS timing guarantee.
 

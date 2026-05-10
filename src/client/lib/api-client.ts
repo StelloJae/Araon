@@ -749,6 +749,13 @@ export interface RuntimeDataHealthPayload {
         maxInFlight: number;
       }>;
     };
+    policies: Array<{
+      endpointClass: string;
+      priorityClass: string;
+      minStartGapMs: number;
+      maxInFlight: number;
+      recoveryRatePerSec: number;
+    }>;
     profiles: Array<{
       profileId: string;
       endpointClass: string | null;

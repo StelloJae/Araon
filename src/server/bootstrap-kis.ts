@@ -373,7 +373,19 @@ export function buildDefaultKisOutboundLimiterOptions(
         recoveryRatePerSec: 1,
         recoveryBackoffMs: [700, 1_500, 3_000, 5_000, 10_000],
       },
+      selected_backfill: {
+        minStartGapMs: 1_000,
+        maxInFlight: 1,
+        recoveryRatePerSec: 1,
+        recoveryBackoffMs: [700, 1_500, 3_000, 5_000, 10_000],
+      },
       'daily-backfill': {
+        minStartGapMs: 1_500,
+        maxInFlight: 1,
+        recoveryRatePerSec: 1,
+        recoveryBackoffMs: [3_000, 5_000, 10_000, 30_000],
+      },
+      background_backfill: {
         minStartGapMs: 1_500,
         maxInFlight: 1,
         recoveryRatePerSec: 1,

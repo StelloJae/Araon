@@ -2,6 +2,10 @@ import type { PriceCandle } from '@shared/types.js';
 import type { PriceCandleRepository } from '../db/repositories.js';
 
 export type DailyBackfillRange = '1m' | '3m' | '6m' | '1y';
+export type DailyBackfillEndpointClass =
+  | 'daily-backfill'
+  | 'selected_backfill'
+  | 'background_backfill';
 
 export interface DailyBackfillResult {
   ticker: string;
@@ -22,6 +26,7 @@ export interface DailyBackfillService {
     ticker: string;
     range: DailyBackfillRange;
     now: Date;
+    endpointClass?: DailyBackfillEndpointClass;
   }): Promise<DailyBackfillResult>;
 }
 
@@ -32,6 +37,7 @@ export interface CreateDailyBackfillServiceOptions {
     fromYmd: string;
     toYmd: string;
     now: Date;
+    endpointClass?: DailyBackfillEndpointClass;
   }) => Promise<PriceCandle[]>;
 }
 
@@ -88,6 +94,7 @@ export function createDailyBackfillService(
     ticker: string;
     range: DailyBackfillRange;
     now: Date;
+    endpointClass?: DailyBackfillEndpointClass;
   }): Promise<DailyBackfillResult> {
     const to = input.now;
     const from = new Date(to.getTime() - rangeDays(input.range) * DAY_MS);
@@ -99,6 +106,7 @@ export function createDailyBackfillService(
           fromYmd: ymd(window.from),
           toYmd: ymd(window.to),
           now: input.now,
+          ...(input.endpointClass !== undefined ? { endpointClass: input.endpointClass } : {}),
         })),
       );
     }

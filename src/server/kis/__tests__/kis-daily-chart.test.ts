@@ -74,6 +74,7 @@ describe('fetchKisDailyCandles', () => {
       method: 'GET',
       path: '/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice',
       trId: 'FHKST03010100',
+      endpointClass: 'daily-backfill',
       query: expect.objectContaining({
         FID_COND_MRKT_DIV_CODE: 'J',
         FID_INPUT_ISCD: '005930',
@@ -85,6 +86,22 @@ describe('fetchKisDailyCandles', () => {
     }));
     expect(candles).toHaveLength(1);
     expect(candles[0]?.source).toBe('kis-daily');
+  });
+
+  it('allows selected daily backfill to use the selected priority class', async () => {
+    const request = vi.fn().mockResolvedValue({ output2: [] });
+
+    await fetchKisDailyCandles({
+      ticker: '005930',
+      fromYmd: '20260501',
+      toYmd: '20260505',
+      endpointClass: 'selected_backfill',
+      restClient: { request },
+    });
+
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      endpointClass: 'selected_backfill',
+    }));
   });
 
   it('classifies KIS throttle errors as cooldown-worthy', () => {

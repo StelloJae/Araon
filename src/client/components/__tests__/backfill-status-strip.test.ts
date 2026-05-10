@@ -53,6 +53,7 @@ function health(
       circuitBreakerUntil: null,
       recentThrottleCount: 0,
       recentSuccessCount: 0,
+      policies: [],
       profiles: [],
     },
     volumeBaseline: { total: 12, ready: 0, collecting: 0, unavailable: 12 },

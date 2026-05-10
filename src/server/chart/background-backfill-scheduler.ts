@@ -198,6 +198,7 @@ export function createBackgroundDailyBackfillScheduler(
           ticker,
           range,
           now: runAt,
+          endpointClass: 'background_backfill',
         });
         const changed = result.requested > 0 && (result.inserted > 0 || result.updated > 0);
         if (changed) {

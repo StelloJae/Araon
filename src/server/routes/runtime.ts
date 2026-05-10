@@ -240,6 +240,13 @@ export interface RuntimeKisOutboundLimiterPayload {
       readonly maxInFlight: number;
     }[];
   };
+  readonly policies: readonly {
+    readonly endpointClass: string;
+    readonly priorityClass: string;
+    readonly minStartGapMs: number;
+    readonly maxInFlight: number;
+    readonly recoveryRatePerSec: number;
+  }[];
   readonly profiles: readonly {
     readonly profileId: string;
     readonly endpointClass: string | null;
@@ -897,6 +904,7 @@ function buildKisOutboundLimiterPayload(
       recentSuccessCount: 0,
       aimd: buildKisGovernorAimdPayload(undefined, undefined),
       telemetry: buildKisGovernorTelemetryPayload(undefined),
+      policies: [],
       profiles: [],
     };
   }
@@ -961,6 +969,13 @@ function buildKisOutboundLimiterPayload(
       pollingStatus?.cycleCount,
     ),
     telemetry: buildKisGovernorTelemetryPayload(snapshot.telemetry),
+    policies: (snapshot.policies ?? []).map((policy) => ({
+      endpointClass: policy.endpointClass,
+      priorityClass: policy.priorityClass,
+      minStartGapMs: policy.minStartGapMs,
+      maxInFlight: policy.maxInFlight,
+      recoveryRatePerSec: policy.recoveryRatePerSec,
+    })),
     profiles,
   };
 }

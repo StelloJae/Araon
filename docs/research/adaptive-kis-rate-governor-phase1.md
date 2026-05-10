@@ -84,8 +84,9 @@ Covered by the governor after Phase 2:
 - WebSocket approval-key issuance: `approval`
 - REST quote polling: `polling`
 - foreground quote refresh and KIS watchlist import: `foreground`
-- selected daily/minute chart backfill: `daily-backfill` / `selected-minute`
-- background daily backfill through the daily candle client plus batch pause
+- selected daily/minute chart backfill: `selected_backfill` / `selected-minute`
+- background daily backfill: `background_backfill` through the daily candle client
+  plus batch pause
 - market top-movers/ranking calls: `ranking`
 - KIS public master `.mst` downloads: `master_refresh`
 
@@ -105,7 +106,8 @@ Still outside or not fully solved after Phase 2:
 - queue depth and queued counts by priority
 - current allowed RPS estimate
 - configured rate/burst/tokens
-- min start gap and max in-flight
+- effective sanitized class policies, including min start gap, max in-flight,
+  and recovery RPS
 - last throttle time, class, and code
 - recovery attempt count
 - circuit breaker deadline
@@ -141,13 +143,18 @@ during normal use after deploy; it should not intentionally create `EGW00201`.
 
 Later AIMD work did use controlled live polling observation under explicit user
 goal approval. That live work remains separate from the Phase 1 acceptance
-boundary and still did not touch trading/order/account-changing endpoints.
+boundary and still did not touch trading/order/account-changing endpoints. A
+later class-smoke pass also made one selected daily backfill request, one
+top-movers request, and one foreground quote refresh to verify governor class
+separation.
 
 ## Normal-Operation Live Observation
 
 On 2026-05-10, normal runtime startup with existing live credentials was
 observed. No deliberate stress test, WebSocket cap test, full watchlist
-background run, or daily/minute backfill live run was performed.
+background run, or daily/minute backfill live run was performed during the
+initial Phase 1 observation. A later class-smoke pass under the persistent goal
+did run one selected daily backfill request.
 
 Local observation showed that 250ms polling spacing could complete a 105-ticker
 cycle near 4rps, but repeated continuous cycles still hit `EGW00201`. The live

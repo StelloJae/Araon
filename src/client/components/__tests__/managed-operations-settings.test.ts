@@ -174,6 +174,7 @@ describe('managed operations settings copy', () => {
             circuitBreakerUntil: null,
             recentThrottleCount: 1,
             recentSuccessCount: 3,
+            policies: [],
             profiles: [
               {
                 profileId: 'primary',

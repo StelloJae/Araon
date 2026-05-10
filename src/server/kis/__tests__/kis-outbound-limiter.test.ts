@@ -609,6 +609,34 @@ describe('createKisOutboundLimiter', () => {
     expect(sleep).toHaveBeenNthCalledWith(2, 120);
   });
 
+  it('exposes sanitized effective class policies in snapshots', () => {
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 100,
+      burst: 100,
+      classPolicies: {
+        selected_backfill: { minStartGapMs: 900, maxInFlight: 1, recoveryRatePerSec: 1.5 },
+        background_backfill: { minStartGapMs: 1_800, maxInFlight: 1, recoveryRatePerSec: 0.75 },
+      },
+    });
+
+    expect(limiter.snapshot().policies).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        endpointClass: 'selected_backfill',
+        priorityClass: 'selected_backfill',
+        minStartGapMs: 900,
+        maxInFlight: 1,
+        recoveryRatePerSec: 1.5,
+      }),
+      expect.objectContaining({
+        endpointClass: 'background_backfill',
+        priorityClass: 'background_backfill',
+        minStartGapMs: 1_800,
+        maxInFlight: 1,
+        recoveryRatePerSec: 0.75,
+      }),
+    ]));
+  });
+
   it('prioritizes foreground over queued background work when shared capacity opens', async () => {
     let now = 0;
     const sleeps: Array<{ ms: number; resolve: () => void }> = [];
