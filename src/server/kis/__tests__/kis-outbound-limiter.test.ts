@@ -556,6 +556,59 @@ describe('createKisOutboundLimiter', () => {
     expect(sleep).toHaveBeenCalledWith(80);
   });
 
+  it('applies runtime class policy overrides to request start spacing', async () => {
+    let now = 1_000;
+    const sleep = vi.fn(async (ms: number) => {
+      now += ms;
+    });
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 100,
+      burst: 100,
+      now: () => now,
+      sleep,
+      classPolicies: {
+        polling: { minStartGapMs: 120 },
+      },
+    });
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+
+    limiter.setClassPolicyOverride!('polling', { minStartGapMs: 260 });
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+
+    expect(sleep).toHaveBeenCalledWith(260);
+  });
+
+  it('clears runtime class policy overrides for rollback', async () => {
+    let now = 1_000;
+    const sleep = vi.fn(async (ms: number) => {
+      now += ms;
+    });
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 100,
+      burst: 100,
+      now: () => now,
+      sleep,
+      classPolicies: {
+        polling: { minStartGapMs: 120 },
+      },
+    });
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+
+    limiter.setClassPolicyOverride!('polling', { minStartGapMs: 260 });
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+
+    limiter.setClassPolicyOverride!('polling', null);
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+
+    expect(sleep).toHaveBeenNthCalledWith(1, 260);
+    expect(sleep).toHaveBeenNthCalledWith(2, 120);
+  });
+
   it('prioritizes foreground over queued background work when shared capacity opens', async () => {
     let now = 0;
     const sleeps: Array<{ ms: number; resolve: () => void }> = [];

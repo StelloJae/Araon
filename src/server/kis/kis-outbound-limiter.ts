@@ -109,6 +109,7 @@ export interface KisOutboundLimiter {
   recordFailure(input: KisOutboundLimiterFailureInput): void;
   recordSuccess?(input?: KisOutboundLimiterAcquireInput): void;
   snapshot(): KisOutboundLimiterSnapshot;
+  setClassPolicyOverride?(endpointClass: KisEndpointClass, policy: KisClassPolicyInput | null): void;
 }
 
 export interface KisClassPolicyInput {
@@ -288,6 +289,7 @@ export function createKisOutboundLimiter(
   const observationsByKey = new Map<string, CooldownObservation>();
   const lastStartAtMsByPriority = new Map<KisPriorityClass, number>();
   const inFlightByPriority = new Map<KisPriorityClass, number>();
+  const runtimeClassPolicyOverrides = new Map<KisEndpointClass, KisClassPolicyInput>();
   const acquireQueue: QueuedAcquire[] = [];
   let telemetryEvents = trimTelemetryEvents(
     options.telemetry?.initialEvents ?? [],
@@ -454,6 +456,20 @@ export function createKisOutboundLimiter(
           };
         }),
     };
+  }
+
+  function setClassPolicyOverride(
+    endpointClass: KisEndpointClass,
+    policy: KisClassPolicyInput | null,
+  ): void {
+    if (policy === null) {
+      runtimeClassPolicyOverrides.delete(endpointClass);
+    } else {
+      runtimeClassPolicyOverrides.set(endpointClass, normalizePolicyInput(policy));
+    }
+    if (acquireQueue.length > 0) {
+      void drainAcquireQueue();
+    }
   }
 
   function queuedByPrioritySnapshot(): Record<KisPriorityClass, number> {
@@ -674,11 +690,7 @@ export function createKisOutboundLimiter(
   ): number {
     const legacyCooldownMs = legacyCooldownMsForEndpoint(endpointClass);
     if (legacyCooldownMs !== null && attempt === 0) return legacyCooldownMs;
-    const backoffs = normalizeBackoff(
-      options.classPolicies?.[endpointClass ?? 'maintenance']?.recoveryBackoffMs
-        ?? policy.recoveryBackoffMs
-        ?? recoveryBackoffMs,
-    );
+    const backoffs = normalizeBackoff(policy.recoveryBackoffMs ?? recoveryBackoffMs);
     return backoffs[Math.min(attempt, backoffs.length - 1)] ?? recoveryBackoffMs[0]!;
   }
 
@@ -692,8 +704,14 @@ export function createKisOutboundLimiter(
   function policyForEndpoint(endpointClass: KisEndpointClass | undefined): ResolvedKisClassPolicy {
     const priorityClass = priorityClassForEndpoint(endpointClass);
     const base = DEFAULT_CLASS_POLICIES[priorityClass];
-    const directOverride = endpointClass !== undefined ? options.classPolicies?.[endpointClass] : undefined;
-    const priorityOverride = options.classPolicies?.[priorityClass as KisEndpointClass];
+    const directOverride = mergePolicyInputs(
+      endpointClass !== undefined ? options.classPolicies?.[endpointClass] : undefined,
+      endpointClass !== undefined ? runtimeClassPolicyOverrides.get(endpointClass) : undefined,
+    );
+    const priorityOverride = mergePolicyInputs(
+      options.classPolicies?.[priorityClass as KisEndpointClass],
+      runtimeClassPolicyOverrides.get(priorityClass as KisEndpointClass),
+    );
     return {
       priorityClass,
       minStartGapMs: Math.max(0, directOverride?.minStartGapMs ?? priorityOverride?.minStartGapMs ?? base.minStartGapMs),
@@ -770,7 +788,7 @@ export function createKisOutboundLimiter(
     };
   }
 
-  return { acquire, recordFailure, recordSuccess, snapshot };
+  return { acquire, recordFailure, recordSuccess, snapshot, setClassPolicyOverride };
 }
 
 function trimTelemetryEvents(
@@ -866,6 +884,37 @@ function normalizeBackoff(values: readonly number[]): readonly number[] {
     .map((value) => Math.max(1, Math.trunc(value)))
     .filter((value) => Number.isFinite(value));
   return normalized.length > 0 ? normalized : DEFAULT_RECOVERY_BACKOFF_MS;
+}
+
+function normalizePolicyInput(policy: KisClassPolicyInput): KisClassPolicyInput {
+  return mergePolicyInputs(policy) ?? {};
+}
+
+function mergePolicyInputs(
+  ...policies: Array<KisClassPolicyInput | undefined>
+): KisClassPolicyInput | undefined {
+  const merged: KisClassPolicyInput = {};
+  let hasValue = false;
+  for (const policy of policies) {
+    if (policy === undefined) continue;
+    if (policy.minStartGapMs !== undefined) {
+      merged.minStartGapMs = Math.max(0, Math.trunc(policy.minStartGapMs));
+      hasValue = true;
+    }
+    if (policy.maxInFlight !== undefined) {
+      merged.maxInFlight = Math.max(1, Math.trunc(policy.maxInFlight));
+      hasValue = true;
+    }
+    if (policy.recoveryRatePerSec !== undefined) {
+      merged.recoveryRatePerSec = Math.max(0.1, policy.recoveryRatePerSec);
+      hasValue = true;
+    }
+    if (policy.recoveryBackoffMs !== undefined) {
+      merged.recoveryBackoffMs = normalizeBackoff(policy.recoveryBackoffMs);
+      hasValue = true;
+    }
+  }
+  return hasValue ? merged : undefined;
 }
 
 function localCooldownError(
