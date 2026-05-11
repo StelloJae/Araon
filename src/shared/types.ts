@@ -405,6 +405,8 @@ export type PriceCandleSource =
   | 'kis-time-today'
   | 'kis-time-daily'
   | 'toss-daily'
+  | 'toss-time-today'
+  | 'toss-time-daily'
   | 'mixed';
 
 /**

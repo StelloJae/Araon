@@ -27,9 +27,10 @@ The public phase covers:
 - TOP100 through Toss overview ranking.
 - Realtime popularity ranking metadata through Toss public ranking.
 - Bulk quote rows through Toss stock-prices via `GET /market/toss/quotes`.
-- Daily candles through Toss public `c-chart` for supported Korean stocks. Araon
-  uses this as the first daily backfill path and falls back to KIS only if the
-  Toss daily request fails and KIS runtime is already available.
+- Daily and selected minute candles through Toss public `c-chart` for supported
+  Korean stocks. Araon uses these as the first chart backfill paths and falls
+  back to KIS only if the Toss chart request fails and KIS runtime is already
+  available.
 - Foreground quote refresh tries Toss public quotes first, then falls back to KIS
   only when the Toss quote is unavailable or fails.
 - Watchlist quote polling now has a Toss public batch-polling service. It polls
@@ -79,7 +80,7 @@ KIS remains in place for:
 | SSE price delivery | App-level SSE manager now works without KIS runtime. | Use it for Toss polling updates and KIS/other providers alike. |
 | KIS realtime WebSocket | Still KIS-only. | Retain until Toss authenticated realtime proves true price-tick coverage. |
 | Daily charts/backfill | Toss public `c-chart` is primary for daily Korean stock candles. | Keep KIS daily as fallback while live stability is observed. |
-| Minute charts/backfill | Still KIS today/historical minute candle endpoints. | Retain; Toss minute chart contract is not typed or proven yet. |
+| Minute charts/backfill | Toss public `c-chart` `min:1` is primary for selected today/historical minute backfill. | Keep KIS minute endpoints as fallback while live stability is observed. |
 | Search/master metadata | Toss public search can add supported KOSPI/KOSDAQ stocks without KIS; KIS MST/local master cache remains for full offline universe/classification. | Keep KIS MST as optional metadata enrichment until Toss/another source covers full-market classification. |
 | KIS watchlist import | Still KIS-only import convenience. | Retain as optional import, not core runtime. |
 
@@ -156,16 +157,20 @@ primary replacement for KIS polling and document the blocker.
 The `tossinvest-cli` reverse-engineering catalog records a public chart endpoint:
 
 - `GET https://wts-info-api.tossinvest.com/api/v1/c-chart/kr-s/{code}/day:1`
+- `GET https://wts-info-api.tossinvest.com/api/v1/c-chart/kr-s/{code}/min:1`
 - Query shape observed from the Toss web bundle: `count`, `from`, `session`,
   `investMode`, `useAdjustedRate`, and optional `currency`.
 - The response includes `result.candles[]` with `dt`, `open`, `high`, `low`,
   `close`, `volume`, plus `nextDateTime` for older-page traversal.
 
-Araon now maps these rows to stored `1d` candles with source `toss-daily`.
+Araon now maps daily rows to stored `1d` candles with source `toss-daily` and
+minute rows to stored `1m` candles with source `toss-time-today` or
+`toss-time-daily`.
 On 2026-05-11, a minimal public read-only probe for `A005930` confirmed the
 endpoint returned current daily rows and accepted `from=nextDateTime` for older
 page traversal.
-This does not replace KIS minute backfill yet. The Toss SSE channel remains a
+The same day, a minimal public read-only `min:1` probe for `A005930` confirmed
+current minute rows and `nextDateTime` traversal. The Toss SSE channel remains a
 thin notification stream, so it is not a direct candle or tick stream by itself.
 
 ## Completion Criteria
@@ -176,8 +181,8 @@ The full KIS removal goal is not complete until:
 - Watchlist quote refresh works through Toss public or authenticated data.
 - Realtime ticks work through Toss authenticated realtime, or a clear blocker and
   fallback are documented.
-- Daily chart/search have Toss coverage; minute chart and full master metadata
-  have Toss coverage or documented alternatives.
+- Daily chart, minute chart, and search have Toss coverage; full master metadata
+  has Toss coverage or documented alternatives.
 - KIS settings and runtime are removed or explicitly retained as a documented
   legacy fallback.
 - Full test/typecheck/build and secret grep pass.

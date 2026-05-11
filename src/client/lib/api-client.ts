@@ -419,7 +419,7 @@ export async function backfillTodayMinuteCandles(
   requested: number;
   inserted: number;
   updated: number;
-  source: 'kis-time-today';
+  source: 'kis-time-today' | 'toss-time-today' | 'mixed';
   pages: number;
 }> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles/backfill-minute`, {
@@ -432,7 +432,7 @@ export async function backfillTodayMinuteCandles(
     requested: number;
     inserted: number;
     updated: number;
-    source: 'kis-time-today';
+    source: 'kis-time-today' | 'toss-time-today' | 'mixed';
     pages: number;
   }>(res);
 }
@@ -447,7 +447,15 @@ export async function ensureStockCandleCoverage(
 ): Promise<{
   state: 'backfilled' | 'current' | 'empty' | 'skipped';
   reason?: string;
-  source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | 'toss-daily' | 'mixed' | null;
+  source:
+    | 'kis-daily'
+    | 'kis-time-daily'
+    | 'kis-time-today'
+    | 'toss-daily'
+    | 'toss-time-daily'
+    | 'toss-time-today'
+    | 'mixed'
+    | null;
   requested: number;
   inserted: number;
   updated: number;
@@ -461,7 +469,15 @@ export async function ensureStockCandleCoverage(
   return unwrap<{
     state: 'backfilled' | 'current' | 'empty' | 'skipped';
     reason?: string;
-    source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | 'toss-daily' | 'mixed' | null;
+    source:
+      | 'kis-daily'
+      | 'kis-time-daily'
+      | 'kis-time-today'
+      | 'toss-daily'
+      | 'toss-time-daily'
+      | 'toss-time-today'
+      | 'mixed'
+      | null;
     requested: number;
     inserted: number;
     updated: number;

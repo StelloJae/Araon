@@ -519,20 +519,6 @@ export async function stockRoutes(
     const backfillAllowed = isBackfillAllowed(now, 'closed');
 
     if (dailyBaseInterval(parsed.data.interval)) {
-      if (opts.isUpstreamCooldownActive?.() === true) {
-        return reply.send({
-          success: true,
-          data: {
-            state: 'skipped',
-            reason: 'UPSTREAM_COOLDOWN',
-            source: null,
-            requested: 0,
-            inserted: 0,
-            updated: 0,
-            message: 'KIS 호출 제한 cooldown 중이라 일봉 자동 보강을 대기합니다.',
-          },
-        });
-      }
       if (!backfillAllowed) {
         return reply.send({
           success: true,
@@ -627,21 +613,6 @@ export async function stockRoutes(
       }
     }
 
-    if (opts.isUpstreamCooldownActive?.() === true) {
-      return reply.send({
-        success: true,
-        data: {
-          state: 'skipped',
-          reason: 'UPSTREAM_COOLDOWN',
-          source: null,
-          requested: 0,
-          inserted: 0,
-          updated: 0,
-          message: 'KIS 호출 제한 cooldown 중이라 분봉 자동 보강을 대기합니다.',
-        },
-      });
-    }
-
     if (!backfillAllowed) {
       if (parsed.data.range !== '1d') {
         return reply.send({
@@ -657,12 +628,13 @@ export async function stockRoutes(
           },
         });
       }
-      if (parsed.data.force !== true && hasFreshTodayMinuteCoverage(opts.candleRepo, ticker, now)) {
+      const freshTodayMinuteSource = freshTodayMinuteCoverageSource(opts.candleRepo, ticker, now);
+      if (parsed.data.force !== true && freshTodayMinuteSource !== null) {
         return reply.send({
           success: true,
           data: {
             state: 'current',
-            source: 'kis-time-today',
+            source: freshTodayMinuteSource,
             requested: 0,
             inserted: 0,
             updated: 0,
@@ -729,15 +701,21 @@ export async function stockRoutes(
       });
     }
 
+    const completeMinuteSource = completeIntradayCoverageSource(
+      opts.candleRepo,
+      opts.candleCoverageRepo,
+      ticker,
+      window,
+    );
     if (
       parsed.data.force !== true &&
-      hasBackfilledIntradayInWindow(opts.candleRepo, opts.candleCoverageRepo, ticker, window)
+      completeMinuteSource !== null
     ) {
       return reply.send({
         success: true,
         data: {
           state: 'current',
-          source: 'kis-time-daily',
+          source: completeMinuteSource,
           requested: 0,
           inserted: 0,
           updated: 0,
@@ -1151,24 +1129,26 @@ function dailyBackfillRangeForCandleRange(
   }
 }
 
-function hasBackfilledIntradayInWindow(
+function completeIntradayCoverageSource(
   repo: PriceCandleRepository,
   coverageRepo: CandleCoverageRepository | undefined,
   ticker: string,
   window: { from: string; to: string },
-): boolean {
-  if (
-    coverageRepo?.hasCompleteCoverage({
-      ticker,
-      interval: '1m',
-      source: 'kis-time-daily',
-      from: window.from,
-      to: window.to,
-    }) === true
-  ) {
-    return true;
+): Extract<PriceCandleSource, 'toss-time-daily' | 'kis-time-daily'> | null {
+  for (const source of ['toss-time-daily', 'kis-time-daily'] as const) {
+    if (
+      coverageRepo?.hasCompleteCoverage({
+        ticker,
+        interval: '1m',
+        source,
+        from: window.from,
+        to: window.to,
+      }) === true
+    ) {
+      return source;
+    }
   }
-  return repo
+  const candleSource = repo
     .listCandles({
       ticker,
       interval: '1m',
@@ -1176,7 +1156,11 @@ function hasBackfilledIntradayInWindow(
       to: window.to,
       limit: 200,
     })
-    .some((candle) => candle.source === 'kis-time-daily');
+    .find((candle) => candle.source === 'toss-time-daily' || candle.source === 'kis-time-daily')
+    ?.source;
+  return candleSource === 'toss-time-daily' || candleSource === 'kis-time-daily'
+    ? candleSource
+    : null;
 }
 
 function completeDailyCoverageSource(
@@ -1200,11 +1184,11 @@ function completeDailyCoverageSource(
   return null;
 }
 
-function hasFreshTodayMinuteCoverage(
+function freshTodayMinuteCoverageSource(
   repo: PriceCandleRepository,
   ticker: string,
   now: Date,
-): boolean {
+): Extract<PriceCandleSource, 'kis-time-today' | 'toss-time-today' | 'mixed'> | null {
   const todayStart = kstStartOfDayIso(now);
   const rows = repo
     .listCandles({
@@ -1214,11 +1198,20 @@ function hasFreshTodayMinuteCoverage(
       to: now.toISOString(),
       limit: 2_000,
     })
-    .filter((candle) => candle.source === 'kis-time-today' && isDisplayableIntradayCandle(candle));
+    .filter((candle) =>
+      (candle.source === 'kis-time-today' || candle.source === 'toss-time-today') &&
+      isDisplayableIntradayCandle(candle),
+    );
   const newest = rows[rows.length - 1];
-  if (newest === undefined) return false;
+  if (newest === undefined) return null;
   const newestMs = Date.parse(newest.bucketAt);
-  return Number.isFinite(newestMs) && now.getTime() - newestMs <= FRESH_TODAY_MINUTE_COVERAGE_MS;
+  if (!Number.isFinite(newestMs) || now.getTime() - newestMs > FRESH_TODAY_MINUTE_COVERAGE_MS) {
+    return null;
+  }
+  const sources = new Set(rows.map((candle) => candle.source));
+  if (sources.size === 1 && sources.has('toss-time-today')) return 'toss-time-today';
+  if (sources.size === 1 && sources.has('kis-time-today')) return 'kis-time-today';
+  return 'mixed';
 }
 
 function kstStartOfDayIso(date: Date): string {
@@ -1329,6 +1322,8 @@ function isKnownCandleSource(
     source === 'kis-time-today' ||
     source === 'kis-time-daily' ||
     source === 'toss-daily' ||
+    source === 'toss-time-today' ||
+    source === 'toss-time-daily' ||
     source === 'mixed'
   );
 }
@@ -1381,7 +1376,9 @@ function buildCoverage(
     sourceMix.includes('kis-daily') ||
     sourceMix.includes('kis-time-today') ||
     sourceMix.includes('kis-time-daily') ||
-    sourceMix.includes('toss-daily');
+    sourceMix.includes('toss-daily') ||
+    sourceMix.includes('toss-time-today') ||
+    sourceMix.includes('toss-time-daily');
   const coverage: CandleApiCoverage = {
     from: first?.bucketAt ?? null,
     to: last?.bucketAt ?? null,

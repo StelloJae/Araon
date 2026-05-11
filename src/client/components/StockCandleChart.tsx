@@ -89,17 +89,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
     setCoverage(data.coverage);
     setStatus(data.items.length === 0 ? 'empty' : 'ready');
     const sources = data.coverage.sourceMix;
-    setDataSourceText(
-      sources.includes('kis-time-daily')
-        ? 'KIS 과거 분봉 포함'
-        : sources.includes('kis-time-today')
-          ? 'KIS 당일분봉 포함'
-        : sources.includes('toss-daily')
-          ? '토스 일봉 백필 포함'
-        : data.coverage.backfilled
-          ? 'KIS 일봉 백필 포함'
-          : '로컬 저장 candle',
-    );
+    setDataSourceText(candleSourceStatusText(sources, data.coverage.backfilled));
   };
 
   const refetchCandles = (options: { showLoading?: boolean } = {}) => {
@@ -531,12 +521,24 @@ export function CandleDataInspector({ coverage }: { coverage: CandleApiCoverage 
 }
 
 function sourceMixLabel(sources: readonly string[]): string {
+  if (sources.includes('toss-time-daily')) return '토스 과거 분봉';
+  if (sources.includes('toss-time-today')) return '토스 당일분봉';
   if (sources.includes('kis-time-daily')) return 'KIS 과거 분봉';
   if (sources.includes('kis-time-today')) return 'KIS 당일분봉';
   if (sources.includes('toss-daily')) return '토스 일봉';
   if (sources.includes('kis-daily')) return 'KIS 일봉';
   if (sources.length === 0) return '저장 데이터 없음';
   return sources.join(', ');
+}
+
+function candleSourceStatusText(sources: readonly string[], backfilled: boolean): string {
+  if (sources.includes('toss-time-daily')) return '토스 과거 분봉 포함';
+  if (sources.includes('toss-time-today')) return '토스 당일분봉 포함';
+  if (sources.includes('kis-time-daily')) return 'KIS 과거 분봉 포함';
+  if (sources.includes('kis-time-today')) return 'KIS 당일분봉 포함';
+  if (sources.includes('toss-daily')) return '토스 일봉 백필 포함';
+  if (backfilled) return 'KIS 일봉 백필 포함';
+  return '로컬 저장 candle';
 }
 
 function ChartMessage({ title, detail }: { title: string; detail: string }) {

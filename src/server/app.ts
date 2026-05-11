@@ -61,6 +61,7 @@ import {
   createTossQuotePollingService,
   type TossQuotePollingService,
 } from './toss/toss-quote-polling-service.js';
+import { fetchTossMinuteCandles } from './toss/toss-minute-chart.js';
 import { createTossPublicMarketDataProvider } from './toss/toss-public-market-data-provider.js';
 import { createTossRealtimeQuoteRefreshHandler } from './toss/toss-realtime-quote-refresh.js';
 import { shouldAutoStartTossRealtime } from './toss/toss-realtime-autostart.js';
@@ -309,6 +310,26 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const todayMinuteBackfillService = createTodayMinuteBackfillService({
     repo: candleRepo,
     fetchMinuteCandles: async ({ ticker, toHms, now }) => {
+      const dateYmd = kstYmd(now);
+      try {
+        return await fetchTossMinuteCandles({
+          ticker,
+          dateYmd,
+          toHms,
+          source: 'toss-time-today',
+          now: () => now,
+        });
+      } catch (err: unknown) {
+        const state = runtimeRef.get();
+        if (state.status !== 'started') {
+          throw err;
+        }
+        log.warn(
+          { ticker, err: err instanceof Error ? err.message : String(err) },
+          'Toss today minute backfill failed; falling back to KIS when available',
+        );
+      }
+
       const state = runtimeRef.get();
       if (state.status !== 'started') {
         throw new Error('KIS runtime is not started');
@@ -324,6 +345,25 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const historicalMinuteBackfillService = createHistoricalMinuteBackfillService({
     repo: candleRepo,
     fetchMinuteCandles: async ({ ticker, dateYmd, toHms, now }) => {
+      try {
+        return await fetchTossMinuteCandles({
+          ticker,
+          dateYmd,
+          toHms,
+          source: 'toss-time-daily',
+          now: () => now,
+        });
+      } catch (err: unknown) {
+        const state = runtimeRef.get();
+        if (state.status !== 'started') {
+          throw err;
+        }
+        log.warn(
+          { ticker, err: err instanceof Error ? err.message : String(err) },
+          'Toss historical minute backfill failed; falling back to KIS when available',
+        );
+      }
+
       const state = runtimeRef.get();
       if (state.status !== 'started') {
         throw new Error('KIS runtime is not started');
@@ -579,4 +619,13 @@ export async function startAraonServer(options: AraonListenOptions = {}): Promis
   if (options.host !== undefined) listenOptions.host = options.host;
   if (options.port !== undefined) listenOptions.port = options.port;
   return server.start(listenOptions);
+}
+
+function kstYmd(date: Date): string {
+  const shifted = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return [
+    shifted.getUTCFullYear(),
+    String(shifted.getUTCMonth() + 1).padStart(2, '0'),
+    String(shifted.getUTCDate()).padStart(2, '0'),
+  ].join('');
 }
