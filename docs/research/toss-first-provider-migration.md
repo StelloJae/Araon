@@ -40,6 +40,9 @@ The public phase covers:
 - The default dashboard can render without KIS credentials. Local stocks and
   favorites remain available, `/events` uses an app-level SSE manager, and KIS
   setup moves to an optional/fallback connection path instead of a boot gate.
+- First-run search no longer auto-posts `/master/refresh` without KIS
+  credentials. It reads the local master cache and waits for explicit KIS setup
+  before trying the KIS MST refresh path.
 
 The quote batch currently maps Toss rows into Araon's existing `Price` contract
 with `source='rest'` for compatibility. A future provider-neutral source label

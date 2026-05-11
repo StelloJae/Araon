@@ -454,6 +454,18 @@ export async function getCredentialProfiles(): Promise<CredentialProfileSummary[
   return data.profiles;
 }
 
+export interface CredentialsStatusPayload {
+  configured: boolean;
+  isPaper: boolean | null;
+  runtime: 'unconfigured' | 'starting' | 'started' | 'failed';
+  error?: { code: string; message: string };
+}
+
+export async function getCredentialsStatus(): Promise<CredentialsStatusPayload> {
+  const res = await fetch('/credentials/status');
+  return unwrap<CredentialsStatusPayload>(res);
+}
+
 export async function addCredentialProfile(input: {
   label: string;
   appKey: string;

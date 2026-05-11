@@ -42,9 +42,11 @@ beforeEach(() => {
 describe('useMasterStore.ensureLoaded', () => {
   it('loads an existing master catalog without refreshing', async () => {
     const getMasterList = vi.fn().mockResolvedValue(populatedMasterPayload);
+    const getCredentialsStatus = vi.fn();
     const refreshMaster = vi.fn();
 
     vi.doMock('../../lib/api-client', () => ({
+      getCredentialsStatus,
       getMasterList,
       refreshMaster,
     }));
@@ -63,9 +65,15 @@ describe('useMasterStore.ensureLoaded', () => {
       .fn()
       .mockResolvedValueOnce(emptyMasterPayload)
       .mockResolvedValueOnce(populatedMasterPayload);
+    const getCredentialsStatus = vi.fn().mockResolvedValue({
+      configured: true,
+      isPaper: false,
+      runtime: 'started',
+    });
     const refreshMaster = vi.fn().mockResolvedValue(refreshStatus);
 
     vi.doMock('../../lib/api-client', () => ({
+      getCredentialsStatus,
       getMasterList,
       refreshMaster,
     }));
@@ -77,6 +85,31 @@ describe('useMasterStore.ensureLoaded', () => {
     expect(getMasterList).toHaveBeenCalledTimes(2);
     expect(useMasterStore.getState().items).toEqual(populatedMasterPayload.items);
     expect(useMasterStore.getState().refreshStatus).toBe('success');
+    expect(useMasterStore.getState().loadStatus).toBe('loaded');
+  });
+
+  it('does not auto-refresh an empty catalog before KIS credentials exist', async () => {
+    const getMasterList = vi.fn().mockResolvedValue(emptyMasterPayload);
+    const getCredentialsStatus = vi.fn().mockResolvedValue({
+      configured: false,
+      isPaper: null,
+      runtime: 'unconfigured',
+    });
+    const refreshMaster = vi.fn();
+
+    vi.doMock('../../lib/api-client', () => ({
+      getCredentialsStatus,
+      getMasterList,
+      refreshMaster,
+    }));
+
+    const { useMasterStore } = await import('../master-store');
+    await useMasterStore.getState().ensureLoaded();
+
+    expect(getCredentialsStatus).toHaveBeenCalledTimes(1);
+    expect(refreshMaster).not.toHaveBeenCalled();
+    expect(getMasterList).toHaveBeenCalledTimes(1);
+    expect(useMasterStore.getState().items).toEqual([]);
     expect(useMasterStore.getState().loadStatus).toBe('loaded');
   });
 });
