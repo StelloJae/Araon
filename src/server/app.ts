@@ -56,6 +56,7 @@ import { createMasterStockService } from './services/master-stock-service.js';
 import { createMarketSummaryService } from './market/market-summary-service.js';
 import { createMarketTopMoversService } from './market/market-top-movers-service.js';
 import { createTossPublicMarketDataProvider } from './toss/toss-public-market-data-provider.js';
+import { createFileTossSessionStore } from './toss/toss-session-store.js';
 import {
   resolveRestQuoteMarketDivCode,
   type RestQuoteMarketDivCode,
@@ -70,6 +71,7 @@ import { eventsRoutes } from './routes/events.js';
 import { masterRoutes } from './routes/master.js';
 import { marketRoutes } from './routes/market.js';
 import { runtimeRoutes } from './routes/runtime.js';
+import { tossAuthRoutes } from './routes/toss-auth.js';
 import { createTelegramPhoneNotifier } from './notifications/phone-notifier.js';
 import { launcherRoutes, type LauncherRoutesOptions } from './routes/launcher.js';
 import { registerGracefulShutdown, type GracefulShutdownHandle } from './lifecycle/graceful-shutdown.js';
@@ -295,6 +297,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     signalEventRepo,
     newsRepo,
   });
+  const tossSessionStore = createFileTossSessionStore();
   const tossPublicMarketDataProvider = createTossPublicMarketDataProvider();
   const marketTopMoversService = createMarketTopMoversService({
     fetchRanking: async ({ direction, count, sourcePhase, onDiagnostic }) => {
@@ -348,6 +351,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     topMoversService: marketTopMoversService,
     tossRealtimeRankingService,
   });
+  await app.register(tossAuthRoutes, { sessionStore: tossSessionStore });
   await app.register(eventsRoutes, { runtimeRef });
   await app.register(runtimeRoutes, {
     runtimeRef,

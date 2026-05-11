@@ -48,12 +48,20 @@ authenticated realtime, chart, and metadata coverage have explicit evidence.
 
 ## Toss Authenticated Phase
 
-The next migration stage is Toss login/session support:
+The next migration stage is Toss login/session support. The current foundation
+includes encrypted local session storage plus sanitized status/logout routes:
+
+- `GET /toss/auth/status`
+- `DELETE /toss/auth/session`
+
+These routes expose only counts, timestamps, and state labels. They do not expose
+cookie names, cookie values, storage values, or raw Toss responses.
+
+Remaining authenticated-session work:
 
 - Browser-assisted QR login using Chrome/Playwright.
 - Persistent session capture only after the user confirms "이 기기 로그인 유지".
-- Encrypted local storage of required cookies and browser storage values.
-- Session status, logout, and extension/renewal behavior.
+- Session extension/renewal behavior.
 - No raw `SESSION`, `UTK`, `LTK`, `FTK`, `browserSessionId`, `deviceId`, account
   numbers, or raw upstream response bodies in logs, docs, status payloads, UI, or
   git diffs.
