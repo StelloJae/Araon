@@ -77,13 +77,23 @@ scope.
 
 ## Toss Realtime Phase
 
-Toss authenticated realtime remains unproven in Araon. The likely direction is a
-read-only STOMP/WebSocket client against the Toss web realtime socket, using the
-authenticated Toss web session. This must be verified with a minimal live probe
-before it becomes the default realtime source.
+Toss authenticated realtime is not a KIS-style 체결가 WebSocket in the current
+evidence. The integrated foundation uses Toss's authenticated SSE notification
+channel:
 
-If realtime subscribe, receipt, or message parsing cannot be proven, keep Toss
-REST quote polling as fallback and document the blocker.
+- `GET /toss/realtime/status`
+- `POST /toss/realtime/start`
+- `POST /toss/realtime/stop`
+
+This stream is marked `thinNotificationOnly=true`: it can tell Araon that a
+stock/account-related event happened, but it does not replace quote REST reads by
+itself. For prices, Araon must pair Toss SSE events with Toss quote refresh or
+continue conservative Toss REST polling.
+
+Before it becomes the default realtime source, it still needs a minimal live
+probe with an authenticated Toss session. If price refresh events are not
+observed or do not cover watchlist movement, keep Toss REST quote polling as the
+primary replacement for KIS polling and document the blocker.
 
 ## Completion Criteria
 
