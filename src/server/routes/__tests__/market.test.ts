@@ -123,4 +123,74 @@ describe('market routes', () => {
       },
     });
   });
+
+  it('returns Toss quote batches through a sanitized read-only route', async () => {
+    const app = Fastify({ logger: false });
+    const getQuoteBatch = vi.fn(async () => ({
+      providerId: 'toss-public' as const,
+      fetchedAt: '2026-05-11T06:10:00.000Z',
+      requestedCount: 2,
+      returnedCount: 1,
+      prices: [
+        {
+          ticker: '005930',
+          price: 58_000,
+          changeRate: 1.23,
+          changeAbs: 700,
+          volume: 123_456,
+          updatedAt: '2026-05-11T06:10:00.000Z',
+          isSnapshot: false,
+          source: 'rest' as const,
+        },
+      ],
+      missingTickers: ['000660'],
+    }));
+
+    await app.register(marketRoutes, {
+      service: {
+        getSummary: vi.fn(),
+      },
+      tossQuoteService: {
+        getQuoteBatch,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/market/toss/quotes?tickers=005930,000660,005930,bad',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(getQuoteBatch).toHaveBeenCalledWith({ tickers: ['005930', '000660'] });
+    expect(res.json()).toMatchObject({
+      success: true,
+      data: {
+        providerId: 'toss-public',
+        requestedCount: 2,
+        returnedCount: 1,
+        prices: [{ ticker: '005930', price: 58_000, source: 'rest' }],
+        missingTickers: ['000660'],
+      },
+    });
+  });
+
+  it('rejects Toss quote requests without valid 6-digit tickers', async () => {
+    const app = Fastify({ logger: false });
+    await app.register(marketRoutes, {
+      service: {
+        getSummary: vi.fn(),
+      },
+      tossQuoteService: {
+        getQuoteBatch: vi.fn(),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/market/toss/quotes?tickers=bad,A005930' });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      success: false,
+      error: { code: 'INVALID_TICKERS' },
+    });
+  });
 });

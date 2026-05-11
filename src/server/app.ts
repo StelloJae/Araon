@@ -204,10 +204,25 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
           && endpointClasses.has(profile.endpointClass),
         );
   };
+  const tossPublicMarketDataProvider = createTossPublicMarketDataProvider();
   const refreshForegroundQuote = async (ticker: string) => {
+    try {
+      const batch = await tossPublicMarketDataProvider.getQuoteBatch({ tickers: [ticker] });
+      const price = batch.prices[0];
+      if (price !== undefined) {
+        priceStore.setPrice(price);
+        return priceStore.getPrice(ticker) ?? price;
+      }
+    } catch (err: unknown) {
+      log.warn(
+        { ticker, err: err instanceof Error ? err.message : String(err) },
+        'Toss foreground quote refresh failed; falling back to KIS when available',
+      );
+    }
+
     const state = runtimeRef.get();
     if (state.status !== 'started') {
-      throw new Error('KIS runtime is not started');
+      throw new Error('Toss quote refresh failed and KIS runtime is not started');
     }
     const trId = 'FHKST01010100';
     const price = await fetchRuntimeRestQuoteWithFallback({
@@ -303,7 +318,6 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const tossSessionStore = createFileTossSessionStore();
   const tossLoginService = createTossCdpLoginService({ sessionStore: tossSessionStore });
   const tossRealtimeService = createTossRealtimeService({ sessionStore: tossSessionStore });
-  const tossPublicMarketDataProvider = createTossPublicMarketDataProvider();
   const marketTopMoversService = createMarketTopMoversService({
     fetchRanking: async ({ direction, count, sourcePhase, onDiagnostic }) => {
       return tossPublicMarketDataProvider.getTopMoversRanking({
@@ -355,6 +369,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     service: marketSummaryService,
     topMoversService: marketTopMoversService,
     tossRealtimeRankingService,
+    tossQuoteService: tossPublicMarketDataProvider,
   });
   await app.register(tossAuthRoutes, {
     sessionStore: tossSessionStore,

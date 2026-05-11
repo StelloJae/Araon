@@ -1,5 +1,6 @@
 import type { FastifyPluginOptions, FastifyInstance } from 'fastify';
 import type { TossRealtimeRankingMarket, TossRealtimeRankingResponse } from '@shared/types.js';
+import type { MarketQuoteBatchResult } from '../market/market-data-provider.js';
 import type { MarketSummaryService } from '../market/market-summary-service.js';
 import type { MarketTopMoversService } from '../market/market-top-movers-service.js';
 
@@ -10,10 +11,15 @@ export interface TossRealtimeRankingService {
   }): Promise<TossRealtimeRankingResponse>;
 }
 
+export interface TossQuoteService {
+  getQuoteBatch(input: { tickers: readonly string[] }): Promise<MarketQuoteBatchResult>;
+}
+
 export interface MarketRoutesOptions extends FastifyPluginOptions {
   service: MarketSummaryService;
   topMoversService?: MarketTopMoversService;
   tossRealtimeRankingService?: TossRealtimeRankingService;
+  tossQuoteService?: TossQuoteService;
 }
 
 export async function marketRoutes(
@@ -59,9 +65,47 @@ export async function marketRoutes(
     });
     return reply.send({ success: true, data });
   });
+
+  app.get('/market/toss/quotes', async (request, reply) => {
+    if (opts.tossQuoteService === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: 'TOSS_QUOTES_UNAVAILABLE',
+          message: 'Toss quote service is not configured.',
+        },
+      });
+    }
+    const query = request.query as { tickers?: string };
+    const tickers = parseTickers(query.tickers);
+    if (tickers.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'INVALID_TICKERS',
+          message: 'At least one 6-digit ticker is required.',
+        },
+      });
+    }
+    const data = await opts.tossQuoteService.getQuoteBatch({ tickers });
+    return reply.send({ success: true, data });
+  });
 }
 
 function parseTossMarket(value: string | undefined): TossRealtimeRankingMarket {
   if (value === 'all' || value === 'kr' || value === 'us') return value;
   return 'kr';
+}
+
+function parseTickers(value: string | undefined): string[] {
+  if (value === undefined) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of value.split(',')) {
+    const ticker = raw.trim();
+    if (!/^\d{6}$/.test(ticker) || seen.has(ticker)) continue;
+    seen.add(ticker);
+    out.push(ticker);
+  }
+  return out.slice(0, 200);
 }

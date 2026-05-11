@@ -26,7 +26,9 @@ The public phase covers:
 
 - TOP100 through Toss overview ranking.
 - Realtime popularity ranking metadata through Toss public ranking.
-- Bulk quote rows through Toss stock-prices.
+- Bulk quote rows through Toss stock-prices via `GET /market/toss/quotes`.
+- Foreground quote refresh tries Toss public quotes first, then falls back to KIS
+  only when the Toss quote is unavailable or fails.
 
 The quote batch currently maps Toss rows into Araon's existing `Price` contract
 with `source='rest'` for compatibility. A future provider-neutral source label
