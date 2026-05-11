@@ -1064,13 +1064,17 @@ function buildKisOutboundLimiterPayload(
   const mostRestrictiveRps = profiles.length > 0
     ? Math.min(...profiles.map((profile) => profile.currentAllowedRps))
     : snapshot.ratePerSec;
-  const circuitBreaker = profiles.find((profile) => profile.state === 'circuit_breaker');
-  const active = profiles.find((profile) => profile.cooldownActive)
+  const activeCircuitBreaker = profiles.find((profile) =>
+    profile.state === 'circuit_breaker' && profile.cooldownActive
+  );
+  const active = profiles.find((profile) => profile.cooldownActive && profile.state !== 'circuit_breaker')
+    ?? profiles.find((profile) => profile.state === 'throttled')
+    ?? profiles.find((profile) => profile.state === 'half_open')
     ?? profiles.find((profile) => profile.state === 'recovering');
-  const pending = profiles.find((profile) => profile.state !== 'normal');
+  const currentState = activeCircuitBreaker?.state ?? active?.state ?? 'normal';
   return {
     configured: true,
-    currentState: circuitBreaker?.state ?? active?.state ?? pending?.state ?? 'normal',
+    currentState,
     ratePerSec: snapshot.ratePerSec,
     burst: snapshot.burst,
     tokens: snapshot.tokens,
@@ -1084,11 +1088,11 @@ function buildKisOutboundLimiterPayload(
       (max, profile) => Math.max(max, profile.recoveryAttemptCount),
       0,
     ),
-    circuitBreakerUntil: circuitBreaker?.circuitBreakerUntil ?? null,
+    circuitBreakerUntil: activeCircuitBreaker?.circuitBreakerUntil ?? null,
     recentThrottleCount: profiles.reduce((sum, profile) => sum + profile.recentThrottleCount, 0),
     recentSuccessCount: profiles.reduce((sum, profile) => sum + profile.recentSuccessCount, 0),
     budget: buildKisBudgetPayload(snapshot.budget, {
-      currentState: circuitBreaker?.state ?? active?.state ?? pending?.state ?? 'normal',
+      currentState,
       queueDepth: snapshot.queueDepth ?? 0,
       currentAllowedRps: mostRestrictiveRps,
       lastThrottleCode: lastThrottle?.lastThrottleCode ?? null,

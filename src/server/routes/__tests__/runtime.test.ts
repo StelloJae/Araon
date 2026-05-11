@@ -997,6 +997,70 @@ describe('GET /runtime/data-health', () => {
     });
   });
 
+  it('does not let expired inactive KIS circuit breakers dominate global health', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 15,
+              queueDepth: 0,
+              queuedByPriority: {},
+              policies: [],
+              profiles: [
+                {
+                  profileId: 'primary',
+                  endpointClass: 'foreground',
+                  priorityClass: 'foreground',
+                  state: 'circuit_breaker',
+                  cooldownUntilMs: Date.parse('2026-05-08T14:01:30.000Z'),
+                  cooldownActive: false,
+                  firstLimitedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  lastLimitedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  recoveredAtMs: null,
+                  observedRecoveryMs: null,
+                  nextRetryAtMs: Date.parse('2026-05-08T14:01:30.000Z'),
+                  circuitBreakerUntilMs: Date.parse('2026-05-08T14:01:30.000Z'),
+                  lastThrottleCode: 'EGW00201',
+                  recoveryAttemptCount: 6,
+                  recentThrottleCount: 6,
+                  recentSuccessCount: 0,
+                  currentAllowedRps: 15,
+                  minStartGapMs: 80,
+                  maxInFlight: 2,
+                },
+              ],
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const limiter = res.json().data.kisOutboundLimiter;
+
+    expect(res.statusCode).toBe(200);
+    expect(limiter.currentState).toBe('normal');
+    expect(limiter.circuitBreakerUntil).toBeNull();
+    expect(limiter.budget).toEqual(expect.objectContaining({
+      riskState: 'idle',
+      riskReason: null,
+    }));
+    expect(limiter.budget.riskLabel).not.toBe('KIS 제한');
+    expect(limiter.profiles[0]).toEqual(expect.objectContaining({
+      state: 'circuit_breaker',
+      cooldownActive: false,
+      circuitBreakerUntil: '2026-05-08T14:01:30.000Z',
+      lastThrottleCode: 'EGW00201',
+    }));
+  });
+
   it('exposes sanitized KIS REST profile routing health', async () => {
     const app = await build({
       runtimeRef: runtimeRef({
