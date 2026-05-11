@@ -84,7 +84,6 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   disclosureRepo?: StockDisclosureRepository;
   dartDisclosureService?: DartDisclosureService;
   refreshQuote?: (ticker: string) => Promise<Price>;
-  isUpstreamCooldownActive?: () => boolean;
   now?: () => Date;
 }
 

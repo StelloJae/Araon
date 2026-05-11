@@ -471,7 +471,6 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     todayMinuteBackfillService,
     historicalMinuteBackfillService,
     refreshQuote: refreshForegroundQuote,
-    isUpstreamCooldownActive: () => hasActiveOutboundCooldown(backfillCooldownEndpointClasses),
   });
   await app.register(themeRoutes, { stockRepo });
   await app.register(settingsRoutes, { settingsStore });

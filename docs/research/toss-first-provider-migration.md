@@ -31,6 +31,9 @@ The public phase covers:
   Korean stocks. Araon uses these as the first chart backfill paths and falls
   back to KIS only if the Toss chart request fails and KIS runtime is already
   available.
+- KIS outbound cooldown no longer skips selected chart coverage before Toss has
+  a chance to serve it. KIS governor/cooldown still applies to the legacy KIS
+  fallback path.
 - Foreground quote refresh tries Toss public quotes first, then falls back to KIS
   only when the Toss quote is unavailable or fails.
 - Watchlist quote polling now has a Toss public batch-polling service. It polls

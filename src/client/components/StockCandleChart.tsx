@@ -163,7 +163,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       })
       .catch(() => {
         if (cancelled) return;
-        coverageMessage = 'KIS credentials 준비 후 차트 과거 데이터를 자동 보강합니다.';
+        coverageMessage = '데이터 연결 준비 후 차트 과거 데이터를 자동 보강합니다.';
         setMessage(coverageMessage);
       })
       .finally(() => {

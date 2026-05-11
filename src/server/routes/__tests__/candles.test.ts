@@ -661,14 +661,22 @@ describe('GET /stocks/:ticker/candles', () => {
     });
   });
 
-  it('skips daily coverage ensure while upstream KIS cooldown is active', async () => {
-    const backfillDailyCandles = vi.fn();
+  it('auto-ensures Toss-first daily coverage when the chart service returns Toss candles', async () => {
+    const backfillDailyCandles = vi.fn().mockResolvedValue({
+      ticker: '005930',
+      requested: 20,
+      inserted: 20,
+      updated: 0,
+      from: '2026-04-05T15:00:00.000Z',
+      to: '2026-05-04T15:00:00.000Z',
+      source: 'toss-daily',
+      coverage: { backfilled: true, localOnly: false },
+    });
     const app = Fastify({ logger: false });
     await app.register(stockRoutes, {
       service: serviceStub(),
       candleRepo: new PriceCandleRepository(db),
       dailyBackfillService: { backfillDailyCandles },
-      isUpstreamCooldownActive: () => true,
       now: () => new Date('2026-05-05T11:10:00.000Z'),
     });
 
@@ -679,12 +687,16 @@ describe('GET /stocks/:ticker/candles', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(backfillDailyCandles).not.toHaveBeenCalled();
+    expect(backfillDailyCandles).toHaveBeenCalledWith({
+      ticker: '005930',
+      range: '1m',
+      now: new Date('2026-05-05T11:10:00.000Z'),
+      endpointClass: 'selected_backfill',
+    });
     expect(JSON.parse(res.body).data).toMatchObject({
-      state: 'skipped',
-      reason: 'UPSTREAM_COOLDOWN',
-      source: null,
-      requested: 0,
+      state: 'backfilled',
+      source: 'toss-daily',
+      requested: 20,
     });
   });
 
@@ -729,8 +741,19 @@ describe('GET /stocks/:ticker/candles', () => {
     });
   });
 
-  it('skips intraday coverage ensure while upstream KIS cooldown is active', async () => {
-    const backfillHistoricalMinuteCandles = vi.fn();
+  it('auto-ensures Toss-first intraday coverage when the chart service returns Toss candles', async () => {
+    const backfillHistoricalMinuteCandles = vi.fn().mockResolvedValue({
+      ticker: '005930',
+      requested: 240,
+      inserted: 200,
+      updated: 40,
+      from: '2026-05-04T00:00:00.000Z',
+      to: '2026-05-04T11:00:00.000Z',
+      source: 'toss-time-daily',
+      pages: 3,
+      tradingDays: 1,
+      coverage: { backfilled: true, localOnly: false },
+    });
     const backfillTodayMinuteCandles = vi.fn();
     const app = Fastify({ logger: false });
     await app.register(stockRoutes, {
@@ -738,7 +761,6 @@ describe('GET /stocks/:ticker/candles', () => {
       candleRepo: new PriceCandleRepository(db),
       todayMinuteBackfillService: { backfillTodayMinuteCandles },
       historicalMinuteBackfillService: { backfillHistoricalMinuteCandles },
-      isUpstreamCooldownActive: () => true,
       now: () => new Date('2026-05-05T11:10:00.000Z'),
     });
 
@@ -750,12 +772,16 @@ describe('GET /stocks/:ticker/candles', () => {
 
     expect(res.statusCode).toBe(200);
     expect(backfillTodayMinuteCandles).not.toHaveBeenCalled();
-    expect(backfillHistoricalMinuteCandles).not.toHaveBeenCalled();
+    expect(backfillHistoricalMinuteCandles).toHaveBeenCalledWith({
+      ticker: '005930',
+      from: expect.any(String),
+      to: expect.any(String),
+      now: new Date('2026-05-05T11:10:00.000Z'),
+    });
     expect(JSON.parse(res.body).data).toMatchObject({
-      state: 'skipped',
-      reason: 'UPSTREAM_COOLDOWN',
-      source: null,
-      requested: 0,
+      state: 'backfilled',
+      source: 'toss-time-daily',
+      requested: 240,
     });
   });
 
