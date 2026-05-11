@@ -14,10 +14,13 @@ function realtimeStatus(): TossRealtimeStatus {
     updatedAt: null,
     stoppedAt: null,
     eventCount: 0,
+    priceRefreshEventCount: 0,
+    eventTypes: [],
     reconnectCount: 0,
     lastEventType: null,
     lastStockCode: null,
     lastEventAt: null,
+    lastPriceRefreshAt: null,
     lastError: null,
     thinNotificationOnly: true,
   };

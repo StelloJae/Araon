@@ -19,10 +19,13 @@ export interface TossRealtimeStatus {
   readonly updatedAt: string | null;
   readonly stoppedAt: string | null;
   readonly eventCount: number;
+  readonly priceRefreshEventCount: number;
+  readonly eventTypes: ReadonlyArray<{ readonly type: string; readonly count: number }>;
   readonly reconnectCount: number;
   readonly lastEventType: string | null;
   readonly lastStockCode: string | null;
   readonly lastEventAt: string | null;
+  readonly lastPriceRefreshAt: string | null;
   readonly lastError: string | null;
   readonly thinNotificationOnly: boolean;
 }
@@ -55,6 +58,7 @@ class DefaultTossRealtimeService implements TossRealtimeService {
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
   private statusSnapshot: TossRealtimeStatus = idleStatus();
+  private readonly eventTypeCounts = new Map<string, number>();
   private activeController: AbortController | null = null;
   private activeJob: Promise<void> | null = null;
 
@@ -152,11 +156,21 @@ class DefaultTossRealtimeService implements TossRealtimeService {
   }
 
   private recordEvent(event: TossSseEvent): void {
+    const type = normalizeEventType(event.type);
+    this.eventTypeCounts.set(type, (this.eventTypeCounts.get(type) ?? 0) + 1);
+    const priceRefreshEventCount = type === 'price-refresh'
+      ? this.statusSnapshot.priceRefreshEventCount + 1
+      : this.statusSnapshot.priceRefreshEventCount;
     this.setStatus({
       eventCount: this.statusSnapshot.eventCount + 1,
-      lastEventType: event.type,
+      priceRefreshEventCount,
+      eventTypes: eventTypeSnapshot(this.eventTypeCounts),
+      lastEventType: type,
       lastStockCode: event.stockCode,
       lastEventAt: event.receivedAt,
+      lastPriceRefreshAt: type === 'price-refresh'
+        ? event.receivedAt
+        : this.statusSnapshot.lastPriceRefreshAt,
       lastError: null,
     });
   }
@@ -177,13 +191,34 @@ function idleStatus(): TossRealtimeStatus {
     updatedAt: null,
     stoppedAt: null,
     eventCount: 0,
+    priceRefreshEventCount: 0,
+    eventTypes: [],
     reconnectCount: 0,
     lastEventType: null,
     lastStockCode: null,
     lastEventAt: null,
+    lastPriceRefreshAt: null,
     lastError: null,
     thinNotificationOnly: true,
   };
+}
+
+function normalizeEventType(type: string): string {
+  const trimmed = type.trim();
+  if (trimmed.length === 0) return 'unknown';
+  return trimmed.replace(/[^\w.-]/g, '_').slice(0, 64);
+}
+
+function eventTypeSnapshot(
+  counts: ReadonlyMap<string, number>,
+): ReadonlyArray<{ readonly type: string; readonly count: number }> {
+  return [...counts.entries()]
+    .sort(([leftType, leftCount], [rightType, rightCount]) => {
+      if (rightCount !== leftCount) return rightCount - leftCount;
+      return leftType.localeCompare(rightType);
+    })
+    .slice(0, 12)
+    .map(([type, count]) => ({ type, count }));
 }
 
 function safeErrorMessage(err: unknown): string {

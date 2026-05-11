@@ -1439,11 +1439,18 @@ export function TossDataControl({
           v={`${realtime?.eventCount ?? 0}개`}
           chipColor={(realtime?.eventCount ?? 0) > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
         />
+        <Row
+          k="가격 refresh"
+          v={`${realtime?.priceRefreshEventCount ?? 0}개`}
+          chipColor={(realtime?.priceRefreshEventCount ?? 0) > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
+        />
       </div>
       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
         세션 만료: {formatMaybeLocal(session?.expiresAt ?? null)}
         <br />
         최근 SSE: {formatMaybeLocal(realtime?.lastEventAt ?? null)}
+        <br />
+        이벤트 종류: {formatTossRealtimeEventTypes(realtime?.eventTypes ?? [])}
         {realtime?.thinNotificationOnly === true && <> · thin notification</>}
         {realtime?.lastError !== null && realtime?.lastError !== undefined && (
           <>
@@ -2422,6 +2429,16 @@ function tossRealtimeLabel(realtime: TossSseStatusPayload | null): string {
     case 'failed':
       return '실패';
   }
+}
+
+function formatTossRealtimeEventTypes(
+  eventTypes: TossSseStatusPayload['eventTypes'],
+): string {
+  if (eventTypes.length === 0) return '수집 전';
+  return eventTypes
+    .slice(0, 3)
+    .map((item) => `${item.type} ${item.count}`)
+    .join(', ');
 }
 
 function operatorErrorMessage(err: unknown): string {
