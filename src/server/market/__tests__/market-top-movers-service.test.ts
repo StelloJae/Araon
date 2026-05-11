@@ -134,6 +134,41 @@ describe('market top movers service', () => {
     });
   });
 
+  it('surfaces TOP100 ranking stop reasons from fetch diagnostics', async () => {
+    const fetchRanking = vi.fn(async ({ direction, onDiagnostic }) => {
+      onDiagnostic?.({
+        direction,
+        pagesAttempted: 1,
+        rowsReceived: direction === 'gainers' ? 30 : 19,
+        rowsAccepted: direction === 'gainers' ? 30 : 19,
+        rowsPerPage: [direction === 'gainers' ? 30 : 19],
+        continuationValues: [null],
+        stopReason: 'upstream_partial_limit_suspected',
+        durationMs: 42,
+      });
+      return makeRows(direction, direction === 'gainers' ? 30 : 19);
+    });
+    const service = createMarketTopMoversService({
+      now: () => new Date('2026-05-11T03:00:00.000Z'),
+      fetchRanking,
+    });
+
+    const result = await service.getTopMovers({ limit: 100 });
+
+    expect(result.status).toBe('partial');
+    expect(result.partialReason).toBe('upstream_partial_limit_suspected');
+    expect(result.stopReason).toBe('upstream_partial_limit_suspected');
+    expect(result.rankingDiagnostics.gainers).toMatchObject({
+      pagesAttempted: 1,
+      rowsReceived: 30,
+      continuationValues: [null],
+    });
+    expect(service.snapshot().rankingDiagnostics.losers).toMatchObject({
+      rowsAccepted: 19,
+      stopReason: 'upstream_partial_limit_suspected',
+    });
+  });
+
   it('keeps the larger last-good partial ranking when a later refresh shrinks under rate pressure', async () => {
     let now = Date.parse('2026-05-11T01:00:00.000Z');
     let sampleSize = 30;
@@ -156,6 +191,7 @@ describe('market top movers service', () => {
     expect(retained.status).toBe('stale');
     expect(retained.sourcePhase).toBe('stale_snapshot');
     expect(retained.partialReason).toBe('smaller_refresh_retained');
+    expect(retained.stopReason).toBe('smaller_refresh_retained');
     expect(retained.coverage.gainersCount).toBe(30);
     expect(retained.coverage.losersCount).toBe(21);
     expect(retained.lastGoodAgeMs).toBe(2);

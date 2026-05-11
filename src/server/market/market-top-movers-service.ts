@@ -1,7 +1,9 @@
 import type {
   MarketTopMoverDirection,
   MarketTopMoverItem,
+  MarketTopMoversRankingDiagnostic,
   MarketTopMoversResponse,
+  MarketTopMoversStopReason,
   MarketTopMoversSourcePhase,
 } from '@shared/types.js';
 
@@ -30,6 +32,7 @@ export interface FetchRankingInput {
   count: number;
   now: Date;
   sourcePhase: MarketTopMoversSourcePhase;
+  onDiagnostic?: (diagnostic: MarketTopMoversRankingDiagnostic) => void;
 }
 
 export interface MarketTopMoversService {
@@ -51,7 +54,10 @@ interface CacheEntry {
   gainers: MarketTopMoverItem[];
   losers: MarketTopMoverItem[];
   sourcePhase: MarketTopMoversSourcePhase;
+  rankingDiagnostics: RankingDiagnostics;
 }
+
+type RankingDiagnostics = MarketTopMoversResponse['rankingDiagnostics'];
 
 export interface MarketTopMoversServiceSnapshot {
   status: MarketTopMoversResponse['status'] | 'idle' | 'refreshing';
@@ -78,6 +84,8 @@ export interface MarketTopMoversServiceSnapshot {
   frozen: boolean;
   lastGoodAgeMs: number | null;
   partialReason: MarketTopMoversResponse['partialReason'];
+  stopReason: MarketTopMoversResponse['stopReason'];
+  rankingDiagnostics: RankingDiagnostics;
   rankingRateLimited: boolean;
 }
 
@@ -125,6 +133,7 @@ export function createMarketTopMoversService({
             {
               sourcePhase: 'stale_snapshot',
               partialReason: 'smaller_refresh_retained',
+              stopReason: 'smaller_refresh_retained',
             },
           ),
           null,
@@ -146,6 +155,7 @@ export function createMarketTopMoversService({
               {
                 sourcePhase: 'stale_snapshot',
                 partialReason: 'rate_limited',
+                stopReason: 'rate_limited',
                 rankingRateLimited: true,
               },
             ),
@@ -161,6 +171,7 @@ export function createMarketTopMoversService({
             {
               sourcePhase: 'unsupported',
               partialReason: 'rate_limited',
+              stopReason: 'rate_limited',
               rankingRateLimited: true,
             },
           ),
@@ -204,23 +215,31 @@ export function createMarketTopMoversService({
     const nextRefresh = (async () => {
       // TOP100 may require KIS continuation pages. Keep gainers/losers
       // sequential so we do not create a burst against the shared KIS limiter.
+      const rankingDiagnostics = emptyRankingDiagnostics();
       const gainers = await fetchRanking({
         direction: 'gainers',
         count: MAX_LIMIT,
         now: current,
         sourcePhase,
+        onDiagnostic: (diagnostic) => {
+          rankingDiagnostics.gainers = diagnostic;
+        },
       });
       const losers = await fetchRanking({
         direction: 'losers',
         count: MAX_LIMIT,
         now: current,
         sourcePhase,
+        onDiagnostic: (diagnostic) => {
+          rankingDiagnostics.losers = diagnostic;
+        },
       });
       const next = {
         fetchedAt: current,
         gainers: gainers.slice(0, MAX_LIMIT),
         losers: losers.slice(0, MAX_LIMIT),
         sourcePhase,
+        rankingDiagnostics,
       };
       return next;
     })();
@@ -241,6 +260,7 @@ export function createMarketTopMoversService({
         {
           sourcePhase: 'stale_snapshot',
           partialReason: 'rate_limited',
+          stopReason: 'rate_limited',
           rankingRateLimited: true,
         },
       );
@@ -253,6 +273,7 @@ export function createMarketTopMoversService({
       {
         sourcePhase: 'unsupported',
         partialReason: 'rate_limited',
+        stopReason: 'rate_limited',
         rankingRateLimited: true,
       },
     );
@@ -314,6 +335,7 @@ export function createMarketTopMoversService({
     opts: {
       sourcePhase?: MarketTopMoversSourcePhase;
       partialReason?: MarketTopMoversResponse['partialReason'];
+      stopReason?: MarketTopMoversResponse['stopReason'];
       rankingRateLimited?: boolean;
       frozen?: boolean;
     } = {},
@@ -322,8 +344,10 @@ export function createMarketTopMoversService({
     const partial = status === 'ready'
       && (!coverage.gainersComplete || !coverage.losersComplete);
     const sourcePhase = opts.sourcePhase ?? entry.sourcePhase;
+    const stopReason = opts.stopReason
+      ?? (partial ? stopReasonForDiagnostics(entry.rankingDiagnostics) : null);
     const partialReason = opts.partialReason
-      ?? (partial ? 'under_requested_limit' : null);
+      ?? (partial ? partialReasonForStopReason(stopReason) : null);
     return {
       generatedAt: current.toISOString(),
       fetchedAt: entry.fetchedAt.toISOString(),
@@ -337,6 +361,8 @@ export function createMarketTopMoversService({
       frozen: opts.frozen ?? sourcePhase === 'opening_freeze',
       lastGoodAgeMs: Math.max(0, current.getTime() - entry.fetchedAt.getTime()),
       partialReason,
+      stopReason,
+      rankingDiagnostics: entry.rankingDiagnostics,
       rankingRateLimited: opts.rankingRateLimited ?? false,
       status: partial ? 'partial' : status,
       message: partial
@@ -359,6 +385,7 @@ export function createMarketTopMoversService({
     opts: {
       sourcePhase?: MarketTopMoversSourcePhase;
       partialReason?: MarketTopMoversResponse['partialReason'];
+      stopReason?: MarketTopMoversResponse['stopReason'];
       rankingRateLimited?: boolean;
       frozen?: boolean;
     } = {},
@@ -377,6 +404,8 @@ export function createMarketTopMoversService({
       frozen: opts.frozen ?? sourcePhase === 'opening_freeze',
       lastGoodAgeMs: null,
       partialReason: opts.partialReason ?? (sourcePhase === 'unsupported' ? 'source_unsupported' : null),
+      stopReason: opts.stopReason ?? (sourcePhase === 'unsupported' ? 'unsupported_source' : null),
+      rankingDiagnostics: emptyRankingDiagnostics(),
       rankingRateLimited: opts.rankingRateLimited ?? false,
       status,
       message,
@@ -424,6 +453,8 @@ export function createMarketTopMoversService({
       frozen: response?.frozen ?? false,
       lastGoodAgeMs: response?.lastGoodAgeMs ?? null,
       partialReason: response?.partialReason ?? null,
+      stopReason: response?.stopReason ?? null,
+      rankingDiagnostics: response?.rankingDiagnostics ?? emptyRankingDiagnostics(),
       rankingRateLimited: response?.rankingRateLimited ?? false,
     };
   }
@@ -482,6 +513,54 @@ function emptyCoverage(limit: number): MarketTopMoversResponse['coverage'] {
     guaranteedTop100: false,
     includesLocalFallback: false,
   };
+}
+
+function emptyRankingDiagnostics(): RankingDiagnostics {
+  return {
+    gainers: null,
+    losers: null,
+  };
+}
+
+function stopReasonForDiagnostics(
+  diagnostics: RankingDiagnostics,
+): MarketTopMoversStopReason {
+  const reasons = [diagnostics.gainers?.stopReason, diagnostics.losers?.stopReason]
+    .filter((reason): reason is MarketTopMoversStopReason => reason !== undefined);
+  if (reasons.includes('rate_limited')) return 'rate_limited';
+  if (reasons.includes('timeout')) return 'timeout';
+  if (reasons.includes('malformed_response')) return 'malformed_response';
+  if (reasons.includes('upstream_partial_limit_suspected')) {
+    return 'upstream_partial_limit_suspected';
+  }
+  if (reasons.includes('no_continuation')) return 'no_continuation';
+  if (reasons.includes('under_requested_limit')) return 'under_requested_limit';
+  return 'under_requested_limit';
+}
+
+function partialReasonForStopReason(
+  stopReason: MarketTopMoversStopReason | null,
+): MarketTopMoversResponse['partialReason'] {
+  switch (stopReason) {
+    case 'rate_limited':
+      return 'rate_limited';
+    case 'timeout':
+      return 'timeout';
+    case 'malformed_response':
+      return 'malformed_response';
+    case 'no_continuation':
+      return 'no_continuation';
+    case 'upstream_partial_limit_suspected':
+      return 'upstream_partial_limit_suspected';
+    case 'unsupported_source':
+      return 'source_unsupported';
+    case 'smaller_refresh_retained':
+      return 'smaller_refresh_retained';
+    case 'under_requested_limit':
+    case 'complete':
+    case null:
+      return 'under_requested_limit';
+  }
 }
 
 function isFetchableSourcePhase(sourcePhase: MarketTopMoversSourcePhase): boolean {

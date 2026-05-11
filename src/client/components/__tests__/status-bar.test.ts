@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { MarketTape, type MarketTapeSummary } from '../StatusBar';
+import { KisBudgetPill, MarketTape, type KisBudgetSummary, type MarketTapeSummary } from '../StatusBar';
 
 describe('MarketTape', () => {
   it('renders KST plus index, FX, and oil indicators compactly', () => {
@@ -29,3 +29,60 @@ describe('MarketTape', () => {
     expect(html).toContain('WTI');
   });
 });
+
+describe('KisBudgetPill', () => {
+  it('renders the compact REST budget risk label', () => {
+    const budget: KisBudgetSummary = {
+      generatedAt: '2026-05-11T03:00:00.000Z',
+      riskState: 'safe',
+      riskLabel: 'KIS 여유',
+      riskReason: '1.0/s',
+      windows: {
+        tenSec: emptyWindow(10_000),
+        sixtySec: {
+          ...emptyWindow(60_000),
+          startedCount: 60,
+          callPerSec: 1,
+          byClass: [
+            {
+              profileId: 'primary',
+              endpointClass: 'polling',
+              priorityClass: 'polling',
+              startedCount: 50,
+              successCount: 50,
+              failureCount: 0,
+              throttleCount: 0,
+              callPerSec: 0.83,
+              successPerSec: 0.83,
+              failurePerMin: 0,
+              throttlePerMin: 0,
+              queueDepth: 0,
+              currentAllowedRps: 15,
+            },
+          ],
+        },
+      },
+    };
+
+    const html = renderToStaticMarkup(createElement(KisBudgetPill, { budget }));
+
+    expect(html).toContain('KIS 여유');
+    expect(html).toContain('1.0/s');
+    expect(html).toContain('polling 0.83/s');
+  });
+});
+
+function emptyWindow(windowMs: number): KisBudgetSummary['windows']['sixtySec'] {
+  return {
+    windowMs,
+    startedCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    throttleCount: 0,
+    callPerSec: 0,
+    successPerSec: 0,
+    failurePerMin: 0,
+    throttlePerMin: 0,
+    byClass: [],
+  };
+}

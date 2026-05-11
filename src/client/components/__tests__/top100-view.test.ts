@@ -20,6 +20,11 @@ function topMovers(): MarketTopMoversResponse {
     frozen: false,
     lastGoodAgeMs: 0,
     partialReason: 'under_requested_limit',
+    stopReason: 'under_requested_limit',
+    rankingDiagnostics: {
+      gainers: null,
+      losers: null,
+    },
     rankingRateLimited: false,
     status: 'ready',
     message: '3초마다 갱신',
@@ -165,7 +170,7 @@ describe('TOP100 view chrome', () => {
     expect(html).toContain('하락 TOP100');
     expect(html).toContain('직전');
     expect(html).toContain('직전 데이터');
-    expect(html).toContain('부분 수신');
+    expect(html).toContain('직전 데이터 유지');
     expect(html).toContain('약 1분 전');
   });
 });

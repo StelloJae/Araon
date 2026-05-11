@@ -401,6 +401,67 @@ describe('fetchKisFluctuationRanking', () => {
     );
     expect(items.map((item) => item.ticker)).toEqual(['000001', '000002']);
   });
+
+  it('fills TOP100 across continuation pages and records sanitized diagnostics', async () => {
+    const diagnostics: unknown[] = [];
+    const restClient = createMockRestClient([
+      { payload: { output: makeKisRows('gainers', 1, 30) }, trCont: 'M' },
+      { payload: { output: makeKisRows('gainers', 31, 30) }, trCont: 'M' },
+      { payload: { output: makeKisRows('gainers', 61, 30) }, trCont: 'M' },
+      { payload: { output: makeKisRows('gainers', 91, 10) }, trCont: null },
+    ]);
+
+    const items = await fetchKisFluctuationRanking({
+      direction: 'gainers',
+      count: 100,
+      restClient,
+      pageDelayMs: 0,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(items).toHaveLength(100);
+    expect(restClient.requestWithMeta).toHaveBeenCalledTimes(4);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        direction: 'gainers',
+        pagesAttempted: 4,
+        rowsReceived: 100,
+        rowsAccepted: 100,
+        rowsPerPage: [30, 30, 30, 10],
+        continuationValues: ['M', 'M', 'M', null],
+        stopReason: 'complete',
+      }),
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain('appSecret');
+  });
+
+  it('classifies a 30-row response without continuation as an upstream partial limit suspect', async () => {
+    const diagnostics: unknown[] = [];
+    const restClient = createMockRestClient([
+      { payload: { output: makeKisRows('gainers', 1, 30) }, trCont: null },
+    ]);
+
+    const items = await fetchKisFluctuationRanking({
+      direction: 'gainers',
+      count: 100,
+      restClient,
+      pageDelayMs: 0,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(items).toHaveLength(30);
+    expect(restClient.requestWithMeta).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        pagesAttempted: 1,
+        rowsReceived: 30,
+        rowsAccepted: 30,
+        rowsPerPage: [30],
+        continuationValues: [null],
+        stopReason: 'upstream_partial_limit_suspected',
+      }),
+    ]);
+  });
 });
 
 function createMockRestClient(
@@ -419,4 +480,20 @@ function createMockRestClient(
     request: vi.fn(async () => (await requestWithMeta()).payload),
     requestWithMeta,
   };
+}
+
+function makeKisRows(direction: 'gainers' | 'losers', start: number, count: number) {
+  return Array.from({ length: count }, (_, idx) => {
+    const rank = start + idx;
+    const changePct = direction === 'gainers' ? 100 - rank / 100 : -(100 - rank / 100);
+    return {
+      data_rank: String(rank),
+      stck_shrn_iscd: String(rank).padStart(6, '0'),
+      hts_kor_isnm: `${direction}-${rank}`,
+      stck_prpr: String(1_000 + rank),
+      prdy_vrss: String(direction === 'gainers' ? rank : -rank),
+      prdy_ctrt: changePct.toFixed(2),
+      acml_vol: String(rank * 100),
+    };
+  });
 }

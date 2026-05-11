@@ -628,6 +628,33 @@ export async function sendPhoneNotificationTest(): Promise<{ sent: boolean; reas
   return unwrap<{ sent: boolean; reason?: string }>(res);
 }
 
+interface KisBudgetWindowPayload {
+  windowMs: number;
+  startedCount: number;
+  successCount: number;
+  failureCount: number;
+  throttleCount: number;
+  callPerSec: number;
+  successPerSec: number;
+  failurePerMin: number;
+  throttlePerMin: number;
+  byClass: Array<{
+    profileId: string;
+    endpointClass: string | null;
+    priorityClass: string;
+    startedCount: number;
+    successCount: number;
+    failureCount: number;
+    throttleCount: number;
+    callPerSec: number;
+    successPerSec: number;
+    failurePerMin: number;
+    throttlePerMin: number;
+    queueDepth: number;
+    currentAllowedRps: number | null;
+  }>;
+}
+
 export interface RuntimeDataHealthPayload {
   tracking: {
     trackedCount: number;
@@ -690,6 +717,16 @@ export interface RuntimeDataHealthPayload {
     circuitBreakerUntil: string | null;
     recentThrottleCount: number;
     recentSuccessCount: number;
+    budget: {
+      generatedAt: string | null;
+      riskState: 'idle' | 'safe' | 'busy' | 'recovering' | 'risky' | 'throttled';
+      riskLabel: string;
+      riskReason: string | null;
+      windows: {
+        tenSec: KisBudgetWindowPayload;
+        sixtySec: KisBudgetWindowPayload;
+      };
+    };
     aimd: {
       enabled: boolean;
       mode: 'observe_only' | 'active';
@@ -822,6 +859,29 @@ export interface RuntimeDataHealthPayload {
     frozen: boolean;
     lastGoodAgeMs: number | null;
     partialReason: string | null;
+    stopReason: string | null;
+    rankingDiagnostics: {
+      gainers: {
+        direction: 'gainers' | 'losers';
+        pagesAttempted: number;
+        rowsReceived: number;
+        rowsAccepted: number;
+        rowsPerPage: number[];
+        continuationValues: Array<string | null>;
+        stopReason: string;
+        durationMs: number | null;
+      } | null;
+      losers: {
+        direction: 'gainers' | 'losers';
+        pagesAttempted: number;
+        rowsReceived: number;
+        rowsAccepted: number;
+        rowsPerPage: number[];
+        continuationValues: Array<string | null>;
+        stopReason: string;
+        durationMs: number | null;
+      } | null;
+    } | null;
     rankingRateLimited: boolean;
     lastFetchedAt: string | null;
     lastGeneratedAt: string | null;

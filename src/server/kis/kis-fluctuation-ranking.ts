@@ -1,10 +1,16 @@
 import type {
   MarketTopMoverDirection,
   MarketTopMoverItem,
+  MarketTopMoversRankingDiagnostic,
+  MarketTopMoversStopReason,
   MarketTopMoversSourcePhase,
 } from '@shared/types.js';
 
 import type { KisRestClient } from './kis-rest-client.js';
+import {
+  classifyKisRestFailure,
+  isKisSecondWindowThrottle,
+} from './kis-rate-limit-classifier.js';
 
 const FLUCTUATION_PATH = '/uapi/domestic-stock/v1/ranking/fluctuation';
 const FLUCTUATION_TR_ID = 'FHPST01700000';
@@ -41,6 +47,7 @@ export interface FetchKisFluctuationRankingInput {
   sourcePhase?: MarketTopMoversSourcePhase;
   pageDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  onDiagnostic?: (diagnostic: MarketTopMoversRankingDiagnostic) => void;
 }
 
 export async function fetchKisFluctuationRanking({
@@ -51,34 +58,91 @@ export async function fetchKisFluctuationRanking({
   sourcePhase = 'regular',
   pageDelayMs = KIS_CONTINUATION_DELAY_MS,
   sleep = defaultSleep,
+  onDiagnostic,
 }: FetchKisFluctuationRankingInput): Promise<MarketTopMoverItem[]> {
   const safeCount = clampCount(count);
   const requestConfig = requestConfigFor(sourcePhase, direction);
   const rows: unknown[] = [];
+  const startedAt = Date.now();
+  const rowsPerPage: number[] = [];
+  const continuationValues: Array<string | null> = [];
   let trCont = '';
-  for (let page = 0; page < MAX_RANKING_PAGES; page += 1) {
-    const response = await restClient.requestWithMeta<KisFluctuationResponse>({
-      method: 'GET',
-      path: requestConfig.path,
-      trId: requestConfig.trId,
-      endpointClass: 'ranking',
-      ...(trCont.length > 0 ? { headers: { tr_cont: trCont } } : {}),
-      query: requestConfig.query,
+  try {
+    for (let page = 0; page < MAX_RANKING_PAGES; page += 1) {
+      const response = await restClient.requestWithMeta<KisFluctuationResponse>({
+        method: 'GET',
+        path: requestConfig.path,
+        trId: requestConfig.trId,
+        endpointClass: 'ranking',
+        ...(trCont.length > 0 ? { headers: { tr_cont: trCont } } : {}),
+        query: requestConfig.query,
+      });
+
+      const pageRows = requestConfig.extractRows(response.payload);
+      rows.push(...pageRows);
+      rowsPerPage.push(pageRows.length);
+      continuationValues.push(normalizeTrCont(response.headers.trCont));
+
+      const items = filterAndSortByDirection(requestConfig.mapRows(rows), direction);
+      if (items.length >= safeCount) {
+        const sliced = items.slice(0, safeCount);
+        emitDiagnostic(onDiagnostic, {
+          direction,
+          pagesAttempted: rowsPerPage.length,
+          rowsReceived: rows.length,
+          rowsAccepted: sliced.length,
+          rowsPerPage,
+          continuationValues,
+          stopReason: 'complete',
+          durationMs: Date.now() - startedAt,
+        });
+        return sliced;
+      }
+      if (response.headers.trCont !== 'M') {
+        const sliced = items.slice(0, safeCount);
+        emitDiagnostic(onDiagnostic, {
+          direction,
+          pagesAttempted: rowsPerPage.length,
+          rowsReceived: rows.length,
+          rowsAccepted: sliced.length,
+          rowsPerPage,
+          continuationValues,
+          stopReason: stopReasonForPartial(rows.length, sliced.length),
+          durationMs: Date.now() - startedAt,
+        });
+        return sliced;
+      }
+      trCont = 'N';
+      if (pageDelayMs > 0) {
+        await sleep(pageDelayMs);
+      }
+    }
+
+    const items = filterAndSortByDirection(requestConfig.mapRows(rows), direction).slice(0, safeCount);
+    emitDiagnostic(onDiagnostic, {
+      direction,
+      pagesAttempted: rowsPerPage.length,
+      rowsReceived: rows.length,
+      rowsAccepted: items.length,
+      rowsPerPage,
+      continuationValues,
+      stopReason: 'under_requested_limit',
+      durationMs: Date.now() - startedAt,
     });
-
-    rows.push(...requestConfig.extractRows(response.payload));
-
-    const items = filterAndSortByDirection(requestConfig.mapRows(rows), direction);
-    if (items.length >= safeCount || response.headers.trCont !== 'M') {
-      return items.slice(0, safeCount);
-    }
-    trCont = 'N';
-    if (pageDelayMs > 0) {
-      await sleep(pageDelayMs);
-    }
+    return items;
+  } catch (err) {
+    emitDiagnostic(onDiagnostic, {
+      direction,
+      pagesAttempted: rowsPerPage.length,
+      rowsReceived: rows.length,
+      rowsAccepted: filterAndSortByDirection(requestConfig.mapRows(rows), direction).length,
+      rowsPerPage,
+      continuationValues,
+      stopReason: stopReasonForError(err),
+      durationMs: Date.now() - startedAt,
+    });
+    throw err;
   }
-
-  return filterAndSortByDirection(requestConfig.mapRows(rows), direction).slice(0, safeCount);
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -255,6 +319,39 @@ function arrayPayload(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (value !== undefined && value !== null) return [value];
   return [];
+}
+
+function emitDiagnostic(
+  onDiagnostic: ((diagnostic: MarketTopMoversRankingDiagnostic) => void) | undefined,
+  diagnostic: MarketTopMoversRankingDiagnostic,
+): void {
+  onDiagnostic?.({
+    ...diagnostic,
+    rowsPerPage: [...diagnostic.rowsPerPage],
+    continuationValues: [...diagnostic.continuationValues],
+  });
+}
+
+function normalizeTrCont(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function stopReasonForPartial(
+  rowsReceived: number,
+  rowsAccepted: number,
+): MarketTopMoversStopReason {
+  if (rowsReceived === 0 || rowsAccepted === 0) return 'no_continuation';
+  return 'upstream_partial_limit_suspected';
+}
+
+function stopReasonForError(err: unknown): MarketTopMoversStopReason {
+  const classification = classifyKisRestFailure(err);
+  if (isKisSecondWindowThrottle(classification)) return 'rate_limited';
+  if (classification.kind === 'network_timeout') return 'timeout';
+  if (classification.kind === 'malformed_response') return 'malformed_response';
+  return 'malformed_response';
 }
 
 function clampCount(count: number): number {

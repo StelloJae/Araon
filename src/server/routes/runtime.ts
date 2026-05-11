@@ -68,7 +68,11 @@ import {
   createPhoneDeliveryLog,
   type PhoneDeliveryLog,
 } from '../notifications/phone-delivery-log.js';
-import type { KisGovernorTelemetrySnapshot } from '../kis/kis-outbound-limiter.js';
+import type {
+  KisBudgetMeterSnapshot,
+  KisBudgetMeterWindowSnapshot,
+  KisGovernorTelemetrySnapshot,
+} from '../kis/kis-outbound-limiter.js';
 import {
   buildKisGovernorAimdObservation,
   type KisGovernorAimdDecision,
@@ -225,6 +229,7 @@ export interface RuntimeKisOutboundLimiterPayload {
   readonly circuitBreakerUntil: string | null;
   readonly recentThrottleCount: number;
   readonly recentSuccessCount: number;
+  readonly budget: RuntimeKisBudgetPayload;
   readonly aimd: RuntimeKisGovernorAimdPayload;
   readonly telemetry: {
     readonly capacity: number;
@@ -273,6 +278,52 @@ export interface RuntimeKisOutboundLimiterPayload {
     readonly currentAllowedRps: number;
     readonly minStartGapMs: number;
     readonly maxInFlight: number;
+  }[];
+}
+
+export type RuntimeKisBudgetRiskState =
+  | 'idle'
+  | 'safe'
+  | 'busy'
+  | 'recovering'
+  | 'risky'
+  | 'throttled';
+
+export interface RuntimeKisBudgetPayload {
+  readonly generatedAt: string | null;
+  readonly riskState: RuntimeKisBudgetRiskState;
+  readonly riskLabel: string;
+  readonly riskReason: string | null;
+  readonly windows: {
+    readonly tenSec: RuntimeKisBudgetWindowPayload;
+    readonly sixtySec: RuntimeKisBudgetWindowPayload;
+  };
+}
+
+export interface RuntimeKisBudgetWindowPayload {
+  readonly windowMs: number;
+  readonly startedCount: number;
+  readonly successCount: number;
+  readonly failureCount: number;
+  readonly throttleCount: number;
+  readonly callPerSec: number;
+  readonly successPerSec: number;
+  readonly failurePerMin: number;
+  readonly throttlePerMin: number;
+  readonly byClass: readonly {
+    readonly profileId: string;
+    readonly endpointClass: string | null;
+    readonly priorityClass: string;
+    readonly startedCount: number;
+    readonly successCount: number;
+    readonly failureCount: number;
+    readonly throttleCount: number;
+    readonly callPerSec: number;
+    readonly successPerSec: number;
+    readonly failurePerMin: number;
+    readonly throttlePerMin: number;
+    readonly queueDepth: number;
+    readonly currentAllowedRps: number | null;
   }[];
 }
 
@@ -365,6 +416,8 @@ export interface RuntimeMarketTopMoversPayload {
   readonly frozen: boolean;
   readonly lastGoodAgeMs: number | null;
   readonly partialReason: string | null;
+  readonly stopReason: string | null;
+  readonly rankingDiagnostics: MarketTopMoversServiceSnapshot['rankingDiagnostics'] | null;
   readonly rankingRateLimited: boolean;
   readonly lastFetchedAt: string | null;
   readonly lastGeneratedAt: string | null;
@@ -969,6 +1022,13 @@ function buildKisOutboundLimiterPayload(
       circuitBreakerUntil: null,
       recentThrottleCount: 0,
       recentSuccessCount: 0,
+      budget: buildKisBudgetPayload(undefined, {
+        currentState: 'unconfigured',
+        queueDepth: 0,
+        currentAllowedRps: null,
+        lastThrottleCode: null,
+        lastThrottleClass: null,
+      }),
       aimd: buildKisGovernorAimdPayload(undefined, undefined),
       telemetry: buildKisGovernorTelemetryPayload(undefined),
       policies: [],
@@ -1027,6 +1087,13 @@ function buildKisOutboundLimiterPayload(
     circuitBreakerUntil: circuitBreaker?.circuitBreakerUntil ?? null,
     recentThrottleCount: profiles.reduce((sum, profile) => sum + profile.recentThrottleCount, 0),
     recentSuccessCount: profiles.reduce((sum, profile) => sum + profile.recentSuccessCount, 0),
+    budget: buildKisBudgetPayload(snapshot.budget, {
+      currentState: circuitBreaker?.state ?? active?.state ?? pending?.state ?? 'normal',
+      queueDepth: snapshot.queueDepth ?? 0,
+      currentAllowedRps: mostRestrictiveRps,
+      lastThrottleCode: lastThrottle?.lastThrottleCode ?? null,
+      lastThrottleClass: lastThrottle?.priorityClass ?? null,
+    }),
     aimd: buildKisGovernorAimdPayload(
       runtimeState.runtime.governorAimd?.snapshot(),
       snapshot.telemetry,
@@ -1044,6 +1111,141 @@ function buildKisOutboundLimiterPayload(
       recoveryRatePerSec: policy.recoveryRatePerSec,
     })),
     profiles,
+  };
+}
+
+function buildKisBudgetPayload(
+  snapshot: KisBudgetMeterSnapshot | undefined,
+  context: {
+    currentState: string;
+    queueDepth: number;
+    currentAllowedRps: number | null;
+    lastThrottleCode: string | null;
+    lastThrottleClass: string | null;
+  },
+): RuntimeKisBudgetPayload {
+  const tenSec = buildKisBudgetWindowPayload(snapshot?.windows.tenSec);
+  const sixtySec = buildKisBudgetWindowPayload(snapshot?.windows.sixtySec);
+  const risk = classifyKisBudgetRisk({
+    context,
+    sixtySec,
+  });
+  return {
+    generatedAt: millisToIso(snapshot?.generatedAtMs ?? null),
+    riskState: risk.riskState,
+    riskLabel: risk.riskLabel,
+    riskReason: risk.riskReason,
+    windows: { tenSec, sixtySec },
+  };
+}
+
+function buildKisBudgetWindowPayload(
+  window: KisBudgetMeterWindowSnapshot | undefined,
+): RuntimeKisBudgetWindowPayload {
+  if (window === undefined) {
+    return {
+      windowMs: 0,
+      startedCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      throttleCount: 0,
+      callPerSec: 0,
+      successPerSec: 0,
+      failurePerMin: 0,
+      throttlePerMin: 0,
+      byClass: [],
+    };
+  }
+  return {
+    windowMs: window.windowMs,
+    startedCount: window.startedCount,
+    successCount: window.successCount,
+    failureCount: window.failureCount,
+    throttleCount: window.throttleCount,
+    callPerSec: window.callPerSec,
+    successPerSec: window.successPerSec,
+    failurePerMin: window.failurePerMin,
+    throttlePerMin: window.throttlePerMin,
+    byClass: window.byClass.map((item) => ({
+      profileId: item.profileId,
+      endpointClass: item.endpointClass,
+      priorityClass: item.priorityClass,
+      startedCount: item.startedCount,
+      successCount: item.successCount,
+      failureCount: item.failureCount,
+      throttleCount: item.throttleCount,
+      callPerSec: item.callPerSec,
+      successPerSec: item.successPerSec,
+      failurePerMin: item.failurePerMin,
+      throttlePerMin: item.throttlePerMin,
+      queueDepth: item.queueDepth,
+      currentAllowedRps: item.currentAllowedRps,
+    })),
+  };
+}
+
+function classifyKisBudgetRisk(input: {
+  context: {
+    currentState: string;
+    queueDepth: number;
+    currentAllowedRps: number | null;
+    lastThrottleCode: string | null;
+    lastThrottleClass: string | null;
+  };
+  sixtySec: RuntimeKisBudgetWindowPayload;
+}): Pick<RuntimeKisBudgetPayload, 'riskState' | 'riskLabel' | 'riskReason'> {
+  const { context, sixtySec } = input;
+  if (context.currentState === 'unconfigured') {
+    return { riskState: 'idle', riskLabel: 'KIS 대기', riskReason: null };
+  }
+  if (context.currentState === 'throttled' || context.currentState === 'circuit_breaker') {
+    return {
+      riskState: 'throttled',
+      riskLabel: 'KIS 제한',
+      riskReason: context.lastThrottleCode ?? 'throttle',
+    };
+  }
+  if (context.currentState === 'recovering' || context.currentState === 'half_open') {
+    return {
+      riskState: 'recovering',
+      riskLabel: 'KIS 회복중',
+      riskReason: context.lastThrottleCode ?? context.currentState,
+    };
+  }
+  if (sixtySec.throttleCount > 0 || sixtySec.throttlePerMin > 0) {
+    return {
+      riskState: 'risky',
+      riskLabel: 'KIS 위험',
+      riskReason: context.lastThrottleClass !== null
+        ? `${context.lastThrottleClass} 제한`
+        : '최근 요청 제한',
+    };
+  }
+  if (context.queueDepth >= 5) {
+    return {
+      riskState: 'busy',
+      riskLabel: 'KIS 주의',
+      riskReason: `queue ${context.queueDepth}`,
+    };
+  }
+  if (
+    context.currentAllowedRps !== null
+    && context.currentAllowedRps > 0
+    && sixtySec.callPerSec >= context.currentAllowedRps * 0.7
+  ) {
+    return {
+      riskState: 'busy',
+      riskLabel: 'KIS 주의',
+      riskReason: `${sixtySec.callPerSec.toFixed(1)}/s`,
+    };
+  }
+  if (sixtySec.startedCount === 0) {
+    return { riskState: 'idle', riskLabel: 'KIS 대기', riskReason: null };
+  }
+  return {
+    riskState: 'safe',
+    riskLabel: 'KIS 여유',
+    riskReason: `${sixtySec.callPerSec.toFixed(1)}/s`,
   };
 }
 
@@ -1119,6 +1321,8 @@ function buildMarketTopMoversPayload(
       frozen: false,
       lastGoodAgeMs: null,
       partialReason: null,
+      stopReason: null,
+      rankingDiagnostics: null,
       rankingRateLimited: false,
       lastFetchedAt: null,
       lastGeneratedAt: null,
@@ -1143,6 +1347,8 @@ function buildMarketTopMoversPayload(
     frozen: snapshot.frozen,
     lastGoodAgeMs: snapshot.lastGoodAgeMs,
     partialReason: snapshot.partialReason,
+    stopReason: snapshot.stopReason,
+    rankingDiagnostics: snapshot.rankingDiagnostics,
     rankingRateLimited: snapshot.rankingRateLimited,
     lastFetchedAt: snapshot.lastFetchedAt,
     lastGeneratedAt: snapshot.lastGeneratedAt,

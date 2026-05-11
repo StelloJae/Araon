@@ -19,6 +19,7 @@ export function TopMoversBoard({ data, onOpenTicker }: TopMoversBoardProps) {
     data.sourceLabel,
     coverageLabel(data),
     partialReasonLabel(data),
+    stopReasonLabel(data),
     statusLabel(data.status),
     `${refreshSec}초마다`,
     `마지막 ${fetchedAt}`,
@@ -303,15 +304,47 @@ function coverageLabel(data: MarketTopMoversResponse): string {
 function partialReasonLabel(data: MarketTopMoversResponse): string | null {
   switch (data.partialReason) {
     case 'under_requested_limit':
-      return '부분 수신';
+      return 'KIS 부분 응답';
     case 'smaller_refresh_retained':
-      return '부분 수신 유지';
+      return '직전 데이터 유지';
     case 'rate_limited':
-      return '호출 제한';
+      return 'KIS 요청 제한';
+    case 'no_continuation':
+      return 'KIS 응답 종료';
+    case 'timeout':
+      return '시간 초과';
+    case 'malformed_response':
+      return '응답 해석 실패';
+    case 'upstream_partial_limit_suspected':
+      return 'KIS 부분 응답 한계 의심';
     case 'source_unsupported':
       return '미지원';
     case null:
       return null;
+  }
+}
+
+function stopReasonLabel(data: MarketTopMoversResponse): string | null {
+  if (data.stopReason === null || data.partialReason !== null) return null;
+  switch (data.stopReason) {
+    case 'complete':
+      return null;
+    case 'no_continuation':
+      return 'KIS 응답 종료';
+    case 'under_requested_limit':
+      return '요청 미달';
+    case 'rate_limited':
+      return 'KIS 요청 제한';
+    case 'timeout':
+      return '시간 초과';
+    case 'malformed_response':
+      return '응답 해석 실패';
+    case 'smaller_refresh_retained':
+      return '직전 데이터 유지';
+    case 'unsupported_source':
+      return '미지원';
+    case 'upstream_partial_limit_suspected':
+      return 'KIS 부분 응답 한계 의심';
   }
 }
 

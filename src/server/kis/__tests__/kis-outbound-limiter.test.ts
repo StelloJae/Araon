@@ -724,6 +724,63 @@ describe('createKisOutboundLimiter', () => {
     }));
   });
 
+  it('records rolling KIS REST budget metrics by endpoint class', async () => {
+    let now = 10_000;
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 15,
+      burst: 15,
+      now: () => now,
+      sleep: vi.fn(async (ms: number) => {
+        now += ms;
+      }),
+      classPolicies: {
+        polling: { minStartGapMs: 0 },
+        ranking: { minStartGapMs: 0 },
+      },
+    });
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+    now += 1_000;
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'ranking' });
+    limiter.recordFailure({
+      profileId: 'primary',
+      endpointClass: 'ranking',
+      error: new KisRestError('limited appSecret=SHOULD_NOT_APPEAR', 429, null, 'EGW00201', {
+        appKey: 'SHOULD_NOT_APPEAR',
+      }),
+    });
+
+    const budget = limiter.snapshot().budget;
+
+    expect(budget?.windows.sixtySec).toEqual(expect.objectContaining({
+      startedCount: 2,
+      successCount: 1,
+      failureCount: 1,
+      throttleCount: 1,
+      callPerSec: 0.03,
+      throttlePerMin: 1,
+    }));
+    expect(budget?.windows.sixtySec.byClass).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        endpointClass: 'polling',
+        priorityClass: 'polling',
+        startedCount: 1,
+        successCount: 1,
+        callPerSec: 0.02,
+      }),
+      expect.objectContaining({
+        endpointClass: 'ranking',
+        priorityClass: 'ranking',
+        startedCount: 1,
+        failureCount: 1,
+        throttleCount: 1,
+        throttlePerMin: 1,
+      }),
+    ]));
+    expect(JSON.stringify(budget)).not.toContain('SHOULD_NOT_APPEAR');
+  });
+
   it('records throttle state before draining queued work for the same class', async () => {
     let now = 0;
     const limiter = createKisOutboundLimiter({

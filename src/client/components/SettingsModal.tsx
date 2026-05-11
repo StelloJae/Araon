@@ -1595,6 +1595,8 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
           <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
             최신 1분봉: {formatMaybeLocal(oneMinute?.newestBucketAt ?? null)} · 최신 일봉:{' '}
             {formatMaybeLocal(daily?.newestBucketAt ?? null)}
+            <br />
+            KIS REST: {formatKisBudgetDetails(health.kisOutboundLimiter)}
             {health.backfill.lastSkippedReason !== null && (
               <>
                 <br />
@@ -1633,6 +1635,9 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
                 {hasText(health.marketTopMovers.partialReason) && (
                   <> · {topMoversPartialReasonLabel(health.marketTopMovers.partialReason)}</>
                 )}
+                {hasText(health.marketTopMovers.stopReason) && (
+                  <> · 원인 {topMoversStopReasonLabel(health.marketTopMovers.stopReason)}</>
+                )}
                 {health.marketTopMovers.rankingRateLimited && <> · KIS 호출 제한</>}
                 {health.marketTopMovers.lastGoodAgeMs !== null && (
                   <> · 직전 {formatDurationLabel(health.marketTopMovers.lastGoodAgeMs)}</>
@@ -1658,6 +1663,15 @@ function formatKisLimiterSummary(
   if (!limiter.configured) {
     return { label: '미시작', chipColor: 'var(--text-muted)' };
   }
+  const budget = limiter.budget ?? defaultKisBudgetPayload();
+  if (budget.riskState !== 'idle') {
+    return {
+      label: budget.riskReason !== null
+        ? `${budget.riskLabel} · ${budget.riskReason}`
+        : budget.riskLabel,
+      chipColor: kisBudgetChipColor(budget.riskState),
+    };
+  }
   const activeCooldowns = limiter.profiles.filter((profile) => profile.cooldownActive);
   if (activeCooldowns.length > 0) {
     return { label: `쿨다운 ${activeCooldowns.length}개`, chipColor: 'var(--gold-text)' };
@@ -1675,6 +1689,66 @@ function formatKisLimiterSummary(
   return {
     label: limiter.ratePerSec !== null ? `${limiter.ratePerSec}/s` : '정상',
     chipColor: 'var(--text-muted)',
+  };
+}
+
+function kisBudgetChipColor(
+  riskState: RuntimeDataHealthPayload['kisOutboundLimiter']['budget']['riskState'],
+): string {
+  switch (riskState) {
+    case 'safe':
+      return 'var(--kr-up)';
+    case 'busy':
+    case 'recovering':
+      return 'var(--gold-text)';
+    case 'risky':
+    case 'throttled':
+      return 'var(--kr-down)';
+    case 'idle':
+      return 'var(--text-muted)';
+  }
+}
+
+function formatKisBudgetDetails(limiter: RuntimeDataHealthPayload['kisOutboundLimiter']): string {
+  const budget = limiter.budget ?? defaultKisBudgetPayload();
+  const window = budget.windows.sixtySec;
+  const classRate = (priorityClass: string) =>
+    window.byClass
+      .filter((item) => item.priorityClass === priorityClass)
+      .reduce((sum, item) => sum + item.callPerSec, 0)
+      .toFixed(2);
+  return [
+    `${budget.riskLabel} ${window.callPerSec.toFixed(2)}/s`,
+    `polling ${classRate('polling')}/s`,
+    `ranking ${classRate('ranking')}/s`,
+    `foreground ${classRate('foreground')}/s`,
+    `throttle ${window.throttlePerMin.toFixed(1)}/min`,
+    `queue ${limiter.queueDepth}`,
+  ].join(' · ');
+}
+
+function defaultKisBudgetPayload(): RuntimeDataHealthPayload['kisOutboundLimiter']['budget'] {
+  const emptyWindow = {
+    windowMs: 0,
+    startedCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    throttleCount: 0,
+    callPerSec: 0,
+    successPerSec: 0,
+    failurePerMin: 0,
+    throttlePerMin: 0,
+    byClass: [],
+  };
+  return {
+    generatedAt: null,
+    riskState: 'idle',
+    riskLabel: 'KIS 대기',
+    riskReason: null,
+    windows: {
+      tenSec: emptyWindow,
+      sixtySec: emptyWindow,
+    },
   };
 }
 
@@ -1728,8 +1802,41 @@ function topMoversPartialReasonLabel(reason: string): string {
       return '직전 유지';
     case 'rate_limited':
       return '호출 제한';
+    case 'no_continuation':
+      return 'KIS 응답 종료';
+    case 'timeout':
+      return '시간 초과';
+    case 'malformed_response':
+      return '응답 해석 실패';
+    case 'upstream_partial_limit_suspected':
+      return 'KIS 부분 응답 한계 의심';
     case 'source_unsupported':
       return '미지원';
+    default:
+      return reason;
+  }
+}
+
+function topMoversStopReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'complete':
+      return '완료';
+    case 'no_continuation':
+      return 'KIS 응답 종료';
+    case 'under_requested_limit':
+      return '요청 미달';
+    case 'rate_limited':
+      return 'KIS 요청 제한';
+    case 'timeout':
+      return '시간 초과';
+    case 'malformed_response':
+      return '응답 해석 실패';
+    case 'smaller_refresh_retained':
+      return '직전 데이터 유지';
+    case 'unsupported_source':
+      return '미지원';
+    case 'upstream_partial_limit_suspected':
+      return 'KIS 부분 응답 한계 의심';
     default:
       return reason;
   }

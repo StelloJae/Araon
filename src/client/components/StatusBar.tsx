@@ -4,10 +4,13 @@
  *   KST + market tape | 총 종목 NN | 즐겨찾기 NN | 폴링 NN ─► 업데이트 HH:MM:SS ⚙
  */
 
+import { useEffect, useState } from 'react';
 import type { MarketTapeSummary as SharedMarketTapeSummary } from '@shared/types';
+import { getRuntimeDataHealth, type RuntimeDataHealthPayload } from '../lib/api-client';
 import { SettingsIcon } from '../lib/icons';
 
 export type MarketTapeSummary = Pick<SharedMarketTapeSummary, 'indicators'>;
+export type KisBudgetSummary = RuntimeDataHealthPayload['kisOutboundLimiter']['budget'];
 
 interface StatusBarProps {
   totalCount: number;
@@ -29,6 +32,29 @@ export function StatusBar({
   marketSummary,
   onOpenSettings,
 }: StatusBarProps) {
+  const [kisBudget, setKisBudget] = useState<KisBudgetSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+    async function refresh() {
+      try {
+        const health = await getRuntimeDataHealth();
+        if (!cancelled) setKisBudget(health.kisOutboundLimiter.budget);
+      } catch {
+        if (!cancelled) setKisBudget(null);
+      }
+    }
+    void refresh();
+    timer = window.setInterval(() => {
+      void refresh();
+    }, 10_000);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, []);
+
   return (
     <footer
       style={{
@@ -54,6 +80,12 @@ export function StatusBar({
       <Stat label="즐겨찾기 (WS)" value={favCount} highlight />
       <Sep />
       <Stat label="폴링" value={pollingCount} />
+      {kisBudget !== null && (
+        <>
+          <Sep />
+          <KisBudgetPill budget={kisBudget} />
+        </>
+      )}
       <div style={{ flex: 1 }} />
       <span>
         마지막 업데이트{' '}
@@ -76,6 +108,41 @@ export function StatusBar({
         <SettingsIcon size={16} />
       </button>
     </footer>
+  );
+}
+
+export function KisBudgetPill({ budget }: { budget: KisBudgetSummary }) {
+  const rate = budget.windows.sixtySec.callPerSec;
+  const queue = Math.max(
+    0,
+    ...budget.windows.sixtySec.byClass.map((item) => item.queueDepth),
+  );
+  const label = budget.riskReason !== null && budget.riskState !== 'safe'
+    ? `${budget.riskLabel} · ${budget.riskReason}`
+    : `${budget.riskLabel} · ${rate.toFixed(1)}/s`;
+  return (
+    <span
+      title={kisBudgetTitle(budget, queue)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        minWidth: 0,
+        maxWidth: 180,
+        height: 22,
+        padding: '0 8px',
+        borderRadius: 999,
+        border: `1px solid ${kisBudgetColor(budget.riskState)}`,
+        color: kisBudgetColor(budget.riskState),
+        background: 'rgba(255,255,255,0.03)',
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -152,6 +219,31 @@ function formatMarketChange(change: number, changePct: number | null): string {
   });
   if (changePct === null) return value;
   return `${value}/${changePct > 0 ? '+' : ''}${changePct.toFixed(2)}%`;
+}
+
+function kisBudgetColor(riskState: KisBudgetSummary['riskState']): string {
+  switch (riskState) {
+    case 'safe':
+      return 'var(--kr-up)';
+    case 'busy':
+    case 'recovering':
+      return 'var(--gold-text)';
+    case 'risky':
+    case 'throttled':
+      return 'var(--kr-down)';
+    case 'idle':
+      return 'var(--text-muted)';
+  }
+}
+
+function kisBudgetTitle(budget: KisBudgetSummary, queue: number): string {
+  const window = budget.windows.sixtySec;
+  const classes = window.byClass
+    .filter((item) => item.callPerSec > 0 || item.throttleCount > 0 || item.queueDepth > 0)
+    .map((item) => `${item.priorityClass} ${item.callPerSec.toFixed(2)}/s`)
+    .join(' · ');
+  const base = `KIS REST ${window.callPerSec.toFixed(2)}/s · throttle ${window.throttlePerMin.toFixed(1)}/min · queue ${queue}`;
+  return classes.length > 0 ? `${base} · ${classes}` : base;
 }
 
 interface StatProps {

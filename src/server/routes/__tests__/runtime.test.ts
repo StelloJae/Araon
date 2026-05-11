@@ -170,6 +170,31 @@ function defaultAimdPayload() {
   };
 }
 
+function defaultKisBudgetPayload() {
+  const emptyWindow = {
+    windowMs: 0,
+    startedCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    throttleCount: 0,
+    callPerSec: 0,
+    successPerSec: 0,
+    failurePerMin: 0,
+    throttlePerMin: 0,
+    byClass: [],
+  };
+  return {
+    generatedAt: null,
+    riskState: 'idle',
+    riskLabel: 'KIS 대기',
+    riskReason: null,
+    windows: {
+      tenSec: emptyWindow,
+      sixtySec: emptyWindow,
+    },
+  };
+}
+
 function defaultAimdState() {
   return {
     enabled: false,
@@ -547,6 +572,7 @@ describe('GET /runtime/data-health', () => {
           circuitBreakerUntil: null,
           recentThrottleCount: 0,
           recentSuccessCount: 0,
+          budget: defaultKisBudgetPayload(),
           aimd: defaultAimdPayload(),
           telemetry: {
             capacity: 0,
@@ -576,6 +602,8 @@ describe('GET /runtime/data-health', () => {
           frozen: false,
           lastGoodAgeMs: null,
           partialReason: null,
+          stopReason: null,
+          rankingDiagnostics: null,
           rankingRateLimited: false,
           lastFetchedAt: null,
           lastGeneratedAt: null,
@@ -688,6 +716,20 @@ describe('GET /runtime/data-health', () => {
           frozen: false,
           lastGoodAgeMs: 5_000,
           partialReason: 'under_requested_limit',
+          stopReason: 'upstream_partial_limit_suspected',
+          rankingDiagnostics: {
+            gainers: {
+              direction: 'gainers',
+              pagesAttempted: 1,
+              rowsReceived: 80,
+              rowsAccepted: 80,
+              rowsPerPage: [80],
+              continuationValues: [null],
+              stopReason: 'upstream_partial_limit_suspected',
+              durationMs: 120,
+            },
+            losers: null,
+          },
           rankingRateLimited: false,
           lastFetchedAt: '2026-05-10T10:00:00.000Z',
           lastGeneratedAt: '2026-05-10T10:00:05.000Z',
@@ -726,6 +768,20 @@ describe('GET /runtime/data-health', () => {
       frozen: false,
       lastGoodAgeMs: 5_000,
       partialReason: 'under_requested_limit',
+      stopReason: 'upstream_partial_limit_suspected',
+      rankingDiagnostics: {
+        gainers: {
+          direction: 'gainers',
+          pagesAttempted: 1,
+          rowsReceived: 80,
+          rowsAccepted: 80,
+          rowsPerPage: [80],
+          continuationValues: [null],
+          stopReason: 'upstream_partial_limit_suspected',
+          durationMs: 120,
+        },
+        losers: null,
+      },
       rankingRateLimited: false,
       lastFetchedAt: '2026-05-10T10:00:00.000Z',
       lastGeneratedAt: '2026-05-10T10:00:05.000Z',
@@ -855,6 +911,11 @@ describe('GET /runtime/data-health', () => {
       circuitBreakerUntil: null,
       recentThrottleCount: 1,
       recentSuccessCount: 3,
+      budget: expect.objectContaining({
+        riskState: 'recovering',
+        riskLabel: 'KIS 회복중',
+        riskReason: 'EGW00201',
+      }),
       aimd: {
         ...defaultAimdPayload(),
         lastDecision: expect.objectContaining({

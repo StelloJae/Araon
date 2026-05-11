@@ -176,6 +176,28 @@ export type MarketTopMoversSourcePhase =
   | 'stale_snapshot'
   | 'unsupported';
 
+export type MarketTopMoversStopReason =
+  | 'complete'
+  | 'no_continuation'
+  | 'under_requested_limit'
+  | 'rate_limited'
+  | 'timeout'
+  | 'malformed_response'
+  | 'smaller_refresh_retained'
+  | 'unsupported_source'
+  | 'upstream_partial_limit_suspected';
+
+export interface MarketTopMoversRankingDiagnostic {
+  direction: MarketTopMoverDirection;
+  pagesAttempted: number;
+  rowsReceived: number;
+  rowsAccepted: number;
+  rowsPerPage: number[];
+  continuationValues: Array<string | null>;
+  stopReason: MarketTopMoversStopReason;
+  durationMs: number | null;
+}
+
 export interface MarketTopMoversResponse {
   generatedAt: string;
   fetchedAt: string | null;
@@ -200,7 +222,16 @@ export interface MarketTopMoversResponse {
     | 'smaller_refresh_retained'
     | 'rate_limited'
     | 'source_unsupported'
+    | 'no_continuation'
+    | 'timeout'
+    | 'malformed_response'
+    | 'upstream_partial_limit_suspected'
     | null;
+  stopReason: MarketTopMoversStopReason | null;
+  rankingDiagnostics: {
+    gainers: MarketTopMoversRankingDiagnostic | null;
+    losers: MarketTopMoversRankingDiagnostic | null;
+  };
   rankingRateLimited: boolean;
   status: 'ready' | 'partial' | 'stale' | 'unconfigured' | 'cooldown' | 'error';
   message: string;
