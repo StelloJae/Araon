@@ -13,8 +13,11 @@ import {
 import {
   fetchTossQuoteBatch,
   fetchTossRealtimeRanking,
+  fetchTossStockByTicker,
+  fetchTossStockSearch,
   normalizeTossProductCode,
   tickerFromTossProductCode,
+  type TossStockSearchItem,
 } from './toss-public-client.js';
 
 export interface CreateTossPublicMarketDataProviderOptions {
@@ -31,12 +34,23 @@ export interface TossPublicMarketDataProvider extends MarketDataProvider {
   getTopMoversRanking(input: MarketTopMoversProviderInput): ReturnType<typeof fetchTossOverviewRanking>;
   getQuoteBatch(input: MarketQuoteBatchInput): Promise<MarketQuoteBatchResult>;
   getRealtimeRanking(input?: MarketRealtimeRankingInput): ReturnType<typeof fetchTossRealtimeRanking>;
+  searchStocks(input: { query: string; limit?: number }): Promise<{
+    providerId: 'toss-public';
+    fetchedAt: string;
+    query: string;
+    requestedLimit: number;
+    returnedCount: number;
+    items: TossStockSearchItem[];
+  }>;
+  getStockByTicker(input: { ticker: string }): Promise<TossStockSearchItem | null>;
 }
 
 const CAPABILITIES = [
   'top-movers',
   'quote-batch',
   'realtime-ranking',
+  'stock-metadata',
+  'search',
 ] as const;
 
 export function createTossPublicMarketDataProvider({
@@ -113,6 +127,30 @@ export function createTossPublicMarketDataProvider({
         ...(infoBaseUrl !== undefined ? { infoBaseUrl } : {}),
       }));
     },
+    async searchStocks(input) {
+      const requestedLimit = normalizeSearchLimit(input.limit);
+      const items = await run('TOSS_STOCK_SEARCH_FAILED', () => fetchTossStockSearch({
+        query: input.query,
+        limit: requestedLimit,
+        fetchFn,
+        ...(infoBaseUrl !== undefined ? { infoBaseUrl } : {}),
+      }));
+      return {
+        providerId: 'toss-public',
+        fetchedAt: now().toISOString(),
+        query: input.query.trim(),
+        requestedLimit,
+        returnedCount: items.length,
+        items,
+      };
+    },
+    getStockByTicker(input) {
+      return run('TOSS_STOCK_LOOKUP_FAILED', () => fetchTossStockByTicker({
+        ticker: input.ticker,
+        fetchFn,
+        ...(infoBaseUrl !== undefined ? { infoBaseUrl } : {}),
+      }));
+    },
     getHealth(): MarketDataProviderHealth {
       return {
         providerId: 'toss-public',
@@ -129,6 +167,11 @@ export function createTossPublicMarketDataProvider({
       };
     },
   };
+}
+
+function normalizeSearchLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return 8;
+  return Math.min(20, Math.max(1, Math.trunc(limit)));
 }
 
 function normalizeRequestedTickers(tickers: readonly string[]): string[] {

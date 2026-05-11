@@ -3,6 +3,7 @@ import type { TossRealtimeRankingMarket, TossRealtimeRankingResponse } from '@sh
 import type { MarketQuoteBatchResult } from '../market/market-data-provider.js';
 import type { MarketSummaryService } from '../market/market-summary-service.js';
 import type { MarketTopMoversService } from '../market/market-top-movers-service.js';
+import type { TossStockSearchItem } from '../toss/toss-public-client.js';
 
 export interface TossRealtimeRankingService {
   getRealtimeRanking(input?: {
@@ -15,11 +16,23 @@ export interface TossQuoteService {
   getQuoteBatch(input: { tickers: readonly string[] }): Promise<MarketQuoteBatchResult>;
 }
 
+export interface TossSearchService {
+  searchStocks(input: { query: string; limit?: number }): Promise<{
+    providerId: 'toss-public';
+    fetchedAt: string;
+    query: string;
+    requestedLimit: number;
+    returnedCount: number;
+    items: TossStockSearchItem[];
+  }>;
+}
+
 export interface MarketRoutesOptions extends FastifyPluginOptions {
   service: MarketSummaryService;
   topMoversService?: MarketTopMoversService;
   tossRealtimeRankingService?: TossRealtimeRankingService;
   tossQuoteService?: TossQuoteService;
+  tossSearchService?: TossSearchService;
 }
 
 export async function marketRoutes(
@@ -88,6 +101,34 @@ export async function marketRoutes(
       });
     }
     const data = await opts.tossQuoteService.getQuoteBatch({ tickers });
+    return reply.send({ success: true, data });
+  });
+
+  app.get('/market/toss/search', async (request, reply) => {
+    if (opts.tossSearchService === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: 'TOSS_SEARCH_UNAVAILABLE',
+          message: 'Toss stock search service is not configured.',
+        },
+      });
+    }
+    const query = request.query as { q?: string; limit?: string };
+    const q = query.q?.trim() ?? '';
+    if (q.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'INVALID_SEARCH_QUERY',
+          message: 'Search query is required.',
+        },
+      });
+    }
+    const data = await opts.tossSearchService.searchStocks({
+      query: q,
+      ...(query.limit === undefined ? {} : { limit: Number(query.limit) }),
+    });
     return reply.send({ success: true, data });
   });
 }

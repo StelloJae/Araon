@@ -193,4 +193,50 @@ describe('market routes', () => {
       error: { code: 'INVALID_TICKERS' },
     });
   });
+
+  it('returns Toss public stock search results through a read-only route', async () => {
+    const app = Fastify({ logger: false });
+    const searchStocks = vi.fn(async () => ({
+      providerId: 'toss-public' as const,
+      fetchedAt: '2026-05-11T07:10:00.000Z',
+      query: '삼성',
+      requestedLimit: 8,
+      returnedCount: 1,
+      items: [
+        {
+          ticker: '005930',
+          productCode: 'A005930',
+          name: '삼성전자',
+          market: 'KOSPI' as const,
+          matchType: 'EXACT',
+          source: 'toss-public-search' as const,
+        },
+      ],
+    }));
+
+    await app.register(marketRoutes, {
+      service: {
+        getSummary: vi.fn(),
+      },
+      tossSearchService: {
+        searchStocks,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/market/toss/search?q=%EC%82%BC%EC%84%B1&limit=8',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(searchStocks).toHaveBeenCalledWith({ query: '삼성', limit: 8 });
+    expect(res.json()).toMatchObject({
+      success: true,
+      data: {
+        providerId: 'toss-public',
+        returnedCount: 1,
+        items: [{ ticker: '005930', name: '삼성전자', market: 'KOSPI' }],
+      },
+    });
+  });
 });

@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { createChildLogger } from '@shared/logger.js';
 import type { CredentialStore } from '../credential-store.js';
 import type { MasterStockService } from '../services/master-stock-service.js';
+import type { TossStockSearchItem } from '../toss/toss-public-client.js';
 import type {
   MasterStockRepository,
   StockRepository,
@@ -31,6 +32,9 @@ interface MasterRoutesOptions {
   masterRepo: MasterStockRepository;
   stockRepo: StockRepository;
   credentialStore: CredentialStore;
+  tossStockLookup?: {
+    getStockByTicker(input: { ticker: string }): Promise<TossStockSearchItem | null>;
+  };
 }
 
 const fromMasterBodySchema = z.object({
@@ -41,7 +45,7 @@ export async function masterRoutes(
   app: FastifyInstance,
   opts: MasterRoutesOptions,
 ): Promise<void> {
-  const { service, masterRepo, stockRepo, credentialStore } = opts;
+  const { service, masterRepo, stockRepo, credentialStore, tossStockLookup } = opts;
 
   app.get('/master/list', async (_request, reply) => {
     const payload = service.list();
@@ -107,6 +111,69 @@ export async function masterRoutes(
       data: {
         stock: { ticker: master.ticker, name: master.name, market: master.market },
         created: true,
+      },
+    });
+  });
+
+  app.post('/stocks/from-toss-search', async (request, reply) => {
+    if (tossStockLookup === undefined) {
+      return reply.code(503).send({
+        success: false,
+        error: {
+          code: 'TOSS_STOCK_LOOKUP_UNAVAILABLE',
+          message: 'Toss stock lookup service is not configured.',
+        },
+      });
+    }
+    const parsed = fromMasterBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ success: false, error: parsed.error.issues });
+    }
+    const { ticker } = parsed.data;
+
+    const existing = stockRepo.findByTicker(ticker);
+    if (existing !== null) {
+      return reply.send({
+        success: true,
+        data: { stock: existing, created: false, source: 'local' },
+      });
+    }
+
+    let stock: TossStockSearchItem | null;
+    try {
+      stock = await tossStockLookup.getStockByTicker({ ticker });
+    } catch {
+      return reply.code(502).send({
+        success: false,
+        error: {
+          code: 'TOSS_STOCK_LOOKUP_FAILED',
+          message: 'Toss stock lookup failed.',
+        },
+      });
+    }
+    if (stock === null) {
+      return reply.code(404).send({
+        success: false,
+        error: {
+          code: 'TOSS_STOCK_NOT_FOUND',
+          message: 'Toss stock lookup returned no supported KRX stock.',
+        },
+      });
+    }
+
+    await stockRepo.bulkUpsert([
+      { ticker: stock.ticker, name: stock.name, market: stock.market },
+    ]);
+    log.info({ ticker, name: stock.name }, 'promoted Toss search ticker to tracked catalog');
+
+    return reply.code(201).send({
+      success: true,
+      data: {
+        stock: { ticker: stock.ticker, name: stock.name, market: stock.market },
+        created: true,
+        source: 'toss-public-search',
       },
     });
   });

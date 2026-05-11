@@ -395,12 +395,19 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(settingsRoutes, { settingsStore });
   await app.register(favoritesRoutes, { favoriteRepo, runtimeRef });
   await app.register(async (inner) => { importRoutes(inner, { stockRepo, runtimeRef }); });
-  await app.register(masterRoutes, { service: masterService, masterRepo, stockRepo, credentialStore });
+  await app.register(masterRoutes, {
+    service: masterService,
+    masterRepo,
+    stockRepo,
+    credentialStore,
+    tossStockLookup: tossPublicMarketDataProvider,
+  });
   await app.register(marketRoutes, {
     service: marketSummaryService,
     topMoversService: marketTopMoversService,
     tossRealtimeRankingService,
     tossQuoteService: tossPublicMarketDataProvider,
+    tossSearchService: tossPublicMarketDataProvider,
   });
   await app.register(tossAuthRoutes, {
     sessionStore: tossSessionStore,

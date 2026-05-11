@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  fetchTossStockByTicker,
   fetchTossQuoteBatch,
   fetchTossRealtimeRanking,
+  fetchTossStockSearch,
 } from '../toss-public-client.js';
 
 function jsonResponse(body: unknown): Response {
@@ -194,5 +196,97 @@ describe('toss public client', () => {
     expect(result.items[0]?.ticker).toBe('005930');
     expect(result.coverage.market).toBe('kr');
     expect(result.message).toContain('토스 공개 인기 랭킹');
+  });
+
+  it('searches Toss stocks and keeps only Korean stocks with known markets', async () => {
+    const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/v2/search/stocks')) {
+        expect(init?.method).toBe('POST');
+        expect(init?.body).toBe(JSON.stringify({ query: '삼성' }));
+        return jsonResponse({
+          result: {
+            stocks: [
+              { stockCode: 'A005930', stockName: '삼성전자', matchType: 'EXACT' },
+              { stockCode: 'A028260', stockName: '삼성물산', matchType: 'AFFILIATE' },
+              { stockCode: 'US123456789', stockName: 'Samsung US', matchType: 'UNKNOWN' },
+            ],
+          },
+        });
+      }
+      if (url.includes('/api/v1/stock-infos')) {
+        expect(url).toContain('A005930%2CA028260');
+        return jsonResponse({
+          result: [
+            {
+              code: 'A005930',
+              symbol: '005930',
+              name: '삼성전자',
+              currency: 'KRW',
+              market: { code: 'KSP', displayName: '코스피' },
+            },
+            {
+              code: 'A028260',
+              symbol: '028260',
+              name: '삼성물산',
+              currency: 'KRW',
+              market: { code: 'KSP', displayName: '코스피' },
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    const rows = await fetchTossStockSearch({ query: '삼성', limit: 8, fetchFn });
+
+    expect(rows).toEqual([
+      {
+        ticker: '005930',
+        productCode: 'A005930',
+        name: '삼성전자',
+        market: 'KOSPI',
+        matchType: 'EXACT',
+        source: 'toss-public-search',
+      },
+      {
+        ticker: '028260',
+        productCode: 'A028260',
+        name: '삼성물산',
+        market: 'KOSPI',
+        matchType: 'AFFILIATE',
+        source: 'toss-public-search',
+      },
+    ]);
+  });
+
+  it('loads a single Toss stock by ticker for local catalog promotion', async () => {
+    const fetchFn = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      expect(url).toContain('/api/v1/stock-infos');
+      expect(url).toContain('A000660');
+      return jsonResponse({
+        result: [
+          {
+            code: 'A000660',
+            symbol: '000660',
+            name: 'SK하이닉스',
+            currency: 'KRW',
+            market: { code: 'KSP', displayName: '코스피' },
+          },
+        ],
+      });
+    });
+
+    const row = await fetchTossStockByTicker({ ticker: '000660', fetchFn });
+
+    expect(row).toEqual({
+      ticker: '000660',
+      productCode: 'A000660',
+      name: 'SK하이닉스',
+      market: 'KOSPI',
+      matchType: null,
+      source: 'toss-public-search',
+    });
   });
 });

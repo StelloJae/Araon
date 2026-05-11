@@ -3,12 +3,13 @@
  *
  * Behavior:
  *   - ⌘K / Ctrl+K / `/` (when no input focused) focuses the box.
- *   - Typing filters across BOTH the tracked catalog and the master KRX
- *     universe via `rankStockSearchCombined`.
+ *   - Typing filters tracked catalog, local master KRX universe, and Toss
+ *     public search when the local catalog is incomplete.
  *   - Tracked-row hits show a "추적 중" badge and open the detail modal
  *     directly. Master-only hits show a "전체 종목" badge and a `+ 추가`
  *     button — clicking either pushes the ticker into the tracked catalog
- *     (`POST /stocks/from-master`) and then opens the detail modal.
+ *     (`POST /stocks/from-master` or `/stocks/from-toss-search`) and then opens
+ *     the detail modal.
  *   - Empty query + open shows the most recent picks (localStorage).
  *   - First focus calls `useMasterStore.ensureLoaded()` so the master list
  *     is available even when `requestIdleCallback` preload was skipped.
@@ -16,11 +17,18 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { addStockFromMaster, type ApiError } from '../lib/api-client';
+import {
+  addStockFromMaster,
+  addStockFromTossSearch,
+  searchTossStocks,
+  type ApiError,
+  type TossStockSearchItem,
+} from '../lib/api-client';
 import { fmtPct, fmtPrice, krColor } from '../lib/format';
 import { CloseIcon, SearchIcon } from '../lib/icons';
 import {
   MAX_SEARCH_RESULTS,
+  mergeTossSearchResults,
   rankStockSearchCombined,
   type CombinedSearchResult,
 } from '../lib/stock-search';
@@ -74,6 +82,9 @@ export function GlobalSearch({
   const [recent, setRecent] = useState<string[]>(() => loadRecent());
   const [pendingAdd, setPendingAdd] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+  const [tossResults, setTossResults] = useState<ReadonlyArray<TossStockSearchItem>>([]);
+  const [tossSearchStatus, setTossSearchStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -119,15 +130,46 @@ export function GlobalSearch({
   }, []);
 
   const results = useMemo<CombinedSearchResult[]>(
-    () =>
-      rankStockSearchCombined(
+    () => {
+      const localResults = rankStockSearchCombined(
         query,
         allStocks,
         masterItems,
         MAX_SEARCH_RESULTS,
-      ),
-    [query, allStocks, masterItems],
+      );
+      return mergeTossSearchResults(localResults, tossResults, MAX_SEARCH_RESULTS);
+    },
+    [query, allStocks, masterItems, tossResults],
   );
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!open || trimmed.length === 0) {
+      setTossResults([]);
+      setTossSearchStatus('idle');
+      return;
+    }
+    let cancelled = false;
+    setTossResults([]);
+    setTossSearchStatus('loading');
+    const timer = window.setTimeout(() => {
+      void searchTossStocks(trimmed, MAX_SEARCH_RESULTS)
+        .then((payload) => {
+          if (cancelled) return;
+          setTossResults(payload.items);
+          setTossSearchStatus('ready');
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setTossResults([]);
+          setTossSearchStatus('error');
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query, open]);
 
   const showRecent = open && query.trim().length === 0;
   const recentResults = useMemo<CombinedSearchResult[]>(() => {
@@ -140,13 +182,14 @@ export function GlobalSearch({
     for (const code of recent) {
       const tracked = trackedByCode.get(code);
       if (tracked !== undefined) {
-        out.push({
-          code: tracked.code,
-          name: tracked.name,
-          market: tracked.market,
-          vm: tracked,
-          isTracked: true,
-        });
+          out.push({
+            code: tracked.code,
+            name: tracked.name,
+            market: tracked.market,
+            vm: tracked,
+            isTracked: true,
+            origin: 'tracked',
+          });
       } else {
         const master = masterByCode.get(code);
         if (master !== undefined) {
@@ -156,6 +199,7 @@ export function GlobalSearch({
             market: master.market,
             vm: null,
             isTracked: false,
+            origin: 'master',
           });
         }
       }
@@ -188,7 +232,11 @@ export function GlobalSearch({
     // Master-only: promote into tracked catalog first, then open detail.
     setPendingAdd(item.code);
     try {
-      await addStockFromMaster(item.code);
+      if (item.origin === 'toss') {
+        await addStockFromTossSearch(item.code);
+      } else {
+        await addStockFromMaster(item.code);
+      }
       await syncTrackedCatalogAfterMasterAdd({ setCatalog, setThemes });
       setQuery('');
       setOpen(false);
@@ -361,7 +409,9 @@ export function GlobalSearch({
                 textAlign: 'center',
               }}
             >
-              "{query}" 일치하는 종목 없음
+              {tossSearchStatus === 'loading'
+                ? '토스 검색 중…'
+                : `"${query}" 일치하는 종목 없음`}
             </div>
           )}
           {addError !== null && (

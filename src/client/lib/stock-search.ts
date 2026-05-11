@@ -20,7 +20,7 @@
  * (e.g. by sector) is reflected in the dropdown.
  */
 
-import type { MasterStockEntry } from './api-client';
+import type { MasterStockEntry, TossStockSearchItem } from './api-client';
 import type { StockViewModel } from './view-models';
 import { getChosung } from './chosung';
 
@@ -59,6 +59,7 @@ export interface CombinedSearchResult {
   /** Live VM if the ticker is in the user's tracked catalog; null otherwise. */
   vm: StockViewModel | null;
   isTracked: boolean;
+  origin: 'tracked' | 'master' | 'toss';
 }
 
 /**
@@ -137,6 +138,7 @@ export function rankStockSearchCombined(
       market: t.vm.market,
       vm: t.vm,
       isTracked: true,
+      origin: 'tracked',
     });
     if (out.length >= limit) return out;
   }
@@ -147,8 +149,32 @@ export function rankStockSearchCombined(
       market: m.entry.market,
       vm: null,
       isTracked: false,
+      origin: 'master',
     });
     if (out.length >= limit) return out;
+  }
+  return out;
+}
+
+export function mergeTossSearchResults(
+  localResults: ReadonlyArray<CombinedSearchResult>,
+  tossResults: ReadonlyArray<TossStockSearchItem>,
+  limit: number = MAX_SEARCH_RESULTS,
+): CombinedSearchResult[] {
+  const out = localResults.slice(0, limit);
+  const seen = new Set(out.map((item) => item.code));
+  for (const item of tossResults) {
+    if (seen.has(item.ticker)) continue;
+    out.push({
+      code: item.ticker,
+      name: item.name,
+      market: item.market,
+      vm: null,
+      isTracked: false,
+      origin: 'toss',
+    });
+    seen.add(item.ticker);
+    if (out.length >= limit) break;
   }
   return out;
 }

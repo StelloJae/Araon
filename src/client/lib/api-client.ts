@@ -108,6 +108,35 @@ export async function getTossRealtimeRanking(
   return unwrap<TossRealtimeRankingResponse>(res);
 }
 
+export interface TossStockSearchItem {
+  ticker: string;
+  productCode: string;
+  name: string;
+  market: 'KOSPI' | 'KOSDAQ';
+  matchType: string | null;
+  source: 'toss-public-search';
+}
+
+export interface TossStockSearchPayload {
+  providerId: 'toss-public';
+  fetchedAt: string;
+  query: string;
+  requestedLimit: number;
+  returnedCount: number;
+  items: TossStockSearchItem[];
+}
+
+export async function searchTossStocks(
+  query: string,
+  limit: number = 8,
+): Promise<TossStockSearchPayload> {
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('limit', String(limit));
+  const res = await fetch(`/market/toss/search?${params.toString()}`);
+  return unwrap<TossStockSearchPayload>(res);
+}
+
 // === Toss auth/realtime controls ==========================================
 
 export type TossSessionState =
@@ -1188,12 +1217,24 @@ export async function refreshMaster(): Promise<MasterRefreshStatus> {
 export interface FromMasterResult {
   stock: Stock;
   created: boolean;
+  source?: 'local' | 'toss-public-search';
 }
 
 export async function addStockFromMaster(
   ticker: string,
 ): Promise<FromMasterResult> {
   const res = await fetch('/stocks/from-master', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticker }),
+  });
+  return unwrap<FromMasterResult>(res);
+}
+
+export async function addStockFromTossSearch(
+  ticker: string,
+): Promise<FromMasterResult> {
+  const res = await fetch('/stocks/from-toss-search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ticker }),

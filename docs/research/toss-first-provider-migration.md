@@ -43,6 +43,11 @@ The public phase covers:
 - First-run search no longer auto-posts `/master/refresh` without KIS
   credentials. It reads the local master cache and waits for explicit KIS setup
   before trying the KIS MST refresh path.
+- Header search now also uses Toss public stock search when the local master
+  cache is incomplete. Search hits are promoted through `/stocks/from-toss-search`
+  after Araon re-reads Toss stock metadata and verifies the row is a supported
+  KOSPI/KOSDAQ stock. The client does not trust client-supplied market/name
+  values for local catalog writes.
 
 The quote batch currently maps Toss rows into Araon's existing `Price` contract
 with `source='rest'` for compatibility. A future provider-neutral source label
@@ -71,7 +76,7 @@ KIS remains in place for:
 | SSE price delivery | App-level SSE manager now works without KIS runtime. | Use it for Toss polling updates and KIS/other providers alike. |
 | KIS realtime WebSocket | Still KIS-only. | Retain until Toss authenticated realtime proves true price-tick coverage. |
 | Charts/backfill | Still KIS daily/minute candle endpoints. | Retain; Toss chart alternative is not proven yet. |
-| Search/master metadata | Still KIS MST/local master cache. | Retain until Toss or another full-market metadata source is implemented. |
+| Search/master metadata | Toss public search can add supported KOSPI/KOSDAQ stocks without KIS; KIS MST/local master cache remains for full offline universe/classification. | Keep KIS MST as optional metadata enrichment until Toss/another source covers full-market classification. |
 | KIS watchlist import | Still KIS-only import convenience. | Retain as optional import, not core runtime. |
 
 Do not remove KIS runtime, credentials, or governor code until Toss quote,

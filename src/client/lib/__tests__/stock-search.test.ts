@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rankStockSearch } from '../stock-search';
+import { mergeTossSearchResults, rankStockSearch } from '../stock-search';
 import type { StockViewModel } from '../view-models';
 
 function vm(code: string, name: string, market: 'KOSPI' | 'KOSDAQ' = 'KOSPI'): StockViewModel {
@@ -125,5 +125,53 @@ describe('rankStockSearch', () => {
     const r = rankStockSearch('ㅎ', stocks, 1);
     // Both 한미반도체 and SK하이닉스 (chosung "skㅎㅇㄴㅅ") and 현대차 contain ㅎ.
     expect(r).toHaveLength(1);
+  });
+});
+
+describe('mergeTossSearchResults', () => {
+  it('appends Toss search hits without duplicating tracked or master results', () => {
+    const local = [
+      {
+        code: '005930',
+        name: '삼성전자',
+        market: 'KOSPI' as const,
+        vm: vm('005930', '삼성전자'),
+        isTracked: true,
+        origin: 'tracked' as const,
+      },
+      {
+        code: '000660',
+        name: 'SK하이닉스',
+        market: 'KOSPI' as const,
+        vm: null,
+        isTracked: false,
+        origin: 'master' as const,
+      },
+    ];
+
+    const merged = mergeTossSearchResults(local, [
+      {
+        ticker: '005930',
+        productCode: 'A005930',
+        name: '삼성전자',
+        market: 'KOSPI',
+        matchType: 'EXACT',
+        source: 'toss-public-search',
+      },
+      {
+        ticker: '028260',
+        productCode: 'A028260',
+        name: '삼성물산',
+        market: 'KOSPI',
+        matchType: 'AFFILIATE',
+        source: 'toss-public-search',
+      },
+    ], 8);
+
+    expect(merged.map((item) => [item.code, item.origin])).toEqual([
+      ['005930', 'tracked'],
+      ['000660', 'master'],
+      ['028260', 'toss'],
+    ]);
   });
 });

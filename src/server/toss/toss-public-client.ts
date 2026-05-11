@@ -28,6 +28,28 @@ export interface TossQuoteBatchOptions {
   infoBaseUrl?: string;
 }
 
+export interface TossStockSearchOptions {
+  query: string;
+  limit?: number;
+  fetchFn?: typeof fetch;
+  infoBaseUrl?: string;
+}
+
+export interface TossStockByTickerOptions {
+  ticker: string;
+  fetchFn?: typeof fetch;
+  infoBaseUrl?: string;
+}
+
+export interface TossStockSearchItem {
+  ticker: string;
+  productCode: string;
+  name: string;
+  market: 'KOSPI' | 'KOSDAQ';
+  matchType: string | null;
+  source: 'toss-public-search';
+}
+
 interface TossEnvelope<T> {
   result?: T;
 }
@@ -53,6 +75,27 @@ interface TossPriceRow {
   base?: unknown;
   close?: unknown;
   volume?: unknown;
+}
+
+interface TossSearchResult {
+  stocks?: unknown;
+}
+
+interface TossSearchRow {
+  stockCode?: unknown;
+  stockName?: unknown;
+  matchType?: unknown;
+}
+
+interface TossStockInfoRow {
+  code?: unknown;
+  symbol?: unknown;
+  name?: unknown;
+  currency?: unknown;
+  market?: {
+    code?: unknown;
+    displayName?: unknown;
+  };
 }
 
 interface RankedStock {
@@ -161,6 +204,51 @@ export async function fetchTossQuoteBatch({
   return out;
 }
 
+export async function fetchTossStockSearch({
+  query,
+  limit,
+  fetchFn = fetch,
+  infoBaseUrl = DEFAULT_INFO_BASE_URL,
+}: TossStockSearchOptions): Promise<TossStockSearchItem[]> {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return [];
+  const safeLimit = clampSearchLimit(limit);
+  const searchUrl = new URL('/api/v2/search/stocks', normalizeBase(infoBaseUrl));
+  const envelope = await fetchJson<TossEnvelope<TossSearchResult>>(fetchFn, searchUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: trimmed }),
+  });
+  const searchRows = parseSearchRows(envelope.result?.stocks).slice(0, safeLimit * 2);
+  const productCodes = searchRows
+    .map((row) => row.productCode)
+    .filter((code): code is string => code !== null);
+  const infoMap = await fetchStockInfoMap(fetchFn, infoBaseUrl, productCodes);
+  const out: TossStockSearchItem[] = [];
+  for (const row of searchRows) {
+    if (row.productCode === null) continue;
+    const info = infoMap.get(row.productCode);
+    if (info === undefined) continue;
+    const item = mapStockInfoToSearchItem(info, row.matchType);
+    if (item === null) continue;
+    out.push(item);
+    if (out.length >= safeLimit) break;
+  }
+  return out;
+}
+
+export async function fetchTossStockByTicker({
+  ticker,
+  fetchFn = fetch,
+  infoBaseUrl = DEFAULT_INFO_BASE_URL,
+}: TossStockByTickerOptions): Promise<TossStockSearchItem | null> {
+  const productCode = normalizeTossProductCode(ticker);
+  if (productCode === null) return null;
+  const infoMap = await fetchStockInfoMap(fetchFn, infoBaseUrl, [productCode]);
+  const info = infoMap.get(productCode);
+  return info === undefined ? null : mapStockInfoToSearchItem(info, null);
+}
+
 async function fetchPriceMap(
   fetchFn: typeof fetch,
   infoBaseUrl: string,
@@ -187,6 +275,84 @@ async function fetchPriceMap(
     });
   }
   return out;
+}
+
+async function fetchStockInfoMap(
+  fetchFn: typeof fetch,
+  infoBaseUrl: string,
+  productCodes: readonly string[],
+): Promise<Map<string, TossStockInfoRow>> {
+  const unique = Array.from(new Set(productCodes.filter((code) => /^A\d{6}$/.test(code))));
+  if (unique.length === 0) return new Map();
+  const url = new URL('/api/v1/stock-infos', normalizeBase(infoBaseUrl));
+  url.searchParams.set('codes', unique.join(','));
+  const envelope = await fetchJson<TossEnvelope<unknown>>(fetchFn, url);
+  const rows = Array.isArray(envelope.result) ? envelope.result : [];
+  const out = new Map<string, TossStockInfoRow>();
+  for (const raw of rows) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const row = raw as TossStockInfoRow;
+    const code = readString(row.code);
+    if (code === null) continue;
+    out.set(code, row);
+  }
+  return out;
+}
+
+function parseSearchRows(rawRows: unknown): Array<{
+  productCode: string | null;
+  matchType: string | null;
+}> {
+  if (!Array.isArray(rawRows)) return [];
+  const out: Array<{ productCode: string | null; matchType: string | null }> = [];
+  const seen = new Set<string>();
+  for (const raw of rawRows) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const row = raw as TossSearchRow;
+    const productCode = normalizeTossProductCode(readString(row.stockCode) ?? '');
+    if (productCode === null || seen.has(productCode)) continue;
+    seen.add(productCode);
+    out.push({
+      productCode,
+      matchType: readString(row.matchType),
+    });
+  }
+  return out;
+}
+
+function mapStockInfoToSearchItem(
+  row: TossStockInfoRow,
+  matchType: string | null,
+): TossStockSearchItem | null {
+  const productCode = readString(row.code);
+  const ticker = readString(row.symbol) ?? tickerFromTossProductCode(productCode ?? '');
+  const name = readString(row.name);
+  const market = mapTossMarket(row.market);
+  if (
+    productCode === null ||
+    ticker === null ||
+    name === null ||
+    market === null ||
+    row.currency !== 'KRW'
+  ) {
+    return null;
+  }
+  return {
+    ticker,
+    productCode,
+    name,
+    market,
+    matchType,
+    source: 'toss-public-search',
+  };
+}
+
+function mapTossMarket(market: TossStockInfoRow['market']): 'KOSPI' | 'KOSDAQ' | null {
+  const code = readString(market?.code)?.toUpperCase() ?? '';
+  const displayName = readString(market?.displayName) ?? '';
+  if (code === 'KSP' || /코스피|KOSPI/i.test(displayName)) return 'KOSPI';
+  if (code === 'KDQ' || /코스닥|KOSDAQ/i.test(displayName)) return 'KOSDAQ';
+  return null;
 }
 
 export function normalizeTossProductCode(symbol: string): string | null {
@@ -216,11 +382,17 @@ function normalizeRequestedProductCodes(tickers: readonly string[]): string[] {
   return out;
 }
 
-async function fetchJson<T>(fetchFn: typeof fetch, url: URL): Promise<T> {
+async function fetchJson<T>(
+  fetchFn: typeof fetch,
+  url: URL,
+  init: RequestInit = {},
+): Promise<T> {
   const response = await fetchFn(url.toString(), {
+    ...init,
     headers: {
       accept: 'application/json',
       'user-agent': DEFAULT_BROWSER_USER_AGENT,
+      ...init.headers,
     },
   });
   if (!response.ok) {
@@ -292,6 +464,11 @@ function buildMessage(
 function clampLimit(limit: number | undefined): number {
   if (limit === undefined || !Number.isFinite(limit)) return MAX_RANKING_LIMIT;
   return Math.min(MAX_RANKING_LIMIT, Math.max(1, Math.trunc(limit)));
+}
+
+function clampSearchLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return 8;
+  return Math.min(20, Math.max(1, Math.trunc(limit)));
 }
 
 function normalizeBase(base: string): string {
