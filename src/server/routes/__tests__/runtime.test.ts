@@ -243,6 +243,7 @@ async function build(
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
     backgroundBackfill?: { snapshot(): { running: boolean; lastRunAt: string | null; lastFinishedAt: string | null; lastAttempted: number; lastSucceeded: number; lastFailed: number; lastSkippedReason: 'disabled' | 'market_not_allowed' | 'no_tickers' | 'no_stale_tickers' | 'already_running' | 'cooldown' | null } };
     marketTopMoversService?: { snapshot(): any };
+    tossQuotePolling?: { snapshot(): any };
     phoneNotifier?: {
       status(): { configured: boolean; provider: 'telegram'; mode: 'env' };
       sendAlert(input: { title: string; detail: string; ticker: string; name: string }): Promise<{ sent: boolean; reason?: string }>;
@@ -279,6 +280,7 @@ async function build(
     backfillStateStore: opts.backfillStateStore,
     backgroundBackfill: opts.backgroundBackfill,
     marketTopMoversService: opts.marketTopMoversService,
+    tossQuotePolling: opts.tossQuotePolling,
     phoneNotifier: opts.phoneNotifier,
     phoneDeliveryLog: opts.phoneDeliveryLog,
   });
@@ -594,6 +596,27 @@ describe('GET /runtime/data-health', () => {
           endpointPolicies: [],
           profiles: [],
         },
+        tossQuotePolling: {
+          configured: false,
+          running: false,
+          enabled: false,
+          source: null,
+          cycleCount: 0,
+          lastCycleMs: 0,
+          tickersInCycle: 0,
+          requestedCount: 0,
+          returnedCount: 0,
+          missingCount: 0,
+          errorCount: 0,
+          consecutiveFailureCount: 0,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastErrorCode: null,
+          lastMessage: null,
+          intervalMs: null,
+          batchSize: null,
+          suppressingKisPolling: false,
+        },
         marketTopMovers: {
           configured: false,
           status: 'unconfigured',
@@ -703,6 +726,61 @@ describe('GET /runtime/data-health', () => {
         },
       },
     });
+  });
+
+  it('exposes sanitized Toss quote polling health', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      tossQuotePolling: {
+        snapshot: vi.fn(() => ({
+          running: true,
+          enabled: true,
+          source: 'toss-public',
+          cycleCount: 3,
+          lastCycleMs: 42,
+          tickersInCycle: 52,
+          requestedCount: 52,
+          returnedCount: 51,
+          missingCount: 1,
+          errorCount: 0,
+          consecutiveFailureCount: 0,
+          lastSuccessAt: '2026-05-11T01:00:00.000Z',
+          lastFailureAt: null,
+          lastErrorCode: null,
+          lastMessage: 'partial_quote_batch',
+          intervalMs: 3000,
+          batchSize: 100,
+        })),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const body = res.json();
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.tossQuotePolling).toEqual({
+      configured: true,
+      running: true,
+      enabled: true,
+      source: 'toss-public',
+      cycleCount: 3,
+      lastCycleMs: 42,
+      tickersInCycle: 52,
+      requestedCount: 52,
+      returnedCount: 51,
+      missingCount: 1,
+      errorCount: 0,
+      consecutiveFailureCount: 0,
+      lastSuccessAt: '2026-05-11T01:00:00.000Z',
+      lastFailureAt: null,
+      lastErrorCode: null,
+      lastMessage: 'partial_quote_batch',
+      intervalMs: 3000,
+      batchSize: 100,
+      suppressingKisPolling: true,
+    });
+    expect(JSON.stringify(body.data.tossQuotePolling)).not.toContain('cookie');
+    expect(JSON.stringify(body.data.tossQuotePolling)).not.toContain('token');
   });
 
   it('exposes sanitized market TOP100 cache and coverage diagnostics', async () => {

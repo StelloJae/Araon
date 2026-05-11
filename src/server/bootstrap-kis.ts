@@ -66,6 +66,7 @@ export interface KisRuntimeStaticDeps {
   snapshotStore: SnapshotStore;
   stockRepo: StockRepository;
   favoriteRepo: FavoriteRepository;
+  shouldSkipKisPolling?: (stock: Stock) => boolean;
 }
 
 export interface KisRuntimeRef {
@@ -204,7 +205,7 @@ import {
   TOKEN_ENDPOINT_PATH,
   WS_MAX_SUBSCRIPTIONS,
 } from '@shared/kis-constraints.js';
-import type { Price } from '@shared/types.js';
+import type { Price, Stock } from '@shared/types.js';
 
 import { createKisAuth } from './kis/kis-auth.js';
 import { createKisRestClient } from './kis/kis-rest-client.js';
@@ -687,7 +688,7 @@ export async function defaultActuallyStart(
         wsConnected: bridge.wsState() === 'connected',
         realtimeTickers: new Set(tierManager.getAssignment().realtimeTickers),
         currentPrice: deps.priceStore.getPrice(stock.ticker),
-      });
+      }) && deps.shouldSkipKisPolling?.(stock) !== true;
     },
   });
 

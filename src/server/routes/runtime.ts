@@ -89,6 +89,7 @@ import type {
   MarketTopMoversServiceSnapshot,
 } from '../market/market-top-movers-service.js';
 import type { KisRestProfileRouterSnapshot } from '../kis/kis-rest-profile-router.js';
+import type { TossQuotePollingSnapshot } from '../toss/toss-quote-polling-service.js';
 
 export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
@@ -117,6 +118,7 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   };
   dataRetention?: { snapshot(): DataRetentionSnapshot };
   marketTopMoversService?: Pick<MarketTopMoversService, 'snapshot'>;
+  tossQuotePolling?: { snapshot(): TossQuotePollingSnapshot };
   phoneNotifier?: PhoneNotifier;
   phoneDeliveryLog?: PhoneDeliveryLog;
 }
@@ -361,6 +363,28 @@ export interface RuntimeKisRestProfilesPayload {
     readonly activeEndpointClasses: readonly string[];
     readonly currentAllowedRps: number | null;
   }[];
+}
+
+export interface RuntimeTossQuotePollingPayload {
+  readonly configured: boolean;
+  readonly running: boolean;
+  readonly enabled: boolean;
+  readonly source: 'toss-public' | null;
+  readonly cycleCount: number;
+  readonly lastCycleMs: number;
+  readonly tickersInCycle: number;
+  readonly requestedCount: number;
+  readonly returnedCount: number;
+  readonly missingCount: number;
+  readonly errorCount: number;
+  readonly consecutiveFailureCount: number;
+  readonly lastSuccessAt: string | null;
+  readonly lastFailureAt: string | null;
+  readonly lastErrorCode: string | null;
+  readonly lastMessage: string | null;
+  readonly intervalMs: number | null;
+  readonly batchSize: number | null;
+  readonly suppressingKisPolling: boolean;
 }
 
 export interface RuntimeKisGovernorAimdPayload {
@@ -710,6 +734,7 @@ export async function runtimeRoutes(
         },
         kisOutboundLimiter: buildKisOutboundLimiterPayload(opts.runtimeRef.get()),
         kisRestProfiles: buildKisRestProfilesPayload(opts.runtimeRef.get()),
+        tossQuotePolling: buildTossQuotePollingPayload(opts.tossQuotePolling?.snapshot()),
         marketTopMovers: buildMarketTopMoversPayload(opts.marketTopMoversService?.snapshot()),
         volumeBaseline: baselineCounts,
         growth: {
@@ -1311,6 +1336,55 @@ function mapKisRestProfilesSnapshot(
       activeEndpointClasses: profile.activeEndpointClasses,
       currentAllowedRps: profile.currentAllowedRps,
     })),
+  };
+}
+
+function buildTossQuotePollingPayload(
+  snapshot: TossQuotePollingSnapshot | undefined,
+): RuntimeTossQuotePollingPayload {
+  if (snapshot === undefined) {
+    return {
+      configured: false,
+      running: false,
+      enabled: false,
+      source: null,
+      cycleCount: 0,
+      lastCycleMs: 0,
+      tickersInCycle: 0,
+      requestedCount: 0,
+      returnedCount: 0,
+      missingCount: 0,
+      errorCount: 0,
+      consecutiveFailureCount: 0,
+      lastSuccessAt: null,
+      lastFailureAt: null,
+      lastErrorCode: null,
+      lastMessage: null,
+      intervalMs: null,
+      batchSize: null,
+      suppressingKisPolling: false,
+    };
+  }
+  return {
+    configured: true,
+    running: snapshot.running,
+    enabled: snapshot.enabled,
+    source: snapshot.source,
+    cycleCount: snapshot.cycleCount,
+    lastCycleMs: snapshot.lastCycleMs,
+    tickersInCycle: snapshot.tickersInCycle,
+    requestedCount: snapshot.requestedCount,
+    returnedCount: snapshot.returnedCount,
+    missingCount: snapshot.missingCount,
+    errorCount: snapshot.errorCount,
+    consecutiveFailureCount: snapshot.consecutiveFailureCount,
+    lastSuccessAt: snapshot.lastSuccessAt,
+    lastFailureAt: snapshot.lastFailureAt,
+    lastErrorCode: snapshot.lastErrorCode,
+    lastMessage: snapshot.lastMessage,
+    intervalMs: snapshot.intervalMs,
+    batchSize: snapshot.batchSize,
+    suppressingKisPolling: snapshot.enabled && snapshot.consecutiveFailureCount < 2,
   };
 }
 

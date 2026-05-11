@@ -156,6 +156,9 @@ describe('managed operations settings copy', () => {
           applyTicksToPriceStore: true,
           backgroundDailyBackfillEnabled: true,
           backgroundDailyBackfillRange: '3m',
+          tossQuotePollingEnabled: true,
+          tossQuotePollingIntervalMs: 3000,
+          tossQuotePollingBatchSize: 100,
         },
         phase: { kind: 'idle' },
         runtimeStarted: true,
@@ -261,10 +264,40 @@ describe('managed operations settings copy', () => {
               },
             ],
           },
+          tossQuotePolling: {
+            configured: true,
+            running: true,
+            enabled: true,
+            source: 'toss-public',
+            cycleCount: 4,
+            lastCycleMs: 52,
+            tickersInCycle: 12,
+            requestedCount: 12,
+            returnedCount: 11,
+            missingCount: 1,
+            errorCount: 0,
+            consecutiveFailureCount: 0,
+            lastSuccessAt: '2026-05-06T09:00:02.000Z',
+            lastFailureAt: null,
+            lastErrorCode: null,
+            lastMessage: 'partial_quote_batch',
+            intervalMs: 3000,
+            batchSize: 100,
+            suppressingKisPolling: true,
+          },
           marketTopMovers: {
             configured: true,
             status: 'ready',
             source: 'kis-ranking-auto',
+            sourcePhase: 'regular',
+            sourceLabel: 'KIS 전체시장',
+            sourceReason: null,
+            frozen: false,
+            lastGoodAgeMs: 5000,
+            partialReason: null,
+            stopReason: null,
+            rankingDiagnostics: null,
+            rankingRateLimited: false,
             lastFetchedAt: '2026-05-06T09:00:00.000Z',
             lastGeneratedAt: '2026-05-06T09:00:05.000Z',
             cacheAgeMs: 5_000,
@@ -391,6 +424,9 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('4회');
     expect(html).toContain('KIS 요청 제한');
     expect(html).toContain('31.3초');
+    expect(html).toContain('Toss 가격 갱신');
+    expect(html).toContain('11/12 수신');
+    expect(html).toContain('KIS polling 억제');
     expect(html).toContain('TOP100 보장');
     expect(html).toContain('KIS 전체시장');
     expect(html).toContain('보강 대기 제외');

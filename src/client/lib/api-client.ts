@@ -309,6 +309,9 @@ export interface ServerRuntimeSettings {
   applyTicksToPriceStore: boolean;
   backgroundDailyBackfillEnabled: boolean;
   backgroundDailyBackfillRange: DailyBackfillRange;
+  tossQuotePollingEnabled: boolean;
+  tossQuotePollingIntervalMs: number;
+  tossQuotePollingBatchSize: number;
 }
 
 export async function getStockCandles(
@@ -975,6 +978,27 @@ export interface RuntimeDataHealthPayload {
       activeEndpointClasses: string[];
       currentAllowedRps: number | null;
     }>;
+  };
+  tossQuotePolling: {
+    configured: boolean;
+    running: boolean;
+    enabled: boolean;
+    source: 'toss-public' | null;
+    cycleCount: number;
+    lastCycleMs: number;
+    tickersInCycle: number;
+    requestedCount: number;
+    returnedCount: number;
+    missingCount: number;
+    errorCount: number;
+    consecutiveFailureCount: number;
+    lastSuccessAt: string | null;
+    lastFailureAt: string | null;
+    lastErrorCode: string | null;
+    lastMessage: string | null;
+    intervalMs: number | null;
+    batchSize: number | null;
+    suppressingKisPolling: boolean;
   };
   marketTopMovers: {
     configured: boolean;

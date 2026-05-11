@@ -29,6 +29,14 @@ The public phase covers:
 - Bulk quote rows through Toss stock-prices via `GET /market/toss/quotes`.
 - Foreground quote refresh tries Toss public quotes first, then falls back to KIS
   only when the Toss quote is unavailable or fails.
+- Watchlist quote polling now has a Toss public batch-polling service. It polls
+  tracked tickers in batches, writes only usable real prices into the existing
+  price store, and exposes sanitized status under `/runtime/data-health` as
+  `tossQuotePolling`.
+- While Toss quote polling is enabled, running, and not repeatedly failing, KIS
+  REST polling is suppressed so KIS remains a fallback path instead of consuming
+  the primary quote-refresh budget. After repeated Toss quote failures, KIS
+  polling is allowed to resume through its existing governor.
 
 The quote batch currently maps Toss rows into Araon's existing `Price` contract
 with `source='rest'` for compatibility. A future provider-neutral source label
@@ -40,7 +48,8 @@ ready for that wider contract change.
 KIS remains in place for:
 
 - Current realtime WebSocket.
-- Existing polling fallback.
+- Existing polling fallback when Toss quote polling is disabled or repeatedly
+  failing.
 - Chart/backfill paths.
 - KIS watchlist import and master metadata.
 - Rollback while Toss parity is still unproven.

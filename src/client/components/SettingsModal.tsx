@@ -1775,6 +1775,9 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
   const topMoversSummary = health !== null
     ? formatMarketTopMoversSummary(health.marketTopMovers)
     : null;
+  const tossQuoteSummary = health !== null
+    ? formatTossQuotePollingSummary(health.tossQuotePolling)
+    : null;
   return (
     <div
       data-testid="data-health-panel"
@@ -1852,6 +1855,11 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor={kisLimiterSummary?.chipColor ?? 'var(--text-muted)'}
             />
             <Row
+              k="Toss 가격 갱신"
+              v={tossQuoteSummary?.label ?? '대기'}
+              chipColor={tossQuoteSummary?.chipColor ?? 'var(--text-muted)'}
+            />
+            <Row
               k="TOP100 보장"
               v={topMoversSummary?.label ?? '대기'}
               chipColor={topMoversSummary?.chipColor ?? 'var(--text-muted)'}
@@ -1912,6 +1920,8 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
             {formatMaybeLocal(daily?.newestBucketAt ?? null)}
             <br />
             KIS REST: {formatKisBudgetDetails(health.kisOutboundLimiter)}
+            <br />
+            Toss 가격: {formatTossQuotePollingDetails(health.tossQuotePolling)}
             {health.backfill.lastSkippedReason !== null && (
               <>
                 <br />
@@ -1984,6 +1994,58 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
       )}
     </div>
   );
+}
+
+function formatTossQuotePollingSummary(
+  polling: RuntimeDataHealthPayload['tossQuotePolling'],
+): { label: string; chipColor: string } {
+  if (!polling.configured) {
+    return { label: '미구성', chipColor: 'var(--text-muted)' };
+  }
+  if (!polling.enabled) {
+    return { label: '꺼짐', chipColor: 'var(--text-muted)' };
+  }
+  if (polling.consecutiveFailureCount >= 2) {
+    return { label: 'KIS fallback', chipColor: 'var(--gold-text)' };
+  }
+  if (polling.lastErrorCode !== null) {
+    return { label: '복구 대기', chipColor: 'var(--gold-text)' };
+  }
+  if (!polling.running) {
+    return { label: '대기', chipColor: 'var(--text-muted)' };
+  }
+  if (polling.missingCount > 0) {
+    return {
+      label: `${polling.returnedCount}/${polling.tickersInCycle} 수신`,
+      chipColor: 'var(--gold-text)',
+    };
+  }
+  if (polling.cycleCount === 0) {
+    return { label: '시작 대기', chipColor: 'var(--text-muted)' };
+  }
+  return {
+    label: `${polling.returnedCount}/${polling.tickersInCycle} 수신`,
+    chipColor: 'var(--kr-up)',
+  };
+}
+
+function formatTossQuotePollingDetails(
+  polling: RuntimeDataHealthPayload['tossQuotePolling'],
+): string {
+  if (!polling.configured) return '미구성';
+  const interval = polling.intervalMs !== null
+    ? `${(polling.intervalMs / 1000).toFixed(1)}초 간격`
+    : '간격 미정';
+  const fallback = polling.suppressingKisPolling ? 'KIS polling 억제' : 'KIS fallback 허용';
+  return [
+    polling.enabled ? '켜짐' : '꺼짐',
+    polling.running ? '실행 중' : '대기',
+    interval,
+    `${polling.returnedCount}/${polling.tickersInCycle} 수신`,
+    polling.missingCount > 0 ? `누락 ${polling.missingCount}` : null,
+    polling.errorCount > 0 ? `실패 ${polling.errorCount}` : null,
+    fallback,
+  ].filter((item): item is string => item !== null).join(' · ');
 }
 
 function formatKisLimiterSummary(

@@ -11,6 +11,7 @@ import { SettingsIcon } from '../lib/icons';
 
 export type MarketTapeSummary = Pick<SharedMarketTapeSummary, 'indicators'>;
 export type KisBudgetSummary = RuntimeDataHealthPayload['kisOutboundLimiter']['budget'];
+export type TossQuotePollingSummary = RuntimeDataHealthPayload['tossQuotePolling'];
 
 interface StatusBarProps {
   totalCount: number;
@@ -33,6 +34,7 @@ export function StatusBar({
   onOpenSettings,
 }: StatusBarProps) {
   const [kisBudget, setKisBudget] = useState<KisBudgetSummary | null>(null);
+  const [tossQuotePolling, setTossQuotePolling] = useState<TossQuotePollingSummary | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,9 +42,15 @@ export function StatusBar({
     async function refresh() {
       try {
         const health = await getRuntimeDataHealth();
-        if (!cancelled) setKisBudget(health.kisOutboundLimiter.budget);
+        if (!cancelled) {
+          setKisBudget(health.kisOutboundLimiter.budget);
+          setTossQuotePolling(health.tossQuotePolling);
+        }
       } catch {
-        if (!cancelled) setKisBudget(null);
+        if (!cancelled) {
+          setKisBudget(null);
+          setTossQuotePolling(null);
+        }
       }
     }
     void refresh();
@@ -86,6 +94,12 @@ export function StatusBar({
           <KisBudgetPill budget={kisBudget} />
         </>
       )}
+      {tossQuotePolling !== null && (
+        <>
+          <Sep />
+          <TossQuotePollingPill polling={tossQuotePolling} />
+        </>
+      )}
       <div style={{ flex: 1 }} />
       <span>
         마지막 업데이트{' '}
@@ -108,6 +122,35 @@ export function StatusBar({
         <SettingsIcon size={16} />
       </button>
     </footer>
+  );
+}
+
+export function TossQuotePollingPill({ polling }: { polling: TossQuotePollingSummary }) {
+  const label = tossQuotePollingLabel(polling);
+  const color = tossQuotePollingColor(polling);
+  return (
+    <span
+      title={tossQuotePollingTitle(polling)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        minWidth: 0,
+        maxWidth: 170,
+        height: 22,
+        padding: '0 8px',
+        borderRadius: 999,
+        border: `1px solid ${color}`,
+        color,
+        background: 'rgba(255,255,255,0.03)',
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -144,6 +187,42 @@ export function KisBudgetPill({ budget }: { budget: KisBudgetSummary }) {
       {label}
     </span>
   );
+}
+
+function tossQuotePollingLabel(polling: TossQuotePollingSummary): string {
+  if (!polling.configured) return 'Toss 미구성';
+  if (!polling.enabled) return 'Toss 꺼짐';
+  if (polling.consecutiveFailureCount >= 2) return 'Toss 실패 · KIS fallback';
+  if (polling.lastErrorCode !== null) return 'Toss 복구 대기';
+  if (polling.cycleCount === 0) return 'Toss 시작 대기';
+  if (polling.missingCount > 0) return `Toss 부분 · ${polling.returnedCount}/${polling.tickersInCycle}`;
+  return `Toss 가격 · ${polling.returnedCount}/${polling.tickersInCycle}`;
+}
+
+function tossQuotePollingColor(polling: TossQuotePollingSummary): string {
+  if (!polling.configured || !polling.enabled || polling.cycleCount === 0) {
+    return 'var(--text-muted)';
+  }
+  if (polling.consecutiveFailureCount >= 2 || polling.lastErrorCode !== null || polling.missingCount > 0) {
+    return 'var(--gold-text)';
+  }
+  return 'var(--kr-up)';
+}
+
+function tossQuotePollingTitle(polling: TossQuotePollingSummary): string {
+  if (!polling.configured) return 'Toss 가격 갱신 미구성';
+  const interval = polling.intervalMs !== null
+    ? `${(polling.intervalMs / 1000).toFixed(1)}s`
+    : 'unknown';
+  const fallback = polling.suppressingKisPolling ? 'KIS polling 억제' : 'KIS fallback 허용';
+  return [
+    `Toss 가격 갱신 ${polling.running ? '실행 중' : '대기'}`,
+    `${polling.returnedCount}/${polling.tickersInCycle} 수신`,
+    `누락 ${polling.missingCount}`,
+    `실패 ${polling.errorCount}`,
+    `간격 ${interval}`,
+    fallback,
+  ].join(' · ');
 }
 
 export function MarketTape({

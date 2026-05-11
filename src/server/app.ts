@@ -56,6 +56,10 @@ import { createMasterStockService } from './services/master-stock-service.js';
 import { createMarketSummaryService } from './market/market-summary-service.js';
 import { createMarketTopMoversService } from './market/market-top-movers-service.js';
 import { createTossCdpLoginService } from './toss/toss-cdp-login-service.js';
+import {
+  createTossQuotePollingService,
+  type TossQuotePollingService,
+} from './toss/toss-quote-polling-service.js';
 import { createTossPublicMarketDataProvider } from './toss/toss-public-market-data-provider.js';
 import { createTossRealtimeService } from './toss/toss-realtime-service.js';
 import { createFileTossSessionStore } from './toss/toss-session-store.js';
@@ -172,8 +176,18 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const favoriteRepo = new FavoriteRepository(db);
   const masterRepo = new MasterStockRepository(db);
   const masterMetaRepo = new MasterStockMetaRepository(db);
+  let tossQuotePollingService: TossQuotePollingService | null = null;
   const runtimeRef = createKisRuntimeRef(
-    { db, settingsStore, credentialStore, priceStore, snapshotStore, stockRepo, favoriteRepo },
+    {
+      db,
+      settingsStore,
+      credentialStore,
+      priceStore,
+      snapshotStore,
+      stockRepo,
+      favoriteRepo,
+      shouldSkipKisPolling: () => tossQuotePollingService?.shouldSuppressKisPolling() === true,
+    },
     { actuallyStart: defaultActuallyStart },
   );
   const masterService = createMasterStockService({
@@ -318,6 +332,12 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const tossSessionStore = createFileTossSessionStore();
   const tossLoginService = createTossCdpLoginService({ sessionStore: tossSessionStore });
   const tossRealtimeService = createTossRealtimeService({ sessionStore: tossSessionStore });
+  tossQuotePollingService = createTossQuotePollingService({
+    provider: tossPublicMarketDataProvider,
+    stockRepo,
+    priceStore,
+    settings: settingsStore,
+  });
   const marketTopMoversService = createMarketTopMoversService({
     fetchRanking: async ({ direction, count, sourcePhase, onDiagnostic }) => {
       return tossPublicMarketDataProvider.getTopMoversRanking({
@@ -394,6 +414,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     disclosureRepo,
     dataRetention,
     marketTopMoversService,
+    tossQuotePolling: tossQuotePollingService,
     phoneNotifier: createTelegramPhoneNotifier(),
   });
   await app.register(launcherRoutes, options.launcher ?? {});
@@ -423,6 +444,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       shutdownHandle = null;
     }
     backgroundBackfill.stop();
+    await tossQuotePollingService?.stop();
     dataRetention.stop();
     await runtimeRef.stop();
     await candleRecorder.stop();
@@ -467,6 +489,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
         log.info('master cache refresh deferred until credentials are configured');
       }
       dataRetention.start();
+      tossQuotePollingService?.start();
       backgroundBackfill.start();
 
       return { ...server, host, port, url };

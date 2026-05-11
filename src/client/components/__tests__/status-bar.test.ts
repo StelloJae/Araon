@@ -2,7 +2,14 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { KisBudgetPill, MarketTape, type KisBudgetSummary, type MarketTapeSummary } from '../StatusBar';
+import {
+  KisBudgetPill,
+  MarketTape,
+  TossQuotePollingPill,
+  type KisBudgetSummary,
+  type MarketTapeSummary,
+  type TossQuotePollingSummary,
+} from '../StatusBar';
 
 describe('MarketTape', () => {
   it('renders KST plus index, FX, and oil indicators compactly', () => {
@@ -69,6 +76,38 @@ describe('KisBudgetPill', () => {
     expect(html).toContain('KIS 여유');
     expect(html).toContain('1.0/s');
     expect(html).toContain('polling 0.83/s');
+  });
+});
+
+describe('TossQuotePollingPill', () => {
+  it('renders the compact Toss quote polling label', () => {
+    const polling: TossQuotePollingSummary = {
+      configured: true,
+      running: true,
+      enabled: true,
+      source: 'toss-public',
+      cycleCount: 4,
+      lastCycleMs: 52,
+      tickersInCycle: 12,
+      requestedCount: 12,
+      returnedCount: 11,
+      missingCount: 1,
+      errorCount: 0,
+      consecutiveFailureCount: 0,
+      lastSuccessAt: '2026-05-11T03:00:00.000Z',
+      lastFailureAt: null,
+      lastErrorCode: null,
+      lastMessage: 'partial_quote_batch',
+      intervalMs: 3000,
+      batchSize: 100,
+      suppressingKisPolling: true,
+    };
+
+    const html = renderToStaticMarkup(createElement(TossQuotePollingPill, { polling }));
+
+    expect(html).toContain('Toss 부분');
+    expect(html).toContain('11/12');
+    expect(html).toContain('KIS polling 억제');
   });
 });
 
