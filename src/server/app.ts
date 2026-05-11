@@ -55,8 +55,7 @@ import { createDataRetentionScheduler } from './maintenance/data-retention.js';
 import { createMasterStockService } from './services/master-stock-service.js';
 import { createMarketSummaryService } from './market/market-summary-service.js';
 import { createMarketTopMoversService } from './market/market-top-movers-service.js';
-import { fetchKisFluctuationRanking } from './kis/kis-fluctuation-ranking.js';
-import { KisRestError } from './kis/kis-rest-client.js';
+import { createTossPublicMarketDataProvider } from './toss/toss-public-market-data-provider.js';
 import {
   resolveRestQuoteMarketDivCode,
   type RestQuoteMarketDivCode,
@@ -187,7 +186,6 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     'background_backfill',
     'selected-minute',
   ]);
-  const rankingCooldownEndpointClasses = new Set<KisEndpointClass>(['ranking']);
   const hasActiveOutboundCooldown = (
     endpointClasses: ReadonlySet<KisEndpointClass>,
   ): boolean => {
@@ -297,25 +295,21 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     signalEventRepo,
     newsRepo,
   });
+  const tossPublicMarketDataProvider = createTossPublicMarketDataProvider();
   const marketTopMoversService = createMarketTopMoversService({
-    fetchRanking: async ({ direction, count, now, sourcePhase, onDiagnostic }) => {
-      const state = runtimeRef.get();
-      if (state.status !== 'started') {
-        throw new Error('KIS runtime is not started');
-      }
-      if (hasActiveOutboundCooldown(rankingCooldownEndpointClasses)) {
-        throw new KisRestError('KIS outbound limiter cooldown active', 429, null, 'EGW00201', null);
-      }
-      return fetchKisFluctuationRanking({
+    fetchRanking: async ({ direction, count, sourcePhase, onDiagnostic }) => {
+      return tossPublicMarketDataProvider.getTopMoversRanking({
         direction,
         count,
-        now,
         sourcePhase,
-        restClient: state.runtime.restClient,
         ...(onDiagnostic !== undefined ? { onDiagnostic } : {}),
       });
     },
+    sourceKind: 'toss-overview-ranking',
   });
+  const tossRealtimeRankingService = {
+    getRealtimeRanking: tossPublicMarketDataProvider.getRealtimeRanking,
+  };
 
   const setupMutex = createCredentialSetupMutex();
   const app = Fastify({ loggerInstance: logger });
@@ -352,6 +346,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(marketRoutes, {
     service: marketSummaryService,
     topMoversService: marketTopMoversService,
+    tossRealtimeRankingService,
   });
   await app.register(eventsRoutes, { runtimeRef });
   await app.register(runtimeRoutes, {

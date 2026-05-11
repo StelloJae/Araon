@@ -22,6 +22,8 @@ import type {
   StockNewsPage,
   StockSignalEvent,
   StockSignalOutcomeDashboard,
+  TossRealtimeRankingMarket,
+  TossRealtimeRankingResponse,
 } from '@shared/types';
 import type { SessionRealtimeCap } from './realtime-session-control';
 
@@ -93,6 +95,17 @@ export async function getMarketTopMovers(
   const query = params.toString();
   const res = await fetch(`/market/top-movers${query.length > 0 ? `?${query}` : ''}`);
   return unwrap<MarketTopMoversResponse>(res);
+}
+
+export async function getTossRealtimeRanking(
+  options: { limit?: number; market?: TossRealtimeRankingMarket } = {},
+): Promise<TossRealtimeRankingResponse> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.market !== undefined) params.set('market', options.market);
+  const query = params.toString();
+  const res = await fetch(`/market/toss/realtime-ranking${query.length > 0 ? `?${query}` : ''}`);
+  return unwrap<TossRealtimeRankingResponse>(res);
 }
 
 /**
@@ -900,7 +913,7 @@ export interface RuntimeDataHealthPayload {
       losersCount: number;
       gainersComplete: boolean;
       losersComplete: boolean;
-      marketUniverse: 'kis-full-market-ranking';
+      marketUniverse: 'kis-full-market-ranking' | 'toss-web-ranking';
       guaranteedTop100: boolean;
       includesLocalFallback: boolean;
     } | null;

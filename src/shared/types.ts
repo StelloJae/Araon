@@ -211,7 +211,8 @@ export interface MarketTopMoversResponse {
     | 'kis-ranking-overtime-fluctuation'
     | 'kis-ranking-freeze'
     | 'kis-ranking-stale-snapshot'
-    | 'kis-ranking-unsupported';
+    | 'kis-ranking-unsupported'
+    | 'toss-overview-ranking';
   sourcePhase: MarketTopMoversSourcePhase;
   sourceLabel: string;
   sourceReason: string | null;
@@ -242,12 +243,47 @@ export interface MarketTopMoversResponse {
     losersCount: number;
     gainersComplete: boolean;
     losersComplete: boolean;
-    marketUniverse: 'kis-full-market-ranking';
+    marketUniverse: 'kis-full-market-ranking' | 'toss-web-ranking';
     guaranteedTop100: boolean;
     includesLocalFallback: boolean;
   };
   gainers: MarketTopMoverItem[];
   losers: MarketTopMoverItem[];
+}
+
+export type TossRealtimeRankingMarket = 'all' | 'kr' | 'us';
+export type TossRealtimeRankingTimestampStatus = 'fresh' | 'stale' | 'missing';
+
+export interface TossRealtimeRankingItem {
+  rank: number;
+  ticker: string;
+  productCode: string;
+  name: string;
+  market: string;
+  currency: string;
+  price: number | null;
+  changeAbs: number | null;
+  changePct: number | null;
+  volume: number | null;
+}
+
+export interface TossRealtimeRankingResponse {
+  generatedAt: string;
+  fetchedAt: string;
+  rankingDateTime: string | null;
+  rankingTimestampStatus: TossRealtimeRankingTimestampStatus;
+  source: 'toss-public-realtime-ranking';
+  sourceLabel: '토스 실시간 인기';
+  status: 'ready' | 'partial' | 'empty' | 'error';
+  message: string;
+  refreshIntervalMs: number;
+  coverage: {
+    requestedLimit: number;
+    returnedCount: number;
+    pricedCount: number;
+    market: TossRealtimeRankingMarket;
+  };
+  items: TossRealtimeRankingItem[];
 }
 
 export type VolumeBaselineStatus = 'collecting' | 'ready' | 'unavailable';

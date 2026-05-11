@@ -9,8 +9,12 @@
 Araon은 localhost 단일 사용자용 한국 주식 watchlist 대시보드다.
 
 - Runtime: Node 20, Fastify 5, React 19, Vite
-- Data source: KIS OpenAPI
-- Realtime: KIS credentials 등록 후 장중 H0UNCNT0, 장전/장후 H0NXCNT0 WebSocket cap40 managed default
+- Data source: transitional provider model. Toss public web endpoints are the
+  preferred TOP100 source; KIS OpenAPI remains legacy/fallback until Toss quote,
+  realtime, chart, and metadata parity is proven.
+- Realtime: KIS credentials 등록 후 장중 H0UNCNT0, 장전/장후 H0NXCNT0 WebSocket cap40 managed default.
+  Toss authenticated realtime is research/implementation-in-progress and must
+  stay read-only until separately verified.
 - Fallback: REST polling 유지
 - Chart: local 1m candle, KIS daily 1d candle, 서버 집계 3m~12h/1W/1M
 - Packaging: CLI/npm and Electron desktop
@@ -70,9 +74,14 @@ Credentials/data/runtime state는 커밋하지 않는다.
   recovery 상태를 가진다. `auth`/`token`/`approval`은 primary-only로 두고,
   foreground는 primary-first + throttle failover를 허용하되 governor를 우회하지
   않는다. live/paper profile은 같은 runtime budget 안에서 섞지 않는다.
-- TOP100 화면은 KIS ranking endpoint에서 받은 전체시장 랭킹만 TOP100으로 표시한다.
-  현재 화면/watchlist 종목으로 빈 랭킹을 보강해 "전체시장 TOP100"처럼 보이게 만들지
-  않는다. 부분 수신이면 `coverage.guaranteedTop100=false`로 노출한다.
+- TOP100 화면은 provider가 직접 반환한 랭킹만 TOP100으로 표시한다. Toss public
+  overview ranking은 `marketUniverse='toss-web-ranking'`으로, KIS legacy ranking은
+  `marketUniverse='kis-full-market-ranking'`으로 구분한다. 현재 화면/watchlist 종목으로
+  빈 랭킹을 보강해 "전체시장 TOP100"처럼 보이게 만들지 않는다. 부분 수신이면
+  `coverage.guaranteedTop100=false`로 노출한다.
+- Toss session/cookie/storage 값(`SESSION`, `UTK`, `LTK`, `FTK`, `browserSessionId`,
+  `deviceId` 등)은 KIS secret과 동일하게 raw logs/docs/status/UI/git diff/stdout에
+  노출하지 않는다. Toss 계좌/주문 mutation endpoint는 Araon 범위 밖이다.
 - KIS AIMD는 polling policy override만 조정한다. 자동 판단은 polling gap에
   제한하고, recovery rps는 명시 실험값으로만 바꾼다. Active AIMD는 명시 승인된
   목표나 운영 절차에서만 켜고, 문제 시 `/runtime/kis-governor/aimd` rollback으로

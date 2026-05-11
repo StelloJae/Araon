@@ -47,6 +47,7 @@ export interface CreateMarketTopMoversServiceOptions {
   staleAfterMs?: number;
   cooldownMs?: number;
   refreshTimeoutMs?: number;
+  sourceKind?: MarketTopMoversSourceKind;
 }
 
 interface CacheEntry {
@@ -58,6 +59,7 @@ interface CacheEntry {
 }
 
 type RankingDiagnostics = MarketTopMoversResponse['rankingDiagnostics'];
+type MarketTopMoversSourceKind = 'kis' | 'toss-overview-ranking';
 
 export interface MarketTopMoversServiceSnapshot {
   status: MarketTopMoversResponse['status'] | 'idle' | 'refreshing';
@@ -96,6 +98,7 @@ export function createMarketTopMoversService({
   staleAfterMs = DEFAULT_STALE_AFTER_MS,
   cooldownMs = DEFAULT_COOLDOWN_MS,
   refreshTimeoutMs = DEFAULT_REFRESH_TIMEOUT_MS,
+  sourceKind = 'kis',
 }: CreateMarketTopMoversServiceOptions): MarketTopMoversService {
   let cache: CacheEntry | null = null;
   let inflight: Promise<CacheEntry> | null = null;
@@ -107,7 +110,9 @@ export function createMarketTopMoversService({
     const current = now();
     const limit = clampLimit(input.limit);
     const currentMs = current.getTime();
-    const readyMessage = `${Math.max(1, Math.round(ttlMs / 1000))}초마다 갱신`;
+    const readyMessage = sourceKind === 'toss-overview-ranking'
+      ? `토스 웹 랭킹 · ${Math.max(1, Math.round(ttlMs / 1000))}초마다 갱신`
+      : `${Math.max(1, Math.round(ttlMs / 1000))}초마다 갱신`;
     const sourcePhase = resolveSourcePhase(current);
     if (!isFetchableSourcePhase(sourcePhase)) {
       return remember(nonFetchableResponse(current, sourcePhase, limit), lastErrorCode);
@@ -340,7 +345,7 @@ export function createMarketTopMoversService({
       frozen?: boolean;
     } = {},
   ): MarketTopMoversResponse {
-    const coverage = buildCoverage(entry, limit);
+    const coverage = buildCoverage(entry, limit, sourceKind);
     const partial = status === 'ready'
       && (!coverage.gainersComplete || !coverage.losersComplete);
     const sourcePhase = opts.sourcePhase ?? entry.sourcePhase;
@@ -354,10 +359,10 @@ export function createMarketTopMoversService({
       cacheTtlMs: ttlMs,
       refreshIntervalMs: ttlMs,
       staleAfterMs,
-      source: sourceForPhase(sourcePhase),
+      source: sourceForPhase(sourcePhase, sourceKind),
       sourcePhase,
-      sourceLabel: labelForPhase(sourcePhase),
-      sourceReason: reasonForPhase(sourcePhase),
+      sourceLabel: labelForPhase(sourcePhase, sourceKind),
+      sourceReason: reasonForPhase(sourcePhase, sourceKind),
       frozen: opts.frozen ?? sourcePhase === 'opening_freeze',
       lastGoodAgeMs: Math.max(0, current.getTime() - entry.fetchedAt.getTime()),
       partialReason,
@@ -366,7 +371,7 @@ export function createMarketTopMoversService({
       rankingRateLimited: opts.rankingRateLimited ?? false,
       status: partial ? 'partial' : status,
       message: partial
-        ? `KIS 직접 랭킹 일부만 수신했습니다. 상승 ${coverage.gainersCount}/${limit}, 하락 ${coverage.losersCount}/${limit}`
+        ? partialMessageForKind(sourceKind, coverage, limit)
         : message,
       cooldownUntil: cooldownUntilMs > current.getTime()
         ? new Date(cooldownUntilMs).toISOString()
@@ -397,10 +402,10 @@ export function createMarketTopMoversService({
       cacheTtlMs: ttlMs,
       refreshIntervalMs: ttlMs,
       staleAfterMs,
-      source: sourceForPhase(sourcePhase),
+      source: sourceForPhase(sourcePhase, sourceKind),
       sourcePhase,
-      sourceLabel: labelForPhase(sourcePhase),
-      sourceReason: reasonForPhase(sourcePhase),
+      sourceLabel: labelForPhase(sourcePhase, sourceKind),
+      sourceReason: reasonForPhase(sourcePhase, sourceKind),
       frozen: opts.frozen ?? sourcePhase === 'opening_freeze',
       lastGoodAgeMs: null,
       partialReason: opts.partialReason ?? (sourcePhase === 'unsupported' ? 'source_unsupported' : null),
@@ -418,7 +423,7 @@ export function createMarketTopMoversService({
         losersCount: 0,
         gainersComplete: false,
         losersComplete: false,
-        marketUniverse: 'kis-full-market-ranking',
+        marketUniverse: marketUniverseForKind(sourceKind),
         guaranteedTop100: false,
         includesLocalFallback: false,
       },
@@ -435,7 +440,7 @@ export function createMarketTopMoversService({
     const cacheAgeMs = cache !== null ? Math.max(0, currentMs - cache.fetchedAt.getTime()) : null;
     return {
       status: inflight !== null ? 'refreshing' : (response?.status ?? 'idle'),
-      source: response?.source ?? 'kis-ranking-auto',
+      source: response?.source ?? (sourceKind === 'toss-overview-ranking' ? 'toss-overview-ranking' : 'kis-ranking-auto'),
       lastFetchedAt: cache?.fetchedAt.toISOString() ?? response?.fetchedAt ?? null,
       lastGeneratedAt: response?.generatedAt ?? null,
       cacheAgeMs,
@@ -446,10 +451,10 @@ export function createMarketTopMoversService({
       inflight: inflight !== null,
       lastMessage: response?.message ?? null,
       lastErrorCode,
-      coverage: response?.coverage ?? emptyCoverage(DEFAULT_LIMIT),
+      coverage: response?.coverage ?? emptyCoverage(DEFAULT_LIMIT, sourceKind),
       sourcePhase: response?.sourcePhase ?? 'unsupported',
-      sourceLabel: response?.sourceLabel ?? labelForPhase('unsupported'),
-      sourceReason: response?.sourceReason ?? reasonForPhase('unsupported'),
+      sourceLabel: response?.sourceLabel ?? labelForPhase('unsupported', sourceKind),
+      sourceReason: response?.sourceReason ?? reasonForPhase('unsupported', sourceKind),
       frozen: response?.frozen ?? false,
       lastGoodAgeMs: response?.lastGoodAgeMs ?? null,
       partialReason: response?.partialReason ?? null,
@@ -471,7 +476,11 @@ export function createMarketTopMoversService({
   return { getTopMovers, snapshot };
 }
 
-function buildCoverage(entry: CacheEntry, limit: number): MarketTopMoversResponse['coverage'] {
+function buildCoverage(
+  entry: CacheEntry,
+  limit: number,
+  sourceKind: MarketTopMoversSourceKind = 'kis',
+): MarketTopMoversResponse['coverage'] {
   const gainersComplete = entry.gainers.length >= limit;
   const losersComplete = entry.losers.length >= limit;
   return {
@@ -480,7 +489,7 @@ function buildCoverage(entry: CacheEntry, limit: number): MarketTopMoversRespons
     losersCount: Math.min(entry.losers.length, limit),
     gainersComplete,
     losersComplete,
-    marketUniverse: 'kis-full-market-ranking',
+    marketUniverse: marketUniverseForKind(sourceKind),
     guaranteedTop100: gainersComplete && losersComplete,
     includesLocalFallback: false,
   };
@@ -502,14 +511,17 @@ function coverageScore(coverage: MarketTopMoversResponse['coverage']): number {
   return coverage.gainersCount + coverage.losersCount;
 }
 
-function emptyCoverage(limit: number): MarketTopMoversResponse['coverage'] {
+function emptyCoverage(
+  limit: number,
+  sourceKind: MarketTopMoversSourceKind = 'kis',
+): MarketTopMoversResponse['coverage'] {
   return {
     requestedLimit: limit,
     gainersCount: 0,
     losersCount: 0,
     gainersComplete: false,
     losersComplete: false,
-    marketUniverse: 'kis-full-market-ranking',
+    marketUniverse: marketUniverseForKind(sourceKind),
     guaranteedTop100: false,
     includesLocalFallback: false,
   };
@@ -595,7 +607,11 @@ function minutesInKst(current: Date): number {
 
 function sourceForPhase(
   sourcePhase: MarketTopMoversSourcePhase,
+  sourceKind: MarketTopMoversSourceKind = 'kis',
 ): MarketTopMoversResponse['source'] {
+  if (sourceKind === 'toss-overview-ranking') {
+    return 'toss-overview-ranking';
+  }
   switch (sourcePhase) {
     case 'premarket':
       return 'kis-ranking-premarket-expected';
@@ -612,7 +628,13 @@ function sourceForPhase(
   }
 }
 
-function labelForPhase(sourcePhase: MarketTopMoversSourcePhase): string {
+function labelForPhase(
+  sourcePhase: MarketTopMoversSourcePhase,
+  sourceKind: MarketTopMoversSourceKind = 'kis',
+): string {
+  if (sourceKind === 'toss-overview-ranking') {
+    return sourcePhase === 'opening_freeze' ? '토스 고정' : '토스 웹 랭킹';
+  }
   switch (sourcePhase) {
     case 'premarket':
       return '장전';
@@ -629,7 +651,13 @@ function labelForPhase(sourcePhase: MarketTopMoversSourcePhase): string {
   }
 }
 
-function reasonForPhase(sourcePhase: MarketTopMoversSourcePhase): string | null {
+function reasonForPhase(
+  sourcePhase: MarketTopMoversSourcePhase,
+  sourceKind: MarketTopMoversSourceKind = 'kis',
+): string | null {
+  if (sourceKind === 'toss-overview-ranking') {
+    return '토스증권 웹 overview ranking 기반 상승/하락 랭킹입니다.';
+  }
   switch (sourcePhase) {
     case 'premarket':
       return '장전 예상체결 기반 랭킹입니다.';
@@ -644,6 +672,21 @@ function reasonForPhase(sourcePhase: MarketTopMoversSourcePhase): string | null 
     case 'unsupported':
       return '현재 시간대에 사용할 수 있는 KIS TOP100 소스가 없습니다.';
   }
+}
+
+function marketUniverseForKind(
+  sourceKind: MarketTopMoversSourceKind,
+): MarketTopMoversResponse['coverage']['marketUniverse'] {
+  return sourceKind === 'toss-overview-ranking' ? 'toss-web-ranking' : 'kis-full-market-ranking';
+}
+
+function partialMessageForKind(
+  sourceKind: MarketTopMoversSourceKind,
+  coverage: MarketTopMoversResponse['coverage'],
+  limit: number,
+): string {
+  const provider = sourceKind === 'toss-overview-ranking' ? '토스 웹 랭킹' : 'KIS 직접 랭킹';
+  return `${provider} 일부만 수신했습니다. 상승 ${coverage.gainersCount}/${limit}, 하락 ${coverage.losersCount}/${limit}`;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

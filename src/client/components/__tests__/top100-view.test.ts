@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { MarketTopMoversResponse } from '@shared/types';
 import { TopMoversBoard } from '../TopMoversBoard';
+import { TossRealtimeRankingBoard } from '../TossRealtimeRankingBoard';
 import { ViewToggle } from '../ViewToggle';
 
 function topMovers(): MarketTopMoversResponse {
@@ -148,6 +149,37 @@ describe('TOP100 view chrome', () => {
     expect(html).toContain('KIS 전체시장 보장');
   });
 
+  it('labels a complete Toss overview ranking without KIS partial wording', () => {
+    const data = {
+      ...topMovers(),
+      source: 'toss-overview-ranking',
+      sourceLabel: '토스 웹 랭킹',
+      sourceReason: '토스증권 웹 overview ranking 기반 상승/하락 랭킹입니다.',
+      message: '토스 웹 랭킹 · 30초마다 갱신',
+      partialReason: null,
+      stopReason: null,
+      coverage: {
+        ...topMovers().coverage,
+        marketUniverse: 'toss-web-ranking',
+        gainersCount: 100,
+        losersCount: 100,
+        gainersComplete: true,
+        losersComplete: true,
+        guaranteedTop100: true,
+      },
+    } satisfies MarketTopMoversResponse;
+    const html = renderToStaticMarkup(
+      createElement(TopMoversBoard, {
+        data,
+        onOpenTicker: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('토스 웹 랭킹');
+    expect(html).toContain('토스 웹 랭킹 보장');
+    expect(html).not.toContain('KIS 직접 랭킹 일부');
+  });
+
   it('shows the market source phase and retained snapshot state without changing the TOP100 surface', () => {
     const html = renderToStaticMarkup(
       createElement(TopMoversBoard, {
@@ -172,5 +204,49 @@ describe('TOP100 view chrome', () => {
     expect(html).toContain('직전 데이터');
     expect(html).toContain('직전 데이터 유지');
     expect(html).toContain('약 1분 전');
+  });
+
+  it('renders Toss realtime popularity ranking as a separate, honest source', () => {
+    const html = renderToStaticMarkup(
+      createElement(TossRealtimeRankingBoard, {
+        data: {
+          generatedAt: '2026-05-11T06:05:00.000Z',
+          fetchedAt: '2026-05-11T06:05:00.000Z',
+          rankingDateTime: '2025-03-10T16:44:43',
+          rankingTimestampStatus: 'stale',
+          source: 'toss-public-realtime-ranking',
+          sourceLabel: '토스 실시간 인기',
+          status: 'partial',
+          message: '토스 공개 인기 랭킹입니다. 랭킹 시각이 오래되어 가격만 별도 갱신했습니다.',
+          refreshIntervalMs: 15_000,
+          coverage: {
+            requestedLimit: 100,
+            returnedCount: 1,
+            pricedCount: 1,
+            market: 'kr',
+          },
+          items: [
+            {
+              rank: 1,
+              ticker: '005930',
+              productCode: 'A005930',
+              name: '삼성전자',
+              market: '코스피',
+              currency: 'KRW',
+              price: 284_000,
+              changeAbs: 15_500,
+              changePct: 5.77,
+              volume: 56_326_493,
+            },
+          ],
+        },
+        onOpenTicker: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('토스 실시간 인기 TOP100');
+    expect(html).toContain('랭킹 시각 오래됨');
+    expect(html).toContain('가격 1/1');
+    expect(html).toContain('삼성전자');
   });
 });

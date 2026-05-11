@@ -293,30 +293,32 @@ function statusLabel(status: MarketTopMoversResponse['status']): string {
 }
 
 function coverageLabel(data: MarketTopMoversResponse): string {
+  const source = data.coverage.marketUniverse === 'toss-web-ranking' ? '토스 웹 랭킹' : 'KIS 전체시장';
   if (data.coverage.includesLocalFallback) return '화면 종목 포함';
-  if (data.coverage.guaranteedTop100) return 'KIS 전체시장 보장';
+  if (data.coverage.guaranteedTop100) return `${source} 보장`;
   if (data.coverage.gainersCount > 0 || data.coverage.losersCount > 0) {
-    return 'KIS 전체시장 일부';
+    return `${source} 일부`;
   }
-  return 'KIS 전체시장 대기';
+  return `${source} 대기`;
 }
 
 function partialReasonLabel(data: MarketTopMoversResponse): string | null {
+  const source = data.coverage.marketUniverse === 'toss-web-ranking' ? '토스' : 'KIS';
   switch (data.partialReason) {
     case 'under_requested_limit':
-      return 'KIS 부분 응답';
+      return `${source} 부분 응답`;
     case 'smaller_refresh_retained':
       return '직전 데이터 유지';
     case 'rate_limited':
-      return 'KIS 요청 제한';
+      return `${source} 요청 제한`;
     case 'no_continuation':
-      return 'KIS 응답 종료';
+      return `${source} 응답 종료`;
     case 'timeout':
       return '시간 초과';
     case 'malformed_response':
       return '응답 해석 실패';
     case 'upstream_partial_limit_suspected':
-      return 'KIS 부분 응답 한계 의심';
+      return `${source} 부분 응답 한계 의심`;
     case 'source_unsupported':
       return '미지원';
     case null:
@@ -326,15 +328,16 @@ function partialReasonLabel(data: MarketTopMoversResponse): string | null {
 
 function stopReasonLabel(data: MarketTopMoversResponse): string | null {
   if (data.stopReason === null || data.partialReason !== null) return null;
+  const source = data.coverage.marketUniverse === 'toss-web-ranking' ? '토스' : 'KIS';
   switch (data.stopReason) {
     case 'complete':
       return null;
     case 'no_continuation':
-      return 'KIS 응답 종료';
+      return `${source} 응답 종료`;
     case 'under_requested_limit':
       return '요청 미달';
     case 'rate_limited':
-      return 'KIS 요청 제한';
+      return `${source} 요청 제한`;
     case 'timeout':
       return '시간 초과';
     case 'malformed_response':
@@ -344,7 +347,7 @@ function stopReasonLabel(data: MarketTopMoversResponse): string | null {
     case 'unsupported_source':
       return '미지원';
     case 'upstream_partial_limit_suspected':
-      return 'KIS 부분 응답 한계 의심';
+      return `${source} 부분 응답 한계 의심`;
   }
 }
 

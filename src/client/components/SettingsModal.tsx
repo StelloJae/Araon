@@ -87,6 +87,9 @@ import { useWatchlistStore } from '../stores/watchlist-store';
 import { useAlertDeliveryStore } from '../stores/alert-delivery-store';
 import { AlertDeliveryLogPanel } from './AlertDeliveryLogPanel';
 
+type TopMoversMarketUniverse =
+  NonNullable<RuntimeDataHealthPayload['marketTopMovers']['coverage']>['marketUniverse'];
+
 const IS_DEV_BUILD =
   (import.meta as ImportMeta & { env: { DEV?: boolean } }).env.DEV === true;
 
@@ -1633,10 +1636,24 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
                 <br />
                 TOP100 소스: {health.marketTopMovers.sourceLabel}
                 {hasText(health.marketTopMovers.partialReason) && (
-                  <> · {topMoversPartialReasonLabel(health.marketTopMovers.partialReason)}</>
+                  <>
+                    {' '}
+                    ·{' '}
+                    {topMoversPartialReasonLabel(
+                      health.marketTopMovers.partialReason,
+                      health.marketTopMovers.coverage?.marketUniverse,
+                    )}
+                  </>
                 )}
                 {hasText(health.marketTopMovers.stopReason) && (
-                  <> · 원인 {topMoversStopReasonLabel(health.marketTopMovers.stopReason)}</>
+                  <>
+                    {' '}
+                    · 원인{' '}
+                    {topMoversStopReasonLabel(
+                      health.marketTopMovers.stopReason,
+                      health.marketTopMovers.coverage?.marketUniverse,
+                    )}
+                  </>
                 )}
                 {health.marketTopMovers.rankingRateLimited && <> · KIS 호출 제한</>}
                 {health.marketTopMovers.lastGoodAgeMs !== null && (
@@ -1788,7 +1805,10 @@ function formatMarketTopMoversSummary(
     return { label: topMovers.status, chipColor: 'var(--text-muted)' };
   }
   if (coverage.guaranteedTop100) {
-    return { label: `${prefix}KIS 전체시장`, chipColor: 'var(--kr-up)' };
+    return {
+      label: `${prefix}${topMoversUniverseLabel(coverage.marketUniverse)}`,
+      chipColor: 'var(--kr-up)',
+    };
   }
   const count = Math.max(coverage.gainersCount, coverage.losersCount);
   if (count > 0) {
@@ -1797,22 +1817,26 @@ function formatMarketTopMoversSummary(
   return { label: `${prefix}대기`, chipColor: 'var(--text-muted)' };
 }
 
-function topMoversPartialReasonLabel(reason: string): string {
+function topMoversPartialReasonLabel(
+  reason: string,
+  marketUniverse: TopMoversMarketUniverse | undefined,
+): string {
+  const source = topMoversShortSourceLabel(marketUniverse);
   switch (reason) {
     case 'under_requested_limit':
-      return '부분 수신';
+      return `${source} 부분 수신`;
     case 'smaller_refresh_retained':
       return '직전 유지';
     case 'rate_limited':
-      return '호출 제한';
+      return `${source} 호출 제한`;
     case 'no_continuation':
-      return 'KIS 응답 종료';
+      return `${source} 응답 종료`;
     case 'timeout':
       return '시간 초과';
     case 'malformed_response':
       return '응답 해석 실패';
     case 'upstream_partial_limit_suspected':
-      return 'KIS 부분 응답 한계 의심';
+      return `${source} 부분 응답 한계 의심`;
     case 'source_unsupported':
       return '미지원';
     default:
@@ -1820,16 +1844,20 @@ function topMoversPartialReasonLabel(reason: string): string {
   }
 }
 
-function topMoversStopReasonLabel(reason: string): string {
+function topMoversStopReasonLabel(
+  reason: string,
+  marketUniverse: TopMoversMarketUniverse | undefined,
+): string {
+  const source = topMoversShortSourceLabel(marketUniverse);
   switch (reason) {
     case 'complete':
       return '완료';
     case 'no_continuation':
-      return 'KIS 응답 종료';
+      return `${source} 응답 종료`;
     case 'under_requested_limit':
       return '요청 미달';
     case 'rate_limited':
-      return 'KIS 요청 제한';
+      return `${source} 요청 제한`;
     case 'timeout':
       return '시간 초과';
     case 'malformed_response':
@@ -1839,10 +1867,22 @@ function topMoversStopReasonLabel(reason: string): string {
     case 'unsupported_source':
       return '미지원';
     case 'upstream_partial_limit_suspected':
-      return 'KIS 부분 응답 한계 의심';
+      return `${source} 부분 응답 한계 의심`;
     default:
       return reason;
   }
+}
+
+function topMoversUniverseLabel(
+  marketUniverse: TopMoversMarketUniverse,
+): string {
+  return marketUniverse === 'toss-web-ranking' ? '토스 웹 랭킹' : 'KIS 전체시장';
+}
+
+function topMoversShortSourceLabel(
+  marketUniverse: TopMoversMarketUniverse | undefined,
+): string {
+  return marketUniverse === 'toss-web-ranking' ? '토스' : 'KIS';
 }
 
 function hasText(value: string | null | undefined): value is string {

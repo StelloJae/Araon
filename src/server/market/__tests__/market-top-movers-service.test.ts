@@ -44,6 +44,28 @@ describe('market top movers service', () => {
     expect(result.cacheTtlMs).toBe(result.refreshIntervalMs);
   });
 
+  it('can expose TOP100 coverage as Toss web ranking instead of KIS ranking', async () => {
+    const fetchRanking = vi.fn(async ({ direction }) => makeRows(direction, 100));
+    const service = createMarketTopMoversService({
+      now: () => new Date('2026-05-11T06:19:00.000Z'),
+      fetchRanking,
+      sourceKind: 'toss-overview-ranking',
+    });
+
+    const result = await service.getTopMovers({ limit: 100 });
+
+    expect(result.source).toBe('toss-overview-ranking');
+    expect(result.sourceLabel).toBe('토스 웹 랭킹');
+    expect(result.message).toContain('토스');
+    expect(result.coverage).toMatchObject({
+      gainersCount: 100,
+      losersCount: 100,
+      marketUniverse: 'toss-web-ranking',
+      guaranteedTop100: true,
+      includesLocalFallback: false,
+    });
+  });
+
   it('enters cooldown on KIS rate-limit errors and keeps stale data', async () => {
     let now = 1_000;
     let fail = false;

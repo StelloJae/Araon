@@ -66,4 +66,61 @@ describe('market routes', () => {
       error: { code: 'MARKET_TOP_MOVERS_UNAVAILABLE' },
     });
   });
+
+  it('returns Toss realtime ranking through a separate read-only market route', async () => {
+    const app = Fastify({ logger: false });
+    const getRealtimeRanking = vi.fn(async () => ({
+      generatedAt: '2026-05-11T06:05:00.000Z',
+      fetchedAt: '2026-05-11T06:05:00.000Z',
+      rankingDateTime: '2025-03-10T16:44:43',
+      rankingTimestampStatus: 'stale',
+      source: 'toss-public-realtime-ranking',
+      sourceLabel: '토스 실시간 인기',
+      status: 'partial',
+      message: '토스 공개 인기 랭킹입니다. 랭킹 시각이 오래되어 가격만 별도 갱신했습니다.',
+      refreshIntervalMs: 15_000,
+      coverage: {
+        requestedLimit: 100,
+        returnedCount: 1,
+        pricedCount: 1,
+        market: 'kr',
+      },
+      items: [
+        {
+          rank: 1,
+          ticker: '005930',
+          productCode: 'A005930',
+          name: '삼성전자',
+          market: '코스피',
+          currency: 'KRW',
+          price: 284_000,
+          changeAbs: 15_500,
+          changePct: 5.77,
+          volume: 56_326_493,
+        },
+      ],
+    }));
+
+    await app.register(marketRoutes, {
+      service: {
+        getSummary: vi.fn(),
+      },
+      tossRealtimeRankingService: {
+        getRealtimeRanking,
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/market/toss/realtime-ranking?limit=100&market=kr' });
+
+    expect(res.statusCode).toBe(200);
+    expect(getRealtimeRanking).toHaveBeenCalledWith({ limit: 100, market: 'kr' });
+    expect(res.json()).toMatchObject({
+      success: true,
+      data: {
+        source: 'toss-public-realtime-ranking',
+        rankingTimestampStatus: 'stale',
+        items: [{ ticker: '005930', price: 284_000 }],
+      },
+    });
+  });
 });
