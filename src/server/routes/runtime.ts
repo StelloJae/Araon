@@ -88,6 +88,10 @@ import type {
   MarketTopMoversService,
   MarketTopMoversServiceSnapshot,
 } from '../market/market-top-movers-service.js';
+import type {
+  MarketDataProvider,
+  MarketDataProviderHealth,
+} from '../market/market-data-provider.js';
 import type { KisRestProfileRouterSnapshot } from '../kis/kis-rest-profile-router.js';
 import type { TossQuotePollingSnapshot } from '../toss/toss-quote-polling-service.js';
 
@@ -118,6 +122,7 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   };
   dataRetention?: { snapshot(): DataRetentionSnapshot };
   marketTopMoversService?: Pick<MarketTopMoversService, 'snapshot'>;
+  marketDataProviders?: ReadonlyArray<Pick<MarketDataProvider, 'getHealth'>>;
   tossQuotePolling?: { snapshot(): TossQuotePollingSnapshot };
   phoneNotifier?: PhoneNotifier;
   phoneDeliveryLog?: PhoneDeliveryLog;
@@ -735,6 +740,10 @@ export async function runtimeRoutes(
         kisOutboundLimiter: buildKisOutboundLimiterPayload(opts.runtimeRef.get()),
         kisRestProfiles: buildKisRestProfilesPayload(opts.runtimeRef.get()),
         tossQuotePolling: buildTossQuotePollingPayload(opts.tossQuotePolling?.snapshot()),
+        marketDataProviders: buildMarketDataProvidersPayload(
+          opts.marketDataProviders,
+          opts.runtimeRef.get(),
+        ),
         marketTopMovers: buildMarketTopMoversPayload(opts.marketTopMoversService?.snapshot()),
         volumeBaseline: baselineCounts,
         growth: {
@@ -1386,6 +1395,80 @@ function buildTossQuotePollingPayload(
     batchSize: snapshot.batchSize,
     suppressingKisPolling: snapshot.enabled && snapshot.consecutiveFailureCount < 2,
   };
+}
+
+function buildMarketDataProvidersPayload(
+  providers: ReadonlyArray<Pick<MarketDataProvider, 'getHealth'>> | undefined,
+  runtimeState: KisRuntimeState,
+): MarketDataProviderHealth[] {
+  return [
+    ...((providers ?? []).map((provider) => sanitizeProviderHealth(provider.getHealth()))),
+    buildKisLegacyProviderHealth(runtimeState),
+  ];
+}
+
+function sanitizeProviderHealth(health: MarketDataProviderHealth): MarketDataProviderHealth {
+  return {
+    providerId: health.providerId,
+    label: health.label,
+    status: health.status,
+    requiresAuth: health.requiresAuth,
+    authenticated: health.authenticated,
+    capabilities: [...health.capabilities],
+    lastErrorCode: health.lastErrorCode,
+    lastErrorAt: health.lastErrorAt,
+    message: health.message,
+  };
+}
+
+function buildKisLegacyProviderHealth(runtimeState: KisRuntimeState): MarketDataProviderHealth {
+  const base = {
+    providerId: 'kis-legacy' as const,
+    label: 'KIS legacy fallback',
+    requiresAuth: true,
+    capabilities: [
+      'top-movers',
+      'quote-batch',
+      'trade-subscribe',
+      'daily-candles',
+      'stock-metadata',
+    ] as const,
+    lastErrorAt: null,
+  };
+  switch (runtimeState.status) {
+    case 'started':
+      return {
+        ...base,
+        status: 'ready',
+        authenticated: true,
+        lastErrorCode: null,
+        message: 'KIS legacy fallback이 준비되었습니다.',
+      };
+    case 'starting':
+      return {
+        ...base,
+        status: 'degraded',
+        authenticated: false,
+        lastErrorCode: null,
+        message: 'KIS legacy fallback 시작 중입니다.',
+      };
+    case 'failed':
+      return {
+        ...base,
+        status: 'degraded',
+        authenticated: false,
+        lastErrorCode: runtimeState.error.code,
+        message: 'KIS legacy fallback 시작에 실패했습니다.',
+      };
+    case 'unconfigured':
+      return {
+        ...base,
+        status: 'unavailable',
+        authenticated: false,
+        lastErrorCode: null,
+        message: 'KIS credentials가 없어 legacy fallback은 꺼져 있습니다.',
+      };
+  }
 }
 
 function buildMarketTopMoversPayload(

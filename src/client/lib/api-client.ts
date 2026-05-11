@@ -1063,6 +1063,25 @@ export interface RuntimeDataHealthPayload {
     batchSize: number | null;
     suppressingKisPolling: boolean;
   };
+  marketDataProviders: Array<{
+    providerId: 'kis-legacy' | 'toss-public' | 'toss-authenticated';
+    label: string;
+    status: 'ready' | 'degraded' | 'unavailable';
+    requiresAuth: boolean;
+    authenticated: boolean;
+    capabilities: Array<
+      | 'top-movers'
+      | 'quote-batch'
+      | 'realtime-ranking'
+      | 'trade-subscribe'
+      | 'daily-candles'
+      | 'stock-metadata'
+      | 'search'
+    >;
+    lastErrorCode: string | null;
+    lastErrorAt: string | null;
+    message: string | null;
+  }>;
   marketTopMovers: {
     configured: boolean;
     status: string;

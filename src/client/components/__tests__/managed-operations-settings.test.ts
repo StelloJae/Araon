@@ -285,6 +285,36 @@ describe('managed operations settings copy', () => {
             batchSize: 100,
             suppressingKisPolling: true,
           },
+          marketDataProviders: [
+            {
+              providerId: 'toss-public',
+              label: 'Toss public web',
+              status: 'ready',
+              requiresAuth: false,
+              authenticated: true,
+              capabilities: ['top-movers', 'quote-batch', 'daily-candles', 'search'],
+              lastErrorCode: null,
+              lastErrorAt: null,
+              message: '토스 공개 웹 데이터 provider가 준비되었습니다.',
+            },
+            {
+              providerId: 'kis-legacy',
+              label: 'KIS legacy fallback',
+              status: 'unavailable',
+              requiresAuth: true,
+              authenticated: false,
+              capabilities: [
+                'top-movers',
+                'quote-batch',
+                'trade-subscribe',
+                'daily-candles',
+                'stock-metadata',
+              ],
+              lastErrorCode: null,
+              lastErrorAt: null,
+              message: 'KIS credentials가 없어 legacy fallback은 꺼져 있습니다.',
+            },
+          ],
           marketTopMovers: {
             configured: true,
             status: 'ready',
@@ -427,6 +457,9 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('Toss 가격 갱신');
     expect(html).toContain('11/12 수신');
     expect(html).toContain('KIS polling 억제');
+    expect(html).toContain('데이터 소스');
+    expect(html).toContain('Toss 기본');
+    expect(html).toContain('KIS legacy fallback 꺼짐');
     expect(html).toContain('TOP100 보장');
     expect(html).toContain('토스 웹 랭킹');
     expect(html).toContain('토스 호출 제한');

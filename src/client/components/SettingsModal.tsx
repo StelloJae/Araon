@@ -1790,6 +1790,9 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
   const tossQuoteSummary = health !== null
     ? formatTossQuotePollingSummary(health.tossQuotePolling)
     : null;
+  const providerSummary = health !== null
+    ? formatMarketDataProviderSummary(health.marketDataProviders)
+    : null;
   return (
     <div
       data-testid="data-health-panel"
@@ -1877,6 +1880,11 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor={topMoversSummary?.chipColor ?? 'var(--text-muted)'}
             />
             <Row
+              k="데이터 소스"
+              v={providerSummary?.label ?? '대기'}
+              chipColor={providerSummary?.chipColor ?? 'var(--text-muted)'}
+            />
+            <Row
               k="보강 대기 제외"
               v={`${health.backfill.noWorkCooldownCount}종목`}
               chipColor={health.backfill.noWorkCooldownCount > 0 ? 'var(--gold-text)' : 'var(--text-muted)'}
@@ -1934,6 +1942,8 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
             KIS REST: {formatKisBudgetDetails(health.kisOutboundLimiter)}
             <br />
             Toss 가격: {formatTossQuotePollingDetails(health.tossQuotePolling)}
+            <br />
+            데이터 소스: {formatMarketDataProviderDetails(health.marketDataProviders)}
             {health.backfill.lastSkippedReason !== null && (
               <>
                 <br />
@@ -2060,6 +2070,39 @@ function formatTossQuotePollingDetails(
     polling.errorCount > 0 ? `실패 ${polling.errorCount}` : null,
     fallback,
   ].filter((item): item is string => item !== null).join(' · ');
+}
+
+function formatMarketDataProviderSummary(
+  providers: RuntimeDataHealthPayload['marketDataProviders'],
+): { label: string; chipColor: string } {
+  const toss = providers.find((provider) => provider.providerId === 'toss-public');
+  if (toss !== undefined) {
+    if (toss.status === 'ready') {
+      return { label: 'Toss 기본', chipColor: 'var(--kr-up)' };
+    }
+    if (toss.status === 'degraded') {
+      return { label: 'Toss 점검', chipColor: 'var(--gold-text)' };
+    }
+  }
+  const kis = providers.find((provider) => provider.providerId === 'kis-legacy');
+  if (kis?.status === 'ready') {
+    return { label: 'KIS fallback', chipColor: 'var(--gold-text)' };
+  }
+  return { label: '대기', chipColor: 'var(--text-muted)' };
+}
+
+function formatMarketDataProviderDetails(
+  providers: RuntimeDataHealthPayload['marketDataProviders'],
+): string {
+  if (providers.length === 0) return '미구성';
+  return providers.map((provider) => {
+    const status = provider.status === 'ready'
+      ? '준비'
+      : provider.status === 'degraded'
+        ? '주의'
+        : '꺼짐';
+    return `${provider.label} ${status}`;
+  }).join(' · ');
 }
 
 function formatKisLimiterSummary(

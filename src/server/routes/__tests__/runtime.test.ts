@@ -243,6 +243,7 @@ async function build(
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
     backgroundBackfill?: { snapshot(): { running: boolean; lastRunAt: string | null; lastFinishedAt: string | null; lastAttempted: number; lastSucceeded: number; lastFailed: number; lastSkippedReason: 'disabled' | 'market_not_allowed' | 'no_tickers' | 'no_stale_tickers' | 'already_running' | 'cooldown' | null } };
     marketTopMoversService?: { snapshot(): any };
+    marketDataProviders?: Array<{ getHealth(): any }>;
     tossQuotePolling?: { snapshot(): any };
     phoneNotifier?: {
       status(): { configured: boolean; provider: 'telegram'; mode: 'env' };
@@ -280,6 +281,7 @@ async function build(
     backfillStateStore: opts.backfillStateStore,
     backgroundBackfill: opts.backgroundBackfill,
     marketTopMoversService: opts.marketTopMoversService,
+    marketDataProviders: opts.marketDataProviders,
     tossQuotePolling: opts.tossQuotePolling,
     phoneNotifier: opts.phoneNotifier,
     phoneDeliveryLog: opts.phoneDeliveryLog,
@@ -617,6 +619,25 @@ describe('GET /runtime/data-health', () => {
           batchSize: null,
           suppressingKisPolling: false,
         },
+        marketDataProviders: [
+          {
+            providerId: 'kis-legacy',
+            label: 'KIS legacy fallback',
+            status: 'unavailable',
+            requiresAuth: true,
+            authenticated: false,
+            capabilities: [
+              'top-movers',
+              'quote-batch',
+              'trade-subscribe',
+              'daily-candles',
+              'stock-metadata',
+            ],
+            lastErrorCode: null,
+            lastErrorAt: null,
+            message: 'KIS credentials가 없어 legacy fallback은 꺼져 있습니다.',
+          },
+        ],
         marketTopMovers: {
           configured: false,
           status: 'unconfigured',
@@ -781,6 +802,64 @@ describe('GET /runtime/data-health', () => {
     });
     expect(JSON.stringify(body.data.tossQuotePolling)).not.toContain('cookie');
     expect(JSON.stringify(body.data.tossQuotePolling)).not.toContain('token');
+  });
+
+  it('exposes sanitized market data provider health', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      marketDataProviders: [
+        {
+          getHealth: vi.fn(() => ({
+            providerId: 'toss-public',
+            label: 'Toss public web',
+            status: 'ready',
+            requiresAuth: false,
+            authenticated: true,
+            capabilities: ['top-movers', 'quote-batch', 'daily-candles', 'search'],
+            lastErrorCode: null,
+            lastErrorAt: null,
+            message: '토스 공개 웹 데이터 provider가 준비되었습니다.',
+          })),
+        },
+      ],
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const providers = res.json().data.marketDataProviders;
+
+    expect(res.statusCode).toBe(200);
+    expect(providers).toEqual([
+      {
+        providerId: 'toss-public',
+        label: 'Toss public web',
+        status: 'ready',
+        requiresAuth: false,
+        authenticated: true,
+        capabilities: ['top-movers', 'quote-batch', 'daily-candles', 'search'],
+        lastErrorCode: null,
+        lastErrorAt: null,
+        message: '토스 공개 웹 데이터 provider가 준비되었습니다.',
+      },
+      {
+        providerId: 'kis-legacy',
+        label: 'KIS legacy fallback',
+        status: 'unavailable',
+        requiresAuth: true,
+        authenticated: false,
+        capabilities: [
+          'top-movers',
+          'quote-batch',
+          'trade-subscribe',
+          'daily-candles',
+          'stock-metadata',
+        ],
+        lastErrorCode: null,
+        lastErrorAt: null,
+        message: 'KIS credentials가 없어 legacy fallback은 꺼져 있습니다.',
+      },
+    ]);
+    expect(JSON.stringify(providers)).not.toContain('cookie');
+    expect(JSON.stringify(providers)).not.toContain('token');
   });
 
   it('exposes sanitized market TOP100 cache and coverage diagnostics', async () => {

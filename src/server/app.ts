@@ -519,6 +519,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     disclosureRepo,
     dataRetention,
     marketTopMoversService,
+    marketDataProviders: [tossPublicMarketDataProvider],
     tossQuotePolling: tossQuotePollingService,
     phoneNotifier: createTelegramPhoneNotifier(),
   });
