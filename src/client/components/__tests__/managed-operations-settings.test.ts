@@ -164,6 +164,7 @@ describe('managed operations settings copy', () => {
             ratePerSec: 15,
             burst: 15,
             tokens: 7.5,
+            globalMinStartGapMs: 200,
             queueDepth: 0,
             queuedByPriority: {},
             currentAllowedRps: 4,

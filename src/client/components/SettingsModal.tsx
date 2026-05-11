@@ -1724,7 +1724,10 @@ function formatKisBudgetDetails(limiter: RuntimeDataHealthPayload['kisOutboundLi
     `foreground ${classRate('foreground')}/s`,
     `throttle ${window.throttlePerMin.toFixed(1)}/min`,
     `queue ${limiter.queueDepth}`,
-  ].join(' · ');
+    limiter.globalMinStartGapMs !== null
+      ? `global gap ${limiter.globalMinStartGapMs}ms`
+      : null,
+  ].filter((item): item is string => item !== null).join(' · ');
 }
 
 function defaultKisBudgetPayload(): RuntimeDataHealthPayload['kisOutboundLimiter']['budget'] {

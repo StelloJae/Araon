@@ -106,6 +106,7 @@ function startedRuntime(
         ratePerSec: 15,
         burst: 15,
         tokens: 15,
+        globalMinStartGapMs: 200,
         policies: [],
         profiles: [],
       })),
@@ -562,6 +563,7 @@ describe('GET /runtime/data-health', () => {
           ratePerSec: null,
           burst: null,
           tokens: null,
+          globalMinStartGapMs: null,
           queueDepth: 0,
           queuedByPriority: {},
           currentAllowedRps: null,
@@ -819,6 +821,7 @@ describe('GET /runtime/data-health', () => {
               ratePerSec: 15,
               burst: 15,
               tokens: 7.5,
+              globalMinStartGapMs: 200,
               queueDepth: 2,
               queuedByPriority: {
                 foreground: 1,
@@ -898,6 +901,7 @@ describe('GET /runtime/data-health', () => {
       ratePerSec: 15,
       burst: 15,
       tokens: 7.5,
+      globalMinStartGapMs: 200,
       queueDepth: 2,
       queuedByPriority: {
         foreground: 1,

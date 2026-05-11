@@ -364,7 +364,7 @@ export function buildDefaultKisOutboundLimiterOptions(
   return {
     ratePerSec,
     burst: Math.ceil(ratePerSec),
-    globalMinStartGapMs: 25,
+    globalMinStartGapMs: 200,
     recoveryBackoffMs: [150, 300, 700, 1_500, 3_000, 5_000, 10_000],
     recoveryRatePerSec: Math.min(4, ratePerSec),
     recoveryStableMs: 30_000,
@@ -374,7 +374,7 @@ export function buildDefaultKisOutboundLimiterOptions(
       foreground: { minStartGapMs: 80, maxInFlight: 2 },
       polling: { minStartGapMs: 350, maxInFlight: 2, recoveryRatePerSec: 3 },
       ranking: {
-        minStartGapMs: 750,
+        minStartGapMs: 1_000,
         maxInFlight: 1,
         recoveryRatePerSec: 1,
         recoveryBackoffMs: [1_500, 3_000, 5_000, 10_000],

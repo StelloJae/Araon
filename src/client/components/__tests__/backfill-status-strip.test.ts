@@ -43,6 +43,7 @@ function health(
       ratePerSec: null,
       burst: null,
       tokens: null,
+      globalMinStartGapMs: null,
       queueDepth: 0,
       queuedByPriority: {},
       currentAllowedRps: null,

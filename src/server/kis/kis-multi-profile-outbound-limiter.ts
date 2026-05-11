@@ -134,6 +134,10 @@ export function createKisMultiProfileOutboundLimiter(
         ratePerSec: snapshots.reduce((sum, snapshot) => sum + snapshot.ratePerSec, 0),
         burst: snapshots.reduce((sum, snapshot) => sum + snapshot.burst, 0),
         tokens: snapshots.reduce((sum, snapshot) => sum + snapshot.tokens, 0),
+        globalMinStartGapMs: Math.max(
+          0,
+          ...snapshots.map((snapshot) => snapshot.globalMinStartGapMs),
+        ),
         queueDepth: snapshots.reduce((sum, snapshot) => sum + (snapshot.queueDepth ?? 0), 0),
         queuedByPriority,
         telemetry: mergeTelemetrySnapshots(),

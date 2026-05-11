@@ -145,6 +145,7 @@ export interface KisOutboundLimiterSnapshot {
   ratePerSec: number;
   burst: number;
   tokens: number;
+  globalMinStartGapMs: number;
   queueDepth?: number;
   queuedByPriority?: Partial<Record<KisPriorityClass, number>>;
   telemetry?: KisGovernorTelemetrySnapshot;
@@ -492,6 +493,7 @@ export function createKisOutboundLimiter(
       ratePerSec,
       burst,
       tokens,
+      globalMinStartGapMs,
       queueDepth: acquireQueue.length,
       queuedByPriority: queuedByPrioritySnapshot(),
       ...(telemetryEnabled ? { telemetry: telemetrySnapshot() } : {}),

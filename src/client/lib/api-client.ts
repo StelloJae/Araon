@@ -707,6 +707,7 @@ export interface RuntimeDataHealthPayload {
     ratePerSec: number | null;
     burst: number | null;
     tokens: number | null;
+    globalMinStartGapMs: number | null;
     queueDepth: number;
     queuedByPriority: Record<string, number>;
     currentAllowedRps: number | null;

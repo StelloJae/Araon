@@ -556,6 +556,42 @@ describe('createKisOutboundLimiter', () => {
     expect(sleep).toHaveBeenCalledWith(80);
   });
 
+  it('exposes the global start gap in snapshots', () => {
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 20,
+      burst: 20,
+      globalMinStartGapMs: 200,
+    });
+
+    expect(limiter.snapshot()).toEqual(expect.objectContaining({
+      globalMinStartGapMs: 200,
+    }));
+  });
+
+  it('applies global start spacing across polling and ranking classes', async () => {
+    let now = 1_000;
+    const sleep = vi.fn(async (ms: number) => {
+      now += ms;
+    });
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 20,
+      burst: 20,
+      now: () => now,
+      sleep,
+      globalMinStartGapMs: 200,
+      classPolicies: {
+        polling: { minStartGapMs: 0 },
+        ranking: { minStartGapMs: 0 },
+      },
+    });
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'ranking' });
+
+    expect(sleep).toHaveBeenCalledWith(200);
+  });
+
   it('applies runtime class policy overrides to request start spacing', async () => {
     let now = 1_000;
     const sleep = vi.fn(async (ms: number) => {

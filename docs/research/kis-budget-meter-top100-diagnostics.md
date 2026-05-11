@@ -74,6 +74,10 @@ The outbound limiter now tracks rolling 10-second and 60-second budget metrics:
 - queue depth
 - current allowed RPS
 
+It also exposes the configured `globalMinStartGapMs`. This is the cross-class
+spacing guard used to keep polling, ranking, foreground, and background starts
+from clustering inside the same short KIS window.
+
 Metrics are grouped by request class, including:
 
 - foreground
@@ -124,4 +128,9 @@ operation, the next product strategy is one of:
 - Build a slow, budgeted, explicit whole-market scanner, but label it as
   Araon-derived and avoid pretending it is the KIS TOP100 endpoint result.
 
-Live stress testing was not performed for this change.
+Initial implementation did not perform live stress testing. A later
+2026-05-11 controlled soak observed that TOP100 still remained partial while
+ranking call volume was low, and that polling/ranking could still hit
+`EGW00201` in short windows. The follow-up tightened the default global KIS REST
+start gap to 200ms and ranking gap to 1000ms; this is a pacing improvement, not
+a guarantee that KIS will always return a full TOP100.
