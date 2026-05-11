@@ -25,6 +25,8 @@ Toss login and does not call account or trading APIs.
 The public phase covers:
 
 - TOP100 through Toss overview ranking.
+- TOP100 status/cooldown text is provider-specific: Toss ranking failures are
+  labeled as Toss issues, while KIS wording is reserved for legacy KIS fallback.
 - Realtime popularity ranking metadata through Toss public ranking.
 - Bulk quote rows through Toss stock-prices via `GET /market/toss/quotes`.
 - Daily and selected minute candles through Toss public `c-chart` for supported

@@ -288,16 +288,16 @@ describe('managed operations settings copy', () => {
           marketTopMovers: {
             configured: true,
             status: 'ready',
-            source: 'kis-ranking-auto',
+            source: 'toss-overview-ranking',
             sourcePhase: 'regular',
-            sourceLabel: 'KIS 전체시장',
-            sourceReason: null,
+            sourceLabel: '토스 웹 랭킹',
+            sourceReason: '토스증권 웹 overview ranking 기반 상승/하락 랭킹입니다.',
             frozen: false,
             lastGoodAgeMs: 5000,
             partialReason: null,
             stopReason: null,
             rankingDiagnostics: null,
-            rankingRateLimited: false,
+            rankingRateLimited: true,
             lastFetchedAt: '2026-05-06T09:00:00.000Z',
             lastGeneratedAt: '2026-05-06T09:00:05.000Z',
             cacheAgeMs: 5_000,
@@ -306,15 +306,15 @@ describe('managed operations settings copy', () => {
             cooldownUntil: null,
             cooldownActive: false,
             inflight: false,
-            lastMessage: '10초마다 갱신',
-            lastErrorCode: null,
+            lastMessage: '토스 웹 랭킹 · 10초마다 갱신',
+            lastErrorCode: 'TOSS_RATE_LIMITED',
             coverage: {
               requestedLimit: 100,
               gainersCount: 100,
               losersCount: 100,
               gainersComplete: true,
               losersComplete: true,
-              marketUniverse: 'kis-full-market-ranking',
+              marketUniverse: 'toss-web-ranking',
               guaranteedTop100: true,
               includesLocalFallback: false,
             },
@@ -428,7 +428,8 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('11/12 수신');
     expect(html).toContain('KIS polling 억제');
     expect(html).toContain('TOP100 보장');
-    expect(html).toContain('KIS 전체시장');
+    expect(html).toContain('토스 웹 랭킹');
+    expect(html).toContain('토스 호출 제한');
     expect(html).toContain('보강 대기 제외');
     expect(html).toContain('1종목');
     expect(html).toContain('최근 보강');
