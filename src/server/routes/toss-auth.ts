@@ -7,6 +7,8 @@ import type { TossSessionStore } from '../toss/toss-session-store.js';
 export interface TossAuthRoutesOptions extends FastifyPluginOptions {
   sessionStore: TossSessionStore;
   loginService?: TossLoginService;
+  onLoginSucceeded?: () => Promise<void> | void;
+  onSessionCleared?: () => Promise<void> | void;
 }
 
 const loginStartBodySchema = z.object({
@@ -18,6 +20,16 @@ export async function tossAuthRoutes(
   app: FastifyInstance,
   opts: TossAuthRoutesOptions,
 ): Promise<void> {
+  let lastLoginSuccessKey: string | null = null;
+
+  async function maybeNotifyLoginSucceeded(status: ReturnType<TossLoginService['status']>): Promise<void> {
+    if (status.state !== 'succeeded') return;
+    const key = status.finishedAt ?? status.updatedAt ?? 'succeeded';
+    if (key === lastLoginSuccessKey) return;
+    lastLoginSuccessKey = key;
+    await opts.onLoginSucceeded?.();
+  }
+
   app.get('/toss/auth/status', async (_request, reply) => {
     const status = await opts.sessionStore.status();
     return reply.send({ success: true, data: status });
@@ -25,6 +37,7 @@ export async function tossAuthRoutes(
 
   app.delete('/toss/auth/session', async (_request, reply) => {
     await opts.sessionStore.clear();
+    await opts.onSessionCleared?.();
     return reply.send({
       success: true,
       data: await opts.sessionStore.status(),
@@ -32,9 +45,11 @@ export async function tossAuthRoutes(
   });
 
   app.get('/toss/auth/login/status', async (_request, reply) => {
+    const status = opts.loginService?.status() ?? null;
+    if (status !== null) await maybeNotifyLoginSucceeded(status);
     return reply.send({
       success: true,
-      data: opts.loginService?.status() ?? null,
+      data: status,
     });
   });
 
@@ -57,6 +72,7 @@ export async function tossAuthRoutes(
       ...(parsed.data.headless === undefined ? {} : { headless: parsed.data.headless }),
     };
     const status = await opts.loginService.start(startOptions);
+    await maybeNotifyLoginSucceeded(status);
     return reply.send({ success: true, data: status });
   });
 

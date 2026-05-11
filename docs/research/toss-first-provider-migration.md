@@ -130,6 +130,10 @@ continue conservative Toss REST polling.
 The settings connection tab can start/stop this SSE service after a sanitized
 Toss session is present, and shows only event counts, timestamps, state, and
 safe error labels.
+When Araon starts with a usable stored Toss session, it now requests the Toss
+SSE service automatically. After QR login capture reaches `succeeded`, the
+settings polling path triggers the same auto-start once. Clearing the Toss
+session stops the SSE service.
 
 Before it becomes the default realtime source, it still needs a minimal live
 probe with an authenticated Toss session. If price refresh events are not

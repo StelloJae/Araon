@@ -62,6 +62,7 @@ import {
   type TossQuotePollingService,
 } from './toss/toss-quote-polling-service.js';
 import { createTossPublicMarketDataProvider } from './toss/toss-public-market-data-provider.js';
+import { shouldAutoStartTossRealtime } from './toss/toss-realtime-autostart.js';
 import { createTossRealtimeService } from './toss/toss-realtime-service.js';
 import { createFileTossSessionStore } from './toss/toss-session-store.js';
 import {
@@ -343,6 +344,15 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const tossSessionStore = createFileTossSessionStore();
   const tossLoginService = createTossCdpLoginService({ sessionStore: tossSessionStore });
   const tossRealtimeService = createTossRealtimeService({ sessionStore: tossSessionStore });
+  const startTossRealtimeIfSessionReady = async (reason: string): Promise<void> => {
+    const session = await tossSessionStore.status();
+    if (!shouldAutoStartTossRealtime(session)) return;
+    const status = await tossRealtimeService.start();
+    log.info(
+      { reason, state: status.state, thinNotificationOnly: status.thinNotificationOnly },
+      'Toss realtime auto-start requested',
+    );
+  };
   tossQuotePollingService = createTossQuotePollingService({
     provider: tossPublicMarketDataProvider,
     stockRepo,
@@ -412,6 +422,12 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(tossAuthRoutes, {
     sessionStore: tossSessionStore,
     loginService: tossLoginService,
+    onLoginSucceeded: async () => {
+      await startTossRealtimeIfSessionReady('login-succeeded');
+    },
+    onSessionCleared: async () => {
+      await tossRealtimeService.stop().catch(() => undefined);
+    },
   });
   await app.register(tossRealtimeRoutes, {
     realtimeService: tossRealtimeService,
@@ -462,6 +478,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       shutdownHandle = null;
     }
     backgroundBackfill.stop();
+    await tossRealtimeService.stop().catch(() => undefined);
     await tossQuotePollingService?.stop();
     dataRetention.stop();
     await appSseManager.closeAll();
@@ -510,6 +527,12 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       dataRetention.start();
       tossQuotePollingService?.start();
       backgroundBackfill.start();
+      void startTossRealtimeIfSessionReady('server-start').catch((err: unknown) => {
+        log.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'Toss realtime auto-start skipped',
+        );
+      });
 
       return { ...server, host, port, url };
     },

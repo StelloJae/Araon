@@ -142,6 +142,47 @@ describe('toss auth routes', () => {
     expect(JSON.stringify(start.json())).not.toContain('session-value');
   });
 
+  it('runs the login-success callback once when QR capture succeeds', async () => {
+    const store = makeStore();
+    const onLoginSucceeded = vi.fn(async () => undefined);
+    const loginService = makeLoginService();
+    loginService.status = vi.fn(() => ({
+      ...loginStatus(),
+      state: 'succeeded',
+      updatedAt: '2026-05-11T06:00:05.000Z',
+      finishedAt: '2026-05-11T06:00:05.000Z',
+      persistent: true,
+    }));
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, {
+      sessionStore: store,
+      loginService,
+      onLoginSucceeded,
+    });
+
+    const first = await app.inject({ method: 'GET', url: '/toss/auth/login/status' });
+    const second = await app.inject({ method: 'GET', url: '/toss/auth/login/status' });
+
+    expect(first.json()).toMatchObject({
+      success: true,
+      data: { state: 'succeeded', persistent: true },
+    });
+    expect(second.statusCode).toBe(200);
+    expect(onLoginSucceeded).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the session-clear callback after deleting Toss session state', async () => {
+    const store = makeStore();
+    const onSessionCleared = vi.fn(async () => undefined);
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, { sessionStore: store, onSessionCleared });
+
+    const res = await app.inject({ method: 'DELETE', url: '/toss/auth/session' });
+
+    expect(res.statusCode).toBe(200);
+    expect(onSessionCleared).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects login start when the service is unavailable or body is invalid', async () => {
     const store = makeStore();
     const app = Fastify({ logger: false });
