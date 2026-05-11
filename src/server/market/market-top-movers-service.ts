@@ -75,6 +75,7 @@ export interface MarketTopMoversServiceSnapshot {
   lastMessage: string | null;
   lastErrorCode:
     | 'KIS_RATE_LIMIT_SECOND_WINDOW'
+    | 'TOSS_RATE_LIMITED'
     | 'RUNTIME_UNAVAILABLE'
     | 'REFRESH_TIMEOUT'
     | 'UNKNOWN'
@@ -122,7 +123,7 @@ export function createMarketTopMoversService({
     }
 
     if (cooldownUntilMs > currentMs) {
-      return remember(cooldownResponse(current, limit), 'KIS_RATE_LIMIT_SECOND_WINDOW');
+      return remember(cooldownResponse(current, limit), rateLimitErrorCodeForKind(sourceKind));
     }
 
     try {
@@ -155,7 +156,7 @@ export function createMarketTopMoversService({
               current,
               cache,
               'stale',
-              'KIS 호출 제한으로 직전 랭킹을 잠시 유지합니다.',
+              `${providerLabelForKind(sourceKind)} 호출 제한으로 직전 랭킹을 잠시 유지합니다.`,
               limit,
               {
                 sourcePhase: 'stale_snapshot',
@@ -164,14 +165,14 @@ export function createMarketTopMoversService({
                 rankingRateLimited: true,
               },
             ),
-            'KIS_RATE_LIMIT_SECOND_WINDOW',
+            rateLimitErrorCodeForKind(sourceKind),
           );
         }
         return remember(
           emptyResponse(
             current,
             'cooldown',
-            'KIS 호출 제한으로 TOP100 갱신을 잠시 대기합니다.',
+            `${providerLabelForKind(sourceKind)} 호출 제한으로 TOP100 갱신을 잠시 대기합니다.`,
             limit,
             {
               sourcePhase: 'unsupported',
@@ -180,7 +181,7 @@ export function createMarketTopMoversService({
               rankingRateLimited: true,
             },
           ),
-          'KIS_RATE_LIMIT_SECOND_WINDOW',
+          rateLimitErrorCodeForKind(sourceKind),
         );
       }
 
@@ -202,7 +203,7 @@ export function createMarketTopMoversService({
           current,
           isRuntimeUnavailable(err) ? 'unconfigured' : 'error',
           isRuntimeUnavailable(err)
-            ? 'KIS credentials 등록 후 TOP100 랭킹을 표시합니다.'
+            ? unavailableMessageForKind(sourceKind)
             : 'TOP100 랭킹을 가져오지 못했습니다.',
           limit,
           { sourcePhase: 'unsupported', partialReason: 'source_unsupported' },
@@ -218,8 +219,8 @@ export function createMarketTopMoversService({
   ): Promise<CacheEntry> {
     if (inflight !== null) return withTimeout(inflight, refreshTimeoutMs);
     const nextRefresh = (async () => {
-      // TOP100 may require KIS continuation pages. Keep gainers/losers
-      // sequential so we do not create a burst against the shared KIS limiter.
+      // Keep gainers/losers sequential so one TOP100 refresh cannot burst the
+      // active provider, whether it is Toss primary or KIS legacy fallback.
       const rankingDiagnostics = emptyRankingDiagnostics();
       const gainers = await fetchRanking({
         direction: 'gainers',
@@ -260,7 +261,7 @@ export function createMarketTopMoversService({
         current,
         cache,
         'stale',
-        'KIS 호출 제한으로 직전 랭킹을 잠시 유지합니다.',
+        `${providerLabelForKind(sourceKind)} 호출 제한으로 직전 랭킹을 잠시 유지합니다.`,
         limit,
         {
           sourcePhase: 'stale_snapshot',
@@ -273,7 +274,7 @@ export function createMarketTopMoversService({
     return emptyResponse(
       current,
       'cooldown',
-      'KIS 호출 제한으로 TOP100 갱신을 대기합니다.',
+      `${providerLabelForKind(sourceKind)} 호출 제한으로 TOP100 갱신을 대기합니다.`,
       limit,
       {
         sourcePhase: 'unsupported',
@@ -689,6 +690,24 @@ function partialMessageForKind(
   return `${provider} 일부만 수신했습니다. 상승 ${coverage.gainersCount}/${limit}, 하락 ${coverage.losersCount}/${limit}`;
 }
 
+function providerLabelForKind(sourceKind: MarketTopMoversSourceKind): string {
+  return sourceKind === 'toss-overview-ranking' ? '토스 웹 랭킹' : 'KIS';
+}
+
+function rateLimitErrorCodeForKind(
+  sourceKind: MarketTopMoversSourceKind,
+): MarketTopMoversServiceSnapshot['lastErrorCode'] {
+  return sourceKind === 'toss-overview-ranking'
+    ? 'TOSS_RATE_LIMITED'
+    : 'KIS_RATE_LIMIT_SECOND_WINDOW';
+}
+
+function unavailableMessageForKind(sourceKind: MarketTopMoversSourceKind): string {
+  return sourceKind === 'toss-overview-ranking'
+    ? '토스 웹 랭킹을 가져오지 못했습니다.'
+    : 'KIS credentials 등록 후 TOP100 랭킹을 표시합니다.';
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   try {
@@ -696,7 +715,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
       promise,
       new Promise<never>((_, reject) => {
         timeoutHandle = setTimeout(() => {
-          reject(new Error(`KIS ranking refresh timeout after ${timeoutMs}ms`));
+          reject(new Error(`TOP100 ranking refresh timeout after ${timeoutMs}ms`));
         }, timeoutMs);
       }),
     ]);

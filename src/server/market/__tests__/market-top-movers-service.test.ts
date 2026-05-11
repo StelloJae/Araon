@@ -100,6 +100,33 @@ describe('market top movers service', () => {
     expect(stale.gainers[0]?.ticker).toBe('005930');
   });
 
+  it('uses Toss-specific cooldown labels when Toss ranking is rate limited', async () => {
+    let now = 1_000;
+    let fail = false;
+    const fetchRanking = vi.fn(async ({ direction }) => {
+      if (fail) throw new Error('429 rate limit');
+      return makeRows(direction, 100);
+    });
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      ttlMs: 1,
+      cooldownMs: 10_000,
+      fetchRanking,
+      sourceKind: 'toss-overview-ranking',
+    });
+
+    await service.getTopMovers({ limit: 100 });
+    now += 2;
+    fail = true;
+    const stale = await service.getTopMovers({ limit: 100 });
+
+    expect(stale.status).toBe('stale');
+    expect(stale.source).toBe('toss-overview-ranking');
+    expect(stale.message).toContain('토스 웹 랭킹 호출 제한');
+    expect(stale.message).not.toContain('KIS');
+    expect(service.snapshot().lastErrorCode).toBe('TOSS_RATE_LIMITED');
+  });
+
   it('clamps caller limit to the top 100 contract', async () => {
     const fetchRanking = vi.fn(async () =>
       Array.from({ length: 120 }, (_, idx) => ({

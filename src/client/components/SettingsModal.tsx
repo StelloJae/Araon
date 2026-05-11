@@ -1989,7 +1989,9 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
                     )}
                   </>
                 )}
-                {health.marketTopMovers.rankingRateLimited && <> · KIS 호출 제한</>}
+                {health.marketTopMovers.rankingRateLimited && (
+                  <> · {topMoversShortSourceLabel(health.marketTopMovers.coverage?.marketUniverse)} 호출 제한</>
+                )}
                 {health.marketTopMovers.lastGoodAgeMs !== null && (
                   <> · 직전 {formatDurationLabel(health.marketTopMovers.lastGoodAgeMs)}</>
                 )}
