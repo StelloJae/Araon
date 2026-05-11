@@ -6,6 +6,7 @@ import {
   KisBudgetPill,
   MarketTape,
   TossQuotePollingPill,
+  shouldShowKisBudgetPill,
   type KisBudgetSummary,
   type MarketTapeSummary,
   type TossQuotePollingSummary,
@@ -111,6 +112,26 @@ describe('TossQuotePollingPill', () => {
   });
 });
 
+describe('shouldShowKisBudgetPill', () => {
+  it('hides calm KIS budget while Toss polling suppresses KIS polling', () => {
+    const budget = kisBudgetFixture({ riskState: 'safe', riskLabel: 'KIS 여유' });
+    const polling = tossPollingFixture({ suppressingKisPolling: true });
+
+    expect(shouldShowKisBudgetPill(budget, polling)).toBe(false);
+  });
+
+  it('keeps KIS budget visible when fallback risk matters', () => {
+    const budget = kisBudgetFixture({
+      riskState: 'recovering',
+      riskLabel: 'KIS 회복중',
+      riskReason: 'EGW00201',
+    });
+    const polling = tossPollingFixture({ suppressingKisPolling: true });
+
+    expect(shouldShowKisBudgetPill(budget, polling)).toBe(true);
+  });
+});
+
 function emptyWindow(windowMs: number): KisBudgetSummary['windows']['sixtySec'] {
   return {
     windowMs,
@@ -123,5 +144,48 @@ function emptyWindow(windowMs: number): KisBudgetSummary['windows']['sixtySec'] 
     failurePerMin: 0,
     throttlePerMin: 0,
     byClass: [],
+  };
+}
+
+function kisBudgetFixture(
+  overrides: Partial<KisBudgetSummary> = {},
+): KisBudgetSummary {
+  return {
+    generatedAt: '2026-05-11T03:00:00.000Z',
+    riskState: 'safe',
+    riskLabel: 'KIS 여유',
+    riskReason: null,
+    windows: {
+      tenSec: emptyWindow(10_000),
+      sixtySec: emptyWindow(60_000),
+    },
+    ...overrides,
+  };
+}
+
+function tossPollingFixture(
+  overrides: Partial<TossQuotePollingSummary> = {},
+): TossQuotePollingSummary {
+  return {
+    configured: true,
+    running: true,
+    enabled: true,
+    source: 'toss-public',
+    cycleCount: 4,
+    lastCycleMs: 52,
+    tickersInCycle: 12,
+    requestedCount: 12,
+    returnedCount: 12,
+    missingCount: 0,
+    errorCount: 0,
+    consecutiveFailureCount: 0,
+    lastSuccessAt: '2026-05-11T03:00:00.000Z',
+    lastFailureAt: null,
+    lastErrorCode: null,
+    lastMessage: 'success',
+    intervalMs: 3000,
+    batchSize: 100,
+    suppressingKisPolling: true,
+    ...overrides,
   };
 }

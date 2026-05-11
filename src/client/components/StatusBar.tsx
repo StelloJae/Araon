@@ -88,16 +88,16 @@ export function StatusBar({
       <Stat label="즐겨찾기 (WS)" value={favCount} highlight />
       <Sep />
       <Stat label="폴링" value={pollingCount} />
-      {kisBudget !== null && (
-        <>
-          <Sep />
-          <KisBudgetPill budget={kisBudget} />
-        </>
-      )}
       {tossQuotePolling !== null && (
         <>
           <Sep />
           <TossQuotePollingPill polling={tossQuotePolling} />
+        </>
+      )}
+      {kisBudget !== null && shouldShowKisBudgetPill(kisBudget, tossQuotePolling) && (
+        <>
+          <Sep />
+          <KisBudgetPill budget={kisBudget} />
         </>
       )}
       <div style={{ flex: 1 }} />
@@ -187,6 +187,19 @@ export function KisBudgetPill({ budget }: { budget: KisBudgetSummary }) {
       {label}
     </span>
   );
+}
+
+export function shouldShowKisBudgetPill(
+  budget: KisBudgetSummary,
+  polling: TossQuotePollingSummary | null,
+): boolean {
+  if (
+    polling?.suppressingKisPolling === true &&
+    (budget.riskState === 'idle' || budget.riskState === 'safe')
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function tossQuotePollingLabel(polling: TossQuotePollingSummary): string {

@@ -40,6 +40,9 @@ The public phase covers:
   tracked tickers in batches, writes only usable real prices into the existing
   price store, and exposes sanitized status under `/runtime/data-health` as
   `tossQuotePolling`.
+- The status bar treats Toss quote polling as the primary provider pill. The KIS
+  budget pill is hidden while Toss is healthy and suppressing KIS polling, but
+  still appears when KIS fallback risk is operationally relevant.
 - While Toss quote polling is enabled, running, and not repeatedly failing, KIS
   REST polling is suppressed so KIS remains a fallback path instead of consuming
   the primary quote-refresh budget. After repeated Toss quote failures, KIS
