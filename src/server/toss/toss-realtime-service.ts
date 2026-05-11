@@ -20,12 +20,15 @@ export interface TossRealtimeStatus {
   readonly stoppedAt: string | null;
   readonly eventCount: number;
   readonly priceRefreshEventCount: number;
+  readonly priceRefreshDispatchCount: number;
+  readonly priceRefreshDispatchFailureCount: number;
   readonly eventTypes: ReadonlyArray<{ readonly type: string; readonly count: number }>;
   readonly reconnectCount: number;
   readonly lastEventType: string | null;
   readonly lastStockCode: string | null;
   readonly lastEventAt: string | null;
   readonly lastPriceRefreshAt: string | null;
+  readonly lastPriceRefreshDispatchAt: string | null;
   readonly lastError: string | null;
   readonly thinNotificationOnly: boolean;
 }
@@ -39,8 +42,14 @@ export interface TossRealtimeService {
 interface TossRealtimeServiceOptions {
   readonly sessionStore: TossSessionStore;
   readonly createClient?: (session: NonNullable<Awaited<ReturnType<TossSessionStore['load']>>>) => TossSseClient;
+  readonly onPriceRefresh?: (event: TossRealtimePriceRefreshEvent) => Promise<void> | void;
   readonly retryBaseMs?: number;
   readonly retryMaxMs?: number;
+}
+
+export interface TossRealtimePriceRefreshEvent {
+  readonly stockCode: string;
+  readonly receivedAt: string;
 }
 
 const DEFAULT_RETRY_BASE_MS = 2000;
@@ -55,6 +64,7 @@ export function createTossRealtimeService(
 class DefaultTossRealtimeService implements TossRealtimeService {
   private readonly sessionStore: TossSessionStore;
   private readonly createClient: NonNullable<TossRealtimeServiceOptions['createClient']>;
+  private readonly onPriceRefresh: TossRealtimeServiceOptions['onPriceRefresh'];
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
   private statusSnapshot: TossRealtimeStatus = idleStatus();
@@ -65,6 +75,7 @@ class DefaultTossRealtimeService implements TossRealtimeService {
   constructor(options: TossRealtimeServiceOptions) {
     this.sessionStore = options.sessionStore;
     this.createClient = options.createClient ?? ((session) => new TossSseClient(session));
+    this.onPriceRefresh = options.onPriceRefresh;
     this.retryBaseMs = options.retryBaseMs ?? DEFAULT_RETRY_BASE_MS;
     this.retryMaxMs = options.retryMaxMs ?? DEFAULT_RETRY_MAX_MS;
   }
@@ -173,6 +184,27 @@ class DefaultTossRealtimeService implements TossRealtimeService {
         : this.statusSnapshot.lastPriceRefreshAt,
       lastError: null,
     });
+    if (type === 'price-refresh' && event.stockCode !== null) {
+      void this.dispatchPriceRefresh({
+        stockCode: event.stockCode,
+        receivedAt: event.receivedAt,
+      });
+    }
+  }
+
+  private async dispatchPriceRefresh(event: TossRealtimePriceRefreshEvent): Promise<void> {
+    this.setStatus({
+      priceRefreshDispatchCount: this.statusSnapshot.priceRefreshDispatchCount + 1,
+      lastPriceRefreshDispatchAt: event.receivedAt,
+    });
+    try {
+      await this.onPriceRefresh?.(event);
+    } catch (err: unknown) {
+      this.setStatus({
+        priceRefreshDispatchFailureCount: this.statusSnapshot.priceRefreshDispatchFailureCount + 1,
+        lastError: safeErrorMessage(err),
+      });
+    }
   }
 
   private setStatus(update: Partial<Omit<TossRealtimeStatus, 'updatedAt'>>): void {
@@ -192,12 +224,15 @@ function idleStatus(): TossRealtimeStatus {
     stoppedAt: null,
     eventCount: 0,
     priceRefreshEventCount: 0,
+    priceRefreshDispatchCount: 0,
+    priceRefreshDispatchFailureCount: 0,
     eventTypes: [],
     reconnectCount: 0,
     lastEventType: null,
     lastStockCode: null,
     lastEventAt: null,
     lastPriceRefreshAt: null,
+    lastPriceRefreshDispatchAt: null,
     lastError: null,
     thinNotificationOnly: true,
   };

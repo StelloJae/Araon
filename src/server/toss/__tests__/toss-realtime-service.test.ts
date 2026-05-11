@@ -47,6 +47,7 @@ function event(type: string, stockCode: string | null): TossSseEvent {
 
 describe('Toss realtime service', () => {
   it('tracks price-refresh and event-type counters without raw payload state', async () => {
+    const onPriceRefresh = vi.fn(async () => undefined);
     const client = {
       listen: vi.fn(async (signal: AbortSignal, handler: (item: TossSseEvent) => void) => {
         handler(event('price-refresh', 'A005930'));
@@ -60,6 +61,7 @@ describe('Toss realtime service', () => {
     const service = createTossRealtimeService({
       sessionStore: makeSessionStore(),
       createClient: () => client as TossSseClient,
+      onPriceRefresh,
       retryBaseMs: 1,
       retryMaxMs: 1,
     });
@@ -69,11 +71,19 @@ describe('Toss realtime service', () => {
     expect(service.status()).toMatchObject({
       eventCount: 3,
       priceRefreshEventCount: 2,
+      priceRefreshDispatchCount: 2,
+      priceRefreshDispatchFailureCount: 0,
       lastPriceRefreshAt: '2026-05-11T06:00:01.000Z',
+      lastPriceRefreshDispatchAt: '2026-05-11T06:00:01.000Z',
       eventTypes: [
         { type: 'price-refresh', count: 2 },
         { type: 'watchlist-refresh', count: 1 },
       ],
+    });
+    expect(onPriceRefresh).toHaveBeenCalledTimes(2);
+    expect(onPriceRefresh).toHaveBeenNthCalledWith(1, {
+      stockCode: 'A005930',
+      receivedAt: '2026-05-11T06:00:01.000Z',
     });
     expect(JSON.stringify(service.status())).not.toContain('redacted');
 

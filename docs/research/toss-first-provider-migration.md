@@ -137,6 +137,10 @@ session stops the SSE service.
 The sanitized SSE status also tracks event type counts, `price-refresh` event
 counts, and the latest stock code/timestamps. This remains metadata-only:
 raw SSE payloads, cookies, and browser storage values are not exposed.
+When a `price-refresh` notification includes a supported tracked Korean stock
+code, Araon now uses it as a low-rate trigger for a Toss public quote refresh.
+The trigger is ticker-throttled and only writes real Toss quote rows into the
+existing PriceStore.
 
 Before it becomes the default realtime source, it still needs a minimal live
 probe with an authenticated Toss session. If price refresh events are not

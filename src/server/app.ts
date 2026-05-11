@@ -62,6 +62,7 @@ import {
   type TossQuotePollingService,
 } from './toss/toss-quote-polling-service.js';
 import { createTossPublicMarketDataProvider } from './toss/toss-public-market-data-provider.js';
+import { createTossRealtimeQuoteRefreshHandler } from './toss/toss-realtime-quote-refresh.js';
 import { shouldAutoStartTossRealtime } from './toss/toss-realtime-autostart.js';
 import { createTossRealtimeService } from './toss/toss-realtime-service.js';
 import { createFileTossSessionStore } from './toss/toss-session-store.js';
@@ -343,7 +344,20 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   });
   const tossSessionStore = createFileTossSessionStore();
   const tossLoginService = createTossCdpLoginService({ sessionStore: tossSessionStore });
-  const tossRealtimeService = createTossRealtimeService({ sessionStore: tossSessionStore });
+  const tossRealtimeQuoteRefresh = createTossRealtimeQuoteRefreshHandler({
+    provider: tossPublicMarketDataProvider,
+    stockRepo,
+    priceStore,
+  });
+  const tossRealtimeService = createTossRealtimeService({
+    sessionStore: tossSessionStore,
+    onPriceRefresh: async (event) => {
+      const result = await tossRealtimeQuoteRefresh.handle({ stockCode: event.stockCode });
+      if (result !== 'refreshed') {
+        log.debug({ result }, 'Toss realtime quote refresh skipped');
+      }
+    },
+  });
   const startTossRealtimeIfSessionReady = async (reason: string): Promise<void> => {
     const session = await tossSessionStore.status();
     if (!shouldAutoStartTossRealtime(session)) return;

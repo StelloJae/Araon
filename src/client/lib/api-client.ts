@@ -199,12 +199,15 @@ export interface TossSseStatusPayload {
   stoppedAt: string | null;
   eventCount: number;
   priceRefreshEventCount: number;
+  priceRefreshDispatchCount: number;
+  priceRefreshDispatchFailureCount: number;
   eventTypes: Array<{ type: string; count: number }>;
   reconnectCount: number;
   lastEventType: string | null;
   lastStockCode: string | null;
   lastEventAt: string | null;
   lastPriceRefreshAt: string | null;
+  lastPriceRefreshDispatchAt: string | null;
   lastError: string | null;
   thinNotificationOnly: boolean;
 }

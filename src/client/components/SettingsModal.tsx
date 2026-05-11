@@ -1444,6 +1444,11 @@ export function TossDataControl({
           v={`${realtime?.priceRefreshEventCount ?? 0}개`}
           chipColor={(realtime?.priceRefreshEventCount ?? 0) > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
         />
+        <Row
+          k="quote refresh"
+          v={`${realtime?.priceRefreshDispatchCount ?? 0}회`}
+          chipColor={(realtime?.priceRefreshDispatchCount ?? 0) > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
+        />
       </div>
       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
         세션 만료: {formatMaybeLocal(session?.expiresAt ?? null)}
