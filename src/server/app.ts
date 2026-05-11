@@ -55,6 +55,7 @@ import { createDataRetentionScheduler } from './maintenance/data-retention.js';
 import { createMasterStockService } from './services/master-stock-service.js';
 import { createMarketSummaryService } from './market/market-summary-service.js';
 import { createMarketTopMoversService } from './market/market-top-movers-service.js';
+import { createTossCdpLoginService } from './toss/toss-cdp-login-service.js';
 import { createTossPublicMarketDataProvider } from './toss/toss-public-market-data-provider.js';
 import { createFileTossSessionStore } from './toss/toss-session-store.js';
 import {
@@ -298,6 +299,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     newsRepo,
   });
   const tossSessionStore = createFileTossSessionStore();
+  const tossLoginService = createTossCdpLoginService({ sessionStore: tossSessionStore });
   const tossPublicMarketDataProvider = createTossPublicMarketDataProvider();
   const marketTopMoversService = createMarketTopMoversService({
     fetchRanking: async ({ direction, count, sourcePhase, onDiagnostic }) => {
@@ -351,7 +353,10 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     topMoversService: marketTopMoversService,
     tossRealtimeRankingService,
   });
-  await app.register(tossAuthRoutes, { sessionStore: tossSessionStore });
+  await app.register(tossAuthRoutes, {
+    sessionStore: tossSessionStore,
+    loginService: tossLoginService,
+  });
   await app.register(eventsRoutes, { runtimeRef });
   await app.register(runtimeRoutes, {
     runtimeRef,
