@@ -16,7 +16,7 @@ Araon은 localhost 단일 사용자용 한국 주식 watchlist 대시보드다.
   Toss authenticated realtime is research/implementation-in-progress and must
   stay read-only until separately verified.
 - Fallback: REST polling 유지
-- Chart: local 1m candle, KIS daily 1d candle, 서버 집계 3m~12h/1W/1M
+- Chart: local 1m candle, Toss/KIS daily 1d candle, 서버 집계 3m~12h/1W/1M
 - Packaging: CLI/npm and Electron desktop
 
 Clean install + no credentials 상태에서는 외부 KIS 호출이 없어야 한다.
@@ -48,7 +48,7 @@ Credentials/data/runtime state는 커밋하지 않는다.
 
 ### Backfill
 
-- Daily backfill은 credentials 등록 후 managed default다.
+- Daily backfill은 Toss public daily candle을 우선 사용하고, KIS는 fallback으로 남긴다.
 - 대상은 tracked/favorites 범위로 제한한다.
 - 장중 backfill guard와 rate/cooldown/budget guard를 유지한다.
 - full master backfill은 금지한다.

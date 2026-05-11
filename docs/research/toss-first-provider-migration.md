@@ -27,6 +27,9 @@ The public phase covers:
 - TOP100 through Toss overview ranking.
 - Realtime popularity ranking metadata through Toss public ranking.
 - Bulk quote rows through Toss stock-prices via `GET /market/toss/quotes`.
+- Daily candles through Toss public `c-chart` for supported Korean stocks. Araon
+  uses this as the first daily backfill path and falls back to KIS only if the
+  Toss daily request fails and KIS runtime is already available.
 - Foreground quote refresh tries Toss public quotes first, then falls back to KIS
   only when the Toss quote is unavailable or fails.
 - Watchlist quote polling now has a Toss public batch-polling service. It polls
@@ -75,7 +78,8 @@ KIS remains in place for:
 | Watchlist quote polling | Toss batch polling first; KIS REST polling suppressed while Toss is healthy. | Keep KIS as automatic fallback after repeated Toss quote failures. |
 | SSE price delivery | App-level SSE manager now works without KIS runtime. | Use it for Toss polling updates and KIS/other providers alike. |
 | KIS realtime WebSocket | Still KIS-only. | Retain until Toss authenticated realtime proves true price-tick coverage. |
-| Charts/backfill | Still KIS daily/minute candle endpoints. | Retain; Toss chart alternative is not proven yet. |
+| Daily charts/backfill | Toss public `c-chart` is primary for daily Korean stock candles. | Keep KIS daily as fallback while live stability is observed. |
+| Minute charts/backfill | Still KIS today/historical minute candle endpoints. | Retain; Toss minute chart contract is not typed or proven yet. |
 | Search/master metadata | Toss public search can add supported KOSPI/KOSDAQ stocks without KIS; KIS MST/local master cache remains for full offline universe/classification. | Keep KIS MST as optional metadata enrichment until Toss/another source covers full-market classification. |
 | KIS watchlist import | Still KIS-only import convenience. | Retain as optional import, not core runtime. |
 
@@ -147,6 +151,23 @@ probe with an authenticated Toss session. If price refresh events are not
 observed or do not cover watchlist movement, keep Toss REST quote polling as the
 primary replacement for KIS polling and document the blocker.
 
+## Chart Evidence
+
+The `tossinvest-cli` reverse-engineering catalog records a public chart endpoint:
+
+- `GET https://wts-info-api.tossinvest.com/api/v1/c-chart/kr-s/{code}/day:1`
+- Query shape observed from the Toss web bundle: `count`, `from`, `session`,
+  `investMode`, `useAdjustedRate`, and optional `currency`.
+- The response includes `result.candles[]` with `dt`, `open`, `high`, `low`,
+  `close`, `volume`, plus `nextDateTime` for older-page traversal.
+
+Araon now maps these rows to stored `1d` candles with source `toss-daily`.
+On 2026-05-11, a minimal public read-only probe for `A005930` confirmed the
+endpoint returned current daily rows and accepted `from=nextDateTime` for older
+page traversal.
+This does not replace KIS minute backfill yet. The Toss SSE channel remains a
+thin notification stream, so it is not a direct candle or tick stream by itself.
+
 ## Completion Criteria
 
 The full KIS removal goal is not complete until:
@@ -155,7 +176,8 @@ The full KIS removal goal is not complete until:
 - Watchlist quote refresh works through Toss public or authenticated data.
 - Realtime ticks work through Toss authenticated realtime, or a clear blocker and
   fallback are documented.
-- Chart/search/master metadata have Toss coverage or documented alternatives.
+- Daily chart/search have Toss coverage; minute chart and full master metadata
+  have Toss coverage or documented alternatives.
 - KIS settings and runtime are removed or explicitly retained as a documented
   legacy fallback.
 - Full test/typecheck/build and secret grep pass.

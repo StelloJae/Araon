@@ -274,6 +274,24 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const dailyBackfillService = createDailyBackfillService({
     repo: candleRepo,
     fetchDailyCandles: async ({ ticker, fromYmd, toYmd, now, endpointClass }) => {
+      try {
+        return await tossPublicMarketDataProvider.getDailyCandles({
+          ticker,
+          fromYmd,
+          toYmd,
+          now,
+        });
+      } catch (err: unknown) {
+        const state = runtimeRef.get();
+        if (state.status !== 'started') {
+          throw err;
+        }
+        log.warn(
+          { ticker, err: err instanceof Error ? err.message : String(err) },
+          'Toss daily candle backfill failed; falling back to KIS when available',
+        );
+      }
+
       const state = runtimeRef.get();
       if (state.status !== 'started') {
         throw new Error('KIS runtime is not started');

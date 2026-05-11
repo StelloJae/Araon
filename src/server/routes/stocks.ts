@@ -554,27 +554,26 @@ export async function stockRoutes(
         });
       }
       const range = dailyBackfillRangeForCandleRange(parsed.data.range);
+      const completeDailySource = completeDailyCoverageSource(
+        opts.candleCoverageRepo,
+        ticker,
+        window,
+      );
       if (
         parsed.data.force !== true &&
-        (opts.candleCoverageRepo?.hasCompleteCoverage({
-          ticker,
-          interval: '1d',
-          source: 'kis-daily',
-          from: window.from,
-          to: window.to,
-        }) === true ||
-        !shouldBackfillDailyTicker({
-          ticker,
-          range,
-          now,
-          repo: opts.candleRepo,
-        }))
+        (completeDailySource !== null ||
+          !shouldBackfillDailyTicker({
+            ticker,
+            range,
+            now,
+            repo: opts.candleRepo,
+          }))
       ) {
         return reply.send({
           success: true,
           data: {
             state: 'current',
-            source: 'kis-daily',
+            source: completeDailySource ?? 'mixed',
             requested: 0,
             inserted: 0,
             updated: 0,
@@ -1180,6 +1179,27 @@ function hasBackfilledIntradayInWindow(
     .some((candle) => candle.source === 'kis-time-daily');
 }
 
+function completeDailyCoverageSource(
+  coverageRepo: CandleCoverageRepository | undefined,
+  ticker: string,
+  window: { from: string; to: string },
+): Extract<PriceCandleSource, 'toss-daily' | 'kis-daily'> | null {
+  for (const source of ['toss-daily', 'kis-daily'] as const) {
+    if (
+      coverageRepo?.hasCompleteCoverage({
+        ticker,
+        interval: '1d',
+        source,
+        from: window.from,
+        to: window.to,
+      }) === true
+    ) {
+      return source;
+    }
+  }
+  return null;
+}
+
 function hasFreshTodayMinuteCoverage(
   repo: PriceCandleRepository,
   ticker: string,
@@ -1308,6 +1328,7 @@ function isKnownCandleSource(
     source === 'kis-daily' ||
     source === 'kis-time-today' ||
     source === 'kis-time-daily' ||
+    source === 'toss-daily' ||
     source === 'mixed'
   );
 }
@@ -1359,7 +1380,8 @@ function buildCoverage(
   const backfilled =
     sourceMix.includes('kis-daily') ||
     sourceMix.includes('kis-time-today') ||
-    sourceMix.includes('kis-time-daily');
+    sourceMix.includes('kis-time-daily') ||
+    sourceMix.includes('toss-daily');
   const coverage: CandleApiCoverage = {
     from: first?.bucketAt ?? null,
     to: last?.bucketAt ?? null,

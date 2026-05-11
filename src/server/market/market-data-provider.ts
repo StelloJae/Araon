@@ -4,6 +4,7 @@ import type {
   MarketTopMoversRankingDiagnostic,
   MarketTopMoversSourcePhase,
   Price,
+  PriceCandle,
   TossRealtimeRankingMarket,
   TossRealtimeRankingResponse,
 } from '@shared/types.js';
@@ -59,6 +60,13 @@ export interface MarketRealtimeRankingInput {
   market?: TossRealtimeRankingMarket;
 }
 
+export interface MarketDailyCandlesInput {
+  ticker: string;
+  fromYmd: string;
+  toYmd: string;
+  now: Date;
+}
+
 export interface MarketDataProvider {
   id: MarketDataProviderId;
   label: string;
@@ -67,5 +75,6 @@ export interface MarketDataProvider {
   getTopMoversRanking?(input: MarketTopMoversProviderInput): Promise<MarketTopMoverItem[]>;
   getQuoteBatch?(input: MarketQuoteBatchInput): Promise<MarketQuoteBatchResult>;
   getRealtimeRanking?(input?: MarketRealtimeRankingInput): Promise<TossRealtimeRankingResponse>;
+  getDailyCandles?(input: MarketDailyCandlesInput): Promise<PriceCandle[]>;
   getHealth(): MarketDataProviderHealth;
 }

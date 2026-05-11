@@ -18,7 +18,14 @@ describe('toss public market data provider', () => {
       status: 'ready',
       requiresAuth: false,
       authenticated: true,
-      capabilities: ['top-movers', 'quote-batch', 'realtime-ranking', 'stock-metadata', 'search'],
+      capabilities: [
+        'top-movers',
+        'quote-batch',
+        'realtime-ranking',
+        'daily-candles',
+        'stock-metadata',
+        'search',
+      ],
       lastErrorCode: null,
     });
   });

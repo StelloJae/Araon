@@ -395,7 +395,7 @@ export async function backfillStockCandles(
   requested: number;
   inserted: number;
   updated: number;
-  source: 'kis-daily';
+  source: 'kis-daily' | 'toss-daily' | 'mixed';
 }> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles/backfill`, {
     method: 'POST',
@@ -407,7 +407,7 @@ export async function backfillStockCandles(
     requested: number;
     inserted: number;
     updated: number;
-    source: 'kis-daily';
+    source: 'kis-daily' | 'toss-daily' | 'mixed';
   }>(res);
 }
 
@@ -447,7 +447,7 @@ export async function ensureStockCandleCoverage(
 ): Promise<{
   state: 'backfilled' | 'current' | 'empty' | 'skipped';
   reason?: string;
-  source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | null;
+  source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | 'toss-daily' | 'mixed' | null;
   requested: number;
   inserted: number;
   updated: number;
@@ -461,7 +461,7 @@ export async function ensureStockCandleCoverage(
   return unwrap<{
     state: 'backfilled' | 'current' | 'empty' | 'skipped';
     reason?: string;
-    source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | null;
+    source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | 'toss-daily' | 'mixed' | null;
     requested: number;
     inserted: number;
     updated: number;
@@ -872,7 +872,7 @@ export interface RuntimeDataHealthPayload {
       requested: number;
       inserted: number;
       updated: number;
-      source: 'kis-daily' | null;
+      source: 'kis-daily' | 'toss-daily' | 'mixed' | null;
       finishedAt: string;
       errorCode: string | null;
     }>;

@@ -1,11 +1,13 @@
 import type {
   MarketDataProvider,
+  MarketDailyCandlesInput,
   MarketDataProviderHealth,
   MarketQuoteBatchInput,
   MarketQuoteBatchResult,
   MarketRealtimeRankingInput,
   MarketTopMoversProviderInput,
 } from '../market/market-data-provider.js';
+import { fetchTossDailyCandles } from './toss-daily-chart.js';
 import {
   fetchTossOverviewRanking,
   type TossOverviewRankingMarket,
@@ -34,6 +36,7 @@ export interface TossPublicMarketDataProvider extends MarketDataProvider {
   getTopMoversRanking(input: MarketTopMoversProviderInput): ReturnType<typeof fetchTossOverviewRanking>;
   getQuoteBatch(input: MarketQuoteBatchInput): Promise<MarketQuoteBatchResult>;
   getRealtimeRanking(input?: MarketRealtimeRankingInput): ReturnType<typeof fetchTossRealtimeRanking>;
+  getDailyCandles(input: MarketDailyCandlesInput): ReturnType<typeof fetchTossDailyCandles>;
   searchStocks(input: { query: string; limit?: number }): Promise<{
     providerId: 'toss-public';
     fetchedAt: string;
@@ -49,6 +52,7 @@ const CAPABILITIES = [
   'top-movers',
   'quote-batch',
   'realtime-ranking',
+  'daily-candles',
   'stock-metadata',
   'search',
 ] as const;
@@ -123,6 +127,16 @@ export function createTossPublicMarketDataProvider({
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
         ...(input.market !== undefined ? { market: input.market } : {}),
         now,
+        fetchFn,
+        ...(infoBaseUrl !== undefined ? { infoBaseUrl } : {}),
+      }));
+    },
+    getDailyCandles(input) {
+      return run('TOSS_DAILY_CANDLES_FAILED', () => fetchTossDailyCandles({
+        ticker: input.ticker,
+        fromYmd: input.fromYmd,
+        toYmd: input.toYmd,
+        now: () => input.now,
         fetchFn,
         ...(infoBaseUrl !== undefined ? { infoBaseUrl } : {}),
       }));
