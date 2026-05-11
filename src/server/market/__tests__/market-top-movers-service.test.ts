@@ -31,6 +31,19 @@ describe('market top movers service', () => {
     expect(second.fetchedAt).toBe(first.fetchedAt);
   });
 
+  it('uses a conservative default refresh interval for ranking traffic', async () => {
+    const fetchRanking = vi.fn(async ({ direction }) => makeRows(direction, 1));
+    const service = createMarketTopMoversService({
+      now: () => new Date('2026-05-11T01:00:00.000Z'),
+      fetchRanking,
+    });
+
+    const result = await service.getTopMovers({ limit: 100 });
+
+    expect(result.refreshIntervalMs).toBeGreaterThanOrEqual(30_000);
+    expect(result.cacheTtlMs).toBe(result.refreshIntervalMs);
+  });
+
   it('enters cooldown on KIS rate-limit errors and keeps stale data', async () => {
     let now = 1_000;
     let fail = false;
@@ -121,6 +134,90 @@ describe('market top movers service', () => {
     });
   });
 
+  it('keeps the larger last-good partial ranking when a later refresh shrinks under rate pressure', async () => {
+    let now = Date.parse('2026-05-11T01:00:00.000Z');
+    let sampleSize = 30;
+    const fetchRanking = vi.fn(async ({ direction }) =>
+      makeRows(direction, direction === 'gainers' ? sampleSize : Math.max(1, sampleSize - 9)),
+    );
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      ttlMs: 1,
+      fetchRanking,
+    });
+
+    const first = await service.getTopMovers({ limit: 100 });
+    now += 2;
+    sampleSize = 3;
+    const retained = await service.getTopMovers({ limit: 100 });
+
+    expect(first.coverage.gainersCount).toBe(30);
+    expect(first.coverage.losersCount).toBe(21);
+    expect(retained.status).toBe('stale');
+    expect(retained.sourcePhase).toBe('stale_snapshot');
+    expect(retained.partialReason).toBe('smaller_refresh_retained');
+    expect(retained.coverage.gainersCount).toBe(30);
+    expect(retained.coverage.losersCount).toBe(21);
+    expect(retained.lastGoodAgeMs).toBe(2);
+  });
+
+  it('routes fetches through the current TOP100 market source phase', async () => {
+    const now = Date.parse('2026-05-10T23:30:00.000Z'); // 08:30 KST
+    const fetchRanking = vi.fn(async ({ direction }) => makeRows(direction, 1));
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      fetchRanking,
+    });
+
+    const result = await service.getTopMovers({ limit: 100 });
+
+    expect(fetchRanking).toHaveBeenCalledWith(expect.objectContaining({
+      sourcePhase: 'premarket',
+    }));
+    expect(result.sourcePhase).toBe('premarket');
+    expect(result.sourceLabel).toBe('장전');
+  });
+
+  it('freezes the last premarket snapshot during the 08:50-09:00 handoff window', async () => {
+    let now = Date.parse('2026-05-10T23:49:00.000Z'); // 08:49 KST
+    const fetchRanking = vi.fn(async ({ direction }) => makeRows(direction, 12));
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      ttlMs: 1,
+      fetchRanking,
+    });
+
+    await service.getTopMovers({ limit: 100 });
+    now = Date.parse('2026-05-10T23:55:00.000Z'); // 08:55 KST
+    const frozen = await service.getTopMovers({ limit: 100 });
+
+    expect(fetchRanking).toHaveBeenCalledTimes(2);
+    expect(frozen.status).toBe('stale');
+    expect(frozen.sourcePhase).toBe('opening_freeze');
+    expect(frozen.frozen).toBe(true);
+    expect(frozen.coverage.gainersCount).toBe(12);
+  });
+
+  it('does not label a non-premarket cache as opening freeze', async () => {
+    let now = Date.parse('2026-05-11T01:00:00.000Z'); // 10:00 KST
+    const fetchRanking = vi.fn(async ({ direction }) => makeRows(direction, 8));
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      ttlMs: 1,
+      fetchRanking,
+    });
+
+    await service.getTopMovers({ limit: 100 });
+    now = Date.parse('2026-05-11T23:55:00.000Z'); // 08:55 KST next day
+    const stale = await service.getTopMovers({ limit: 100 });
+
+    expect(fetchRanking).toHaveBeenCalledTimes(2);
+    expect(stale.status).toBe('stale');
+    expect(stale.sourcePhase).toBe('stale_snapshot');
+    expect(stale.frozen).toBe(false);
+    expect(stale.coverage.gainersCount).toBe(8);
+  });
+
   it('exposes sanitized cache and cooldown state for data-health', async () => {
     let now = 1_000;
     let fail = false;
@@ -150,13 +247,17 @@ describe('market top movers service', () => {
 
     expect(service.snapshot()).toMatchObject({
       status: 'stale',
-      source: 'kis-ranking-auto',
+      source: 'kis-ranking-stale-snapshot',
+      sourcePhase: 'stale_snapshot',
+      sourceLabel: '직전',
       lastFetchedAt: '1970-01-01T00:00:01.000Z',
       cacheAgeMs: 2,
       cooldownUntil: '1970-01-01T00:00:11.002Z',
       cooldownActive: true,
       inflight: false,
       lastErrorCode: 'KIS_RATE_LIMIT_SECOND_WINDOW',
+      partialReason: 'rate_limited',
+      rankingRateLimited: true,
       coverage: {
         requestedLimit: 100,
         gainersCount: 100,
@@ -231,3 +332,15 @@ describe('market top movers service', () => {
     }
   });
 });
+
+function makeRows(direction: 'gainers' | 'losers', count: number) {
+  return Array.from({ length: count }, (_, idx) => ({
+    rank: idx + 1,
+    ticker: String(idx + 1).padStart(6, '0'),
+    name: `${direction}-${idx + 1}`,
+    price: 1_000 + idx,
+    changeAbs: direction === 'gainers' ? idx + 1 : -(idx + 1),
+    changePct: direction === 'gainers' ? idx + 1 : -(idx + 1),
+    volume: idx,
+  }));
+}

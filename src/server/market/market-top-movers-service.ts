@@ -2,21 +2,34 @@ import type {
   MarketTopMoverDirection,
   MarketTopMoverItem,
   MarketTopMoversResponse,
+  MarketTopMoversSourcePhase,
 } from '@shared/types.js';
 
 import { KisRestError } from '../kis/kis-rest-client.js';
 
-const DEFAULT_TTL_MS = 10_000;
-const DEFAULT_STALE_AFTER_MS = 30_000;
+const DEFAULT_TTL_MS = 30_000;
+const DEFAULT_STALE_AFTER_MS = 5 * 60_000;
 const DEFAULT_COOLDOWN_MS = 30_000;
-const DEFAULT_REFRESH_TIMEOUT_MS = 10_000;
+const DEFAULT_REFRESH_TIMEOUT_MS = 20_000;
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 100;
+const KST_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Seoul',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+const PREMARKET_START_MINUTES = 8 * 60;
+const OPENING_FREEZE_START_MINUTES = 8 * 60 + 50;
+const REGULAR_START_MINUTES = 9 * 60;
+const AFTER_HOURS_START_MINUTES = 15 * 60 + 30;
+const INTEGRATED_CLOSE_MINUTES = 20 * 60;
 
 export interface FetchRankingInput {
   direction: MarketTopMoverDirection;
   count: number;
   now: Date;
+  sourcePhase: MarketTopMoversSourcePhase;
 }
 
 export interface MarketTopMoversService {
@@ -37,6 +50,7 @@ interface CacheEntry {
   fetchedAt: Date;
   gainers: MarketTopMoverItem[];
   losers: MarketTopMoverItem[];
+  sourcePhase: MarketTopMoversSourcePhase;
 }
 
 export interface MarketTopMoversServiceSnapshot {
@@ -58,6 +72,13 @@ export interface MarketTopMoversServiceSnapshot {
     | 'UNKNOWN'
     | null;
   coverage: MarketTopMoversResponse['coverage'];
+  sourcePhase: MarketTopMoversResponse['sourcePhase'];
+  sourceLabel: string;
+  sourceReason: string | null;
+  frozen: boolean;
+  lastGoodAgeMs: number | null;
+  partialReason: MarketTopMoversResponse['partialReason'];
+  rankingRateLimited: boolean;
 }
 
 export function createMarketTopMoversService({
@@ -79,6 +100,10 @@ export function createMarketTopMoversService({
     const limit = clampLimit(input.limit);
     const currentMs = current.getTime();
     const readyMessage = `${Math.max(1, Math.round(ttlMs / 1000))}초마다 갱신`;
+    const sourcePhase = resolveSourcePhase(current);
+    if (!isFetchableSourcePhase(sourcePhase)) {
+      return remember(nonFetchableResponse(current, sourcePhase, limit), lastErrorCode);
+    }
     if (cache !== null && currentMs - cache.fetchedAt.getTime() <= ttlMs) {
       return remember(toResponse(current, cache, 'ready', readyMessage, limit), null);
     }
@@ -88,7 +113,24 @@ export function createMarketTopMoversService({
     }
 
     try {
-      const next = await refresh(current);
+      const next = await refresh(current, sourcePhase);
+      if (cache !== null && shouldRetainPreviousCache(cache, next, limit)) {
+        return remember(
+          toResponse(
+            current,
+            cache,
+            'stale',
+            '새 랭킹이 더 적게 수신되어 직전 랭킹을 유지합니다.',
+            limit,
+            {
+              sourcePhase: 'stale_snapshot',
+              partialReason: 'smaller_refresh_retained',
+            },
+          ),
+          null,
+        );
+      }
+      cache = next;
       return remember(toResponse(current, next, 'ready', readyMessage, limit), null);
     } catch (err) {
       if (isCooldownError(err)) {
@@ -101,6 +143,11 @@ export function createMarketTopMoversService({
               'stale',
               'KIS 호출 제한으로 직전 랭킹을 잠시 유지합니다.',
               limit,
+              {
+                sourcePhase: 'stale_snapshot',
+                partialReason: 'rate_limited',
+                rankingRateLimited: true,
+              },
             ),
             'KIS_RATE_LIMIT_SECOND_WINDOW',
           );
@@ -111,6 +158,11 @@ export function createMarketTopMoversService({
             'cooldown',
             'KIS 호출 제한으로 TOP100 갱신을 잠시 대기합니다.',
             limit,
+            {
+              sourcePhase: 'unsupported',
+              partialReason: 'rate_limited',
+              rankingRateLimited: true,
+            },
           ),
           'KIS_RATE_LIMIT_SECOND_WINDOW',
         );
@@ -124,6 +176,7 @@ export function createMarketTopMoversService({
             'stale',
             '갱신 실패로 직전 랭킹을 잠시 유지합니다.',
             limit,
+            { sourcePhase: 'stale_snapshot' },
           ),
           classifyErrorCode(err),
         );
@@ -136,13 +189,17 @@ export function createMarketTopMoversService({
             ? 'KIS credentials 등록 후 TOP100 랭킹을 표시합니다.'
             : 'TOP100 랭킹을 가져오지 못했습니다.',
           limit,
+          { sourcePhase: 'unsupported', partialReason: 'source_unsupported' },
         ),
         classifyErrorCode(err),
       );
     }
   }
 
-  async function refresh(current: Date): Promise<CacheEntry> {
+  async function refresh(
+    current: Date,
+    sourcePhase: MarketTopMoversSourcePhase,
+  ): Promise<CacheEntry> {
     if (inflight !== null) return withTimeout(inflight, refreshTimeoutMs);
     const nextRefresh = (async () => {
       // TOP100 may require KIS continuation pages. Keep gainers/losers
@@ -151,18 +208,20 @@ export function createMarketTopMoversService({
         direction: 'gainers',
         count: MAX_LIMIT,
         now: current,
+        sourcePhase,
       });
       const losers = await fetchRanking({
         direction: 'losers',
         count: MAX_LIMIT,
         now: current,
+        sourcePhase,
       });
       const next = {
         fetchedAt: current,
         gainers: gainers.slice(0, MAX_LIMIT),
         losers: losers.slice(0, MAX_LIMIT),
+        sourcePhase,
       };
-      cache = next;
       return next;
     })();
     inflight = nextRefresh.finally(() => {
@@ -179,9 +238,71 @@ export function createMarketTopMoversService({
         'stale',
         'KIS 호출 제한으로 직전 랭킹을 잠시 유지합니다.',
         limit,
+        {
+          sourcePhase: 'stale_snapshot',
+          partialReason: 'rate_limited',
+          rankingRateLimited: true,
+        },
       );
     }
-    return emptyResponse(current, 'cooldown', 'KIS 호출 제한으로 TOP100 갱신을 대기합니다.', limit);
+    return emptyResponse(
+      current,
+      'cooldown',
+      'KIS 호출 제한으로 TOP100 갱신을 대기합니다.',
+      limit,
+      {
+        sourcePhase: 'unsupported',
+        partialReason: 'rate_limited',
+        rankingRateLimited: true,
+      },
+    );
+  }
+
+  function nonFetchableResponse(
+    current: Date,
+    sourcePhase: MarketTopMoversSourcePhase,
+    limit: number,
+  ): MarketTopMoversResponse {
+    if (sourcePhase === 'opening_freeze' && cache !== null && cache.sourcePhase === 'premarket') {
+      return toResponse(
+        current,
+        cache,
+        'stale',
+        '시가 대기 구간이라 직전 장전 랭킹을 고정합니다.',
+        limit,
+        {
+          sourcePhase: 'opening_freeze',
+          frozen: true,
+        },
+      );
+    }
+    if (sourcePhase === 'opening_freeze' && cache !== null) {
+      return toResponse(
+        current,
+        cache,
+        'stale',
+        '시가 대기 구간이지만 장전 랭킹이 없어 마지막 랭킹을 표시합니다.',
+        limit,
+        { sourcePhase: 'stale_snapshot' },
+      );
+    }
+    if (sourcePhase === 'stale_snapshot' && cache !== null) {
+      return toResponse(
+        current,
+        cache,
+        'stale',
+        '거래 시간 밖이라 마지막 랭킹을 표시합니다.',
+        limit,
+        { sourcePhase: 'stale_snapshot' },
+      );
+    }
+    return emptyResponse(
+      current,
+      'unconfigured',
+      '현재 시간대에 사용할 TOP100 랭킹 소스가 없습니다.',
+      limit,
+      { sourcePhase: 'unsupported', partialReason: 'source_unsupported' },
+    );
   }
 
   function toResponse(
@@ -190,17 +311,33 @@ export function createMarketTopMoversService({
     status: MarketTopMoversResponse['status'],
     message: string,
     limit: number,
+    opts: {
+      sourcePhase?: MarketTopMoversSourcePhase;
+      partialReason?: MarketTopMoversResponse['partialReason'];
+      rankingRateLimited?: boolean;
+      frozen?: boolean;
+    } = {},
   ): MarketTopMoversResponse {
     const coverage = buildCoverage(entry, limit);
     const partial = status === 'ready'
       && (!coverage.gainersComplete || !coverage.losersComplete);
+    const sourcePhase = opts.sourcePhase ?? entry.sourcePhase;
+    const partialReason = opts.partialReason
+      ?? (partial ? 'under_requested_limit' : null);
     return {
       generatedAt: current.toISOString(),
       fetchedAt: entry.fetchedAt.toISOString(),
       cacheTtlMs: ttlMs,
       refreshIntervalMs: ttlMs,
       staleAfterMs,
-      source: 'kis-ranking-auto',
+      source: sourceForPhase(sourcePhase),
+      sourcePhase,
+      sourceLabel: labelForPhase(sourcePhase),
+      sourceReason: reasonForPhase(sourcePhase),
+      frozen: opts.frozen ?? sourcePhase === 'opening_freeze',
+      lastGoodAgeMs: Math.max(0, current.getTime() - entry.fetchedAt.getTime()),
+      partialReason,
+      rankingRateLimited: opts.rankingRateLimited ?? false,
       status: partial ? 'partial' : status,
       message: partial
         ? `KIS 직접 랭킹 일부만 수신했습니다. 상승 ${coverage.gainersCount}/${limit}, 하락 ${coverage.losersCount}/${limit}`
@@ -219,14 +356,28 @@ export function createMarketTopMoversService({
     status: MarketTopMoversResponse['status'],
     message: string,
     _limit: number,
+    opts: {
+      sourcePhase?: MarketTopMoversSourcePhase;
+      partialReason?: MarketTopMoversResponse['partialReason'];
+      rankingRateLimited?: boolean;
+      frozen?: boolean;
+    } = {},
   ): MarketTopMoversResponse {
+    const sourcePhase = opts.sourcePhase ?? 'unsupported';
     return {
       generatedAt: current.toISOString(),
       fetchedAt: null,
       cacheTtlMs: ttlMs,
       refreshIntervalMs: ttlMs,
       staleAfterMs,
-      source: 'kis-ranking-auto',
+      source: sourceForPhase(sourcePhase),
+      sourcePhase,
+      sourceLabel: labelForPhase(sourcePhase),
+      sourceReason: reasonForPhase(sourcePhase),
+      frozen: opts.frozen ?? sourcePhase === 'opening_freeze',
+      lastGoodAgeMs: null,
+      partialReason: opts.partialReason ?? (sourcePhase === 'unsupported' ? 'source_unsupported' : null),
+      rankingRateLimited: opts.rankingRateLimited ?? false,
       status,
       message,
       cooldownUntil: cooldownUntilMs > current.getTime()
@@ -267,6 +418,13 @@ export function createMarketTopMoversService({
       lastMessage: response?.message ?? null,
       lastErrorCode,
       coverage: response?.coverage ?? emptyCoverage(DEFAULT_LIMIT),
+      sourcePhase: response?.sourcePhase ?? 'unsupported',
+      sourceLabel: response?.sourceLabel ?? labelForPhase('unsupported'),
+      sourceReason: response?.sourceReason ?? reasonForPhase('unsupported'),
+      frozen: response?.frozen ?? false,
+      lastGoodAgeMs: response?.lastGoodAgeMs ?? null,
+      partialReason: response?.partialReason ?? null,
+      rankingRateLimited: response?.rankingRateLimited ?? false,
     };
   }
 
@@ -297,6 +455,22 @@ function buildCoverage(entry: CacheEntry, limit: number): MarketTopMoversRespons
   };
 }
 
+function shouldRetainPreviousCache(
+  previous: CacheEntry,
+  next: CacheEntry,
+  limit: number,
+): boolean {
+  const previousCoverage = buildCoverage(previous, limit);
+  const nextCoverage = buildCoverage(next, limit);
+  if (previousCoverage.guaranteedTop100) return !nextCoverage.guaranteedTop100;
+  if (nextCoverage.guaranteedTop100) return false;
+  return coverageScore(nextCoverage) < coverageScore(previousCoverage);
+}
+
+function coverageScore(coverage: MarketTopMoversResponse['coverage']): number {
+  return coverage.gainersCount + coverage.losersCount;
+}
+
 function emptyCoverage(limit: number): MarketTopMoversResponse['coverage'] {
   return {
     requestedLimit: limit,
@@ -308,6 +482,89 @@ function emptyCoverage(limit: number): MarketTopMoversResponse['coverage'] {
     guaranteedTop100: false,
     includesLocalFallback: false,
   };
+}
+
+function isFetchableSourcePhase(sourcePhase: MarketTopMoversSourcePhase): boolean {
+  return sourcePhase === 'premarket'
+    || sourcePhase === 'regular'
+    || sourcePhase === 'after_hours';
+}
+
+function resolveSourcePhase(current: Date): MarketTopMoversSourcePhase {
+  const minutes = minutesInKst(current);
+  if (minutes >= PREMARKET_START_MINUTES && minutes < OPENING_FREEZE_START_MINUTES) {
+    return 'premarket';
+  }
+  if (minutes >= OPENING_FREEZE_START_MINUTES && minutes < REGULAR_START_MINUTES) {
+    return 'opening_freeze';
+  }
+  if (minutes >= REGULAR_START_MINUTES && minutes < AFTER_HOURS_START_MINUTES) {
+    return 'regular';
+  }
+  if (minutes >= AFTER_HOURS_START_MINUTES && minutes < INTEGRATED_CLOSE_MINUTES) {
+    return 'after_hours';
+  }
+  return 'stale_snapshot';
+}
+
+function minutesInKst(current: Date): number {
+  const parts = KST_TIME_FORMATTER.formatToParts(current);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+  return hour * 60 + minute;
+}
+
+function sourceForPhase(
+  sourcePhase: MarketTopMoversSourcePhase,
+): MarketTopMoversResponse['source'] {
+  switch (sourcePhase) {
+    case 'premarket':
+      return 'kis-ranking-premarket-expected';
+    case 'regular':
+      return 'kis-ranking-fluctuation';
+    case 'opening_freeze':
+      return 'kis-ranking-freeze';
+    case 'after_hours':
+      return 'kis-ranking-overtime-fluctuation';
+    case 'stale_snapshot':
+      return 'kis-ranking-stale-snapshot';
+    case 'unsupported':
+      return 'kis-ranking-unsupported';
+  }
+}
+
+function labelForPhase(sourcePhase: MarketTopMoversSourcePhase): string {
+  switch (sourcePhase) {
+    case 'premarket':
+      return '장전';
+    case 'regular':
+      return '본장';
+    case 'opening_freeze':
+      return '고정';
+    case 'after_hours':
+      return '시간외';
+    case 'stale_snapshot':
+      return '직전';
+    case 'unsupported':
+      return '미지원';
+  }
+}
+
+function reasonForPhase(sourcePhase: MarketTopMoversSourcePhase): string | null {
+  switch (sourcePhase) {
+    case 'premarket':
+      return '장전 예상체결 기반 랭킹입니다.';
+    case 'regular':
+      return '정규장 등락률 랭킹입니다.';
+    case 'opening_freeze':
+      return '08:50~09:00 시가 대기 구간에는 직전 장전 랭킹을 유지합니다.';
+    case 'after_hours':
+      return '시간외 등락률 랭킹입니다.';
+    case 'stale_snapshot':
+      return '현재 새로 조회하지 않고 마지막 랭킹을 유지합니다.';
+    case 'unsupported':
+      return '현재 시간대에 사용할 수 있는 KIS TOP100 소스가 없습니다.';
+  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

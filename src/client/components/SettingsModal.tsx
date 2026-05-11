@@ -1626,6 +1626,19 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
                 TOP100 갱신: {formatLocal(health.marketTopMovers.lastFetchedAt)}
               </>
             )}
+            {hasText(health.marketTopMovers.sourceLabel) && (
+              <>
+                <br />
+                TOP100 소스: {health.marketTopMovers.sourceLabel}
+                {hasText(health.marketTopMovers.partialReason) && (
+                  <> · {topMoversPartialReasonLabel(health.marketTopMovers.partialReason)}</>
+                )}
+                {health.marketTopMovers.rankingRateLimited && <> · KIS 호출 제한</>}
+                {health.marketTopMovers.lastGoodAgeMs !== null && (
+                  <> · 직전 {formatDurationLabel(health.marketTopMovers.lastGoodAgeMs)}</>
+                )}
+              </>
+            )}
             {health.signalOutcomes.totalSignals > 0 && (
               <>
                 <br />
@@ -1686,24 +1699,51 @@ function formatMarketTopMoversSummary(
   if (!topMovers.configured) {
     return { label: '미시작', chipColor: 'var(--text-muted)' };
   }
+  const prefix = hasText(topMovers.sourceLabel) ? `${topMovers.sourceLabel} ` : '';
   if (topMovers.cooldownActive || topMovers.status === 'cooldown') {
-    return { label: '쿨다운', chipColor: 'var(--gold-text)' };
+    return { label: `${prefix}쿨다운`, chipColor: 'var(--gold-text)' };
   }
   if (topMovers.inflight || topMovers.status === 'refreshing') {
-    return { label: '갱신 중', chipColor: 'var(--text-muted)' };
+    return { label: `${prefix}갱신 중`, chipColor: 'var(--text-muted)' };
   }
   const coverage = topMovers.coverage;
   if (coverage === null) {
     return { label: topMovers.status, chipColor: 'var(--text-muted)' };
   }
   if (coverage.guaranteedTop100) {
-    return { label: 'KIS 전체시장', chipColor: 'var(--kr-up)' };
+    return { label: `${prefix}KIS 전체시장`, chipColor: 'var(--kr-up)' };
   }
   const count = Math.max(coverage.gainersCount, coverage.losersCount);
   if (count > 0) {
-    return { label: `부분 ${count}/${coverage.requestedLimit}`, chipColor: 'var(--gold-text)' };
+    return { label: `${prefix}부분 ${count}/${coverage.requestedLimit}`, chipColor: 'var(--gold-text)' };
   }
-  return { label: '대기', chipColor: 'var(--text-muted)' };
+  return { label: `${prefix}대기`, chipColor: 'var(--text-muted)' };
+}
+
+function topMoversPartialReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'under_requested_limit':
+      return '부분 수신';
+    case 'smaller_refresh_retained':
+      return '직전 유지';
+    case 'rate_limited':
+      return '호출 제한';
+    case 'source_unsupported':
+      return '미지원';
+    default:
+      return reason;
+  }
+}
+
+function hasText(value: string | null | undefined): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function formatDurationLabel(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 60_000) return '1분 미만';
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes}분 전`;
+  return `${Math.round(minutes / 60)}시간 전`;
 }
 
 export function LocalBackupPanel({

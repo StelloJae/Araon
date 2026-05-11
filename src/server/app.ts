@@ -298,7 +298,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     newsRepo,
   });
   const marketTopMoversService = createMarketTopMoversService({
-    fetchRanking: async ({ direction, count, now }) => {
+    fetchRanking: async ({ direction, count, now, sourcePhase }) => {
       const state = runtimeRef.get();
       if (state.status !== 'started') {
         throw new Error('KIS runtime is not started');
@@ -310,6 +310,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
         direction,
         count,
         now,
+        sourcePhase,
         restClient: state.runtime.restClient,
       });
     },

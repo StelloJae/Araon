@@ -168,13 +168,40 @@ export interface MarketTopMoverItem {
   volume: number | null;
 }
 
+export type MarketTopMoversSourcePhase =
+  | 'regular'
+  | 'premarket'
+  | 'opening_freeze'
+  | 'after_hours'
+  | 'stale_snapshot'
+  | 'unsupported';
+
 export interface MarketTopMoversResponse {
   generatedAt: string;
   fetchedAt: string | null;
   cacheTtlMs: number;
   refreshIntervalMs: number;
   staleAfterMs: number;
-  source: 'kis-ranking-auto' | 'kis-ranking-fluctuation' | 'kis-ranking-overtime-fluctuation';
+  source:
+    | 'kis-ranking-auto'
+    | 'kis-ranking-fluctuation'
+    | 'kis-ranking-premarket-expected'
+    | 'kis-ranking-overtime-fluctuation'
+    | 'kis-ranking-freeze'
+    | 'kis-ranking-stale-snapshot'
+    | 'kis-ranking-unsupported';
+  sourcePhase: MarketTopMoversSourcePhase;
+  sourceLabel: string;
+  sourceReason: string | null;
+  frozen: boolean;
+  lastGoodAgeMs: number | null;
+  partialReason:
+    | 'under_requested_limit'
+    | 'smaller_refresh_retained'
+    | 'rate_limited'
+    | 'source_unsupported'
+    | null;
+  rankingRateLimited: boolean;
   status: 'ready' | 'partial' | 'stale' | 'unconfigured' | 'cooldown' | 'error';
   message: string;
   cooldownUntil: string | null;

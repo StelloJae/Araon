@@ -14,6 +14,13 @@ function topMovers(): MarketTopMoversResponse {
     refreshIntervalMs: 3_000,
     staleAfterMs: 15_000,
     source: 'kis-ranking-auto',
+    sourcePhase: 'regular',
+    sourceLabel: '본장',
+    sourceReason: '정규장 등락률 랭킹입니다.',
+    frozen: false,
+    lastGoodAgeMs: 0,
+    partialReason: 'under_requested_limit',
+    rankingRateLimited: false,
     status: 'ready',
     message: '3초마다 갱신',
     cooldownUntil: null,
@@ -134,5 +141,31 @@ describe('TOP100 view chrome', () => {
     );
 
     expect(html).toContain('KIS 전체시장 보장');
+  });
+
+  it('shows the market source phase and retained snapshot state without changing the TOP100 surface', () => {
+    const html = renderToStaticMarkup(
+      createElement(TopMoversBoard, {
+        data: {
+          ...topMovers(),
+          source: 'kis-ranking-stale-snapshot',
+          sourcePhase: 'stale_snapshot',
+          sourceLabel: '직전',
+          sourceReason: '현재 새로 조회하지 않고 마지막 랭킹을 유지합니다.',
+          status: 'stale',
+          message: '새 랭킹이 더 적게 수신되어 직전 랭킹을 유지합니다.',
+          partialReason: 'smaller_refresh_retained',
+          lastGoodAgeMs: 62_000,
+        },
+        onOpenTicker: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('상승 TOP100');
+    expect(html).toContain('하락 TOP100');
+    expect(html).toContain('직전');
+    expect(html).toContain('직전 데이터');
+    expect(html).toContain('부분 수신');
+    expect(html).toContain('약 1분 전');
   });
 });

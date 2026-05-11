@@ -150,6 +150,89 @@ describe('fetchKisFluctuationRanking', () => {
     );
   });
 
+  it('uses the expected transaction ranking endpoint for premarket TOP100', async () => {
+    const restClient = createMockRestClient([
+      {
+        payload: {
+          output: [
+            {
+              stck_shrn_iscd: '005930',
+              hts_kor_isnm: '삼성전자',
+              stck_prpr: '70000',
+              prdy_vrss: '2500',
+              prdy_ctrt: '3.70',
+              cntg_vol: '1234',
+            },
+          ],
+        },
+        trCont: null,
+      },
+    ]);
+
+    const items = await fetchKisFluctuationRanking({
+      direction: 'gainers',
+      count: 100,
+      sourcePhase: 'premarket',
+      restClient,
+    });
+
+    expect(restClient.requestWithMeta).toHaveBeenCalledWith({
+      method: 'GET',
+      path: '/uapi/domestic-stock/v1/ranking/exp-trans-updown',
+      trId: 'FHPST01820000',
+      endpointClass: 'ranking',
+      query: expect.objectContaining({
+        fid_rank_sort_cls_code: '0',
+        fid_cond_mrkt_div_code: 'J',
+        fid_cond_scr_div_code: '20182',
+        fid_input_iscd: '0000',
+        fid_mkop_cls_code: '0',
+      }),
+    });
+    expect(items[0]).toMatchObject({ ticker: '005930', rank: 1, changePct: 3.7 });
+  });
+
+  it('uses the overtime fluctuation endpoint for after-hours TOP100', async () => {
+    const restClient = createMockRestClient([
+      {
+        payload: {
+          output2: [
+            {
+              mksc_shrn_iscd: '277810',
+              hts_kor_isnm: '레인보우로보틱스',
+              ovtm_untp_prpr: '762000',
+              ovtm_untp_prdy_vrss: '65000',
+              ovtm_untp_prdy_ctrt: '9.33',
+              ovtm_untp_vol: '12345',
+            },
+          ],
+        },
+        trCont: null,
+      },
+    ]);
+
+    const items = await fetchKisFluctuationRanking({
+      direction: 'gainers',
+      count: 100,
+      sourcePhase: 'after_hours',
+      restClient,
+    });
+
+    expect(restClient.requestWithMeta).toHaveBeenCalledWith({
+      method: 'GET',
+      path: '/uapi/domestic-stock/v1/ranking/overtime-fluctuation',
+      trId: 'FHPST02340000',
+      endpointClass: 'ranking',
+      query: expect.objectContaining({
+        FID_COND_MRKT_DIV_CODE: 'J',
+        FID_COND_SCR_DIV_CODE: '20234',
+        FID_INPUT_ISCD: '0000',
+        FID_DIV_CLS_CODE: '2',
+      }),
+    });
+    expect(items[0]).toMatchObject({ ticker: '277810', rank: 1, changePct: 9.33 });
+  });
+
   it('keeps TOP100 on the full-day fluctuation endpoint during NXT after-hours', async () => {
     const restClient = createMockRestClient([
       {

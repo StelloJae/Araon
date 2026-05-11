@@ -15,8 +15,15 @@ interface TopMoversBoardProps {
 export function TopMoversBoard({ data, onOpenTicker }: TopMoversBoardProps) {
   const fetchedAt = formatFetchedAt(data.fetchedAt);
   const refreshSec = Math.max(1, Math.round(data.refreshIntervalMs / 1000));
-  const subtitle =
-    `${coverageLabel(data)} · ${statusLabel(data.status)} · ${refreshSec}초마다 · 마지막 ${fetchedAt}`;
+  const subtitle = [
+    data.sourceLabel,
+    coverageLabel(data),
+    partialReasonLabel(data),
+    statusLabel(data.status),
+    `${refreshSec}초마다`,
+    `마지막 ${fetchedAt}`,
+    lastGoodAgeLabel(data.lastGoodAgeMs),
+  ].filter((part): part is string => part !== null && part.length > 0).join(' · ');
 
   return (
     <div
@@ -291,4 +298,27 @@ function coverageLabel(data: MarketTopMoversResponse): string {
     return 'KIS 전체시장 일부';
   }
   return 'KIS 전체시장 대기';
+}
+
+function partialReasonLabel(data: MarketTopMoversResponse): string | null {
+  switch (data.partialReason) {
+    case 'under_requested_limit':
+      return '부분 수신';
+    case 'smaller_refresh_retained':
+      return '부분 수신 유지';
+    case 'rate_limited':
+      return '호출 제한';
+    case 'source_unsupported':
+      return '미지원';
+    case null:
+      return null;
+  }
+}
+
+function lastGoodAgeLabel(ageMs: number | null): string | null {
+  if (ageMs === null || !Number.isFinite(ageMs) || ageMs < 1_000) return null;
+  const minutes = Math.max(1, Math.round(ageMs / 60_000));
+  if (minutes < 60) return `약 ${minutes}분 전`;
+  const hours = Math.round(minutes / 60);
+  return `약 ${hours}시간 전`;
 }

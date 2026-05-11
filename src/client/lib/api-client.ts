@@ -816,6 +816,13 @@ export interface RuntimeDataHealthPayload {
     configured: boolean;
     status: string;
     source: string | null;
+    sourcePhase: string | null;
+    sourceLabel: string | null;
+    sourceReason: string | null;
+    frozen: boolean;
+    lastGoodAgeMs: number | null;
+    partialReason: string | null;
+    rankingRateLimited: boolean;
     lastFetchedAt: string | null;
     lastGeneratedAt: string | null;
     cacheAgeMs: number | null;

@@ -359,6 +359,13 @@ export interface RuntimeMarketTopMoversPayload {
   readonly configured: boolean;
   readonly status: string;
   readonly source: string | null;
+  readonly sourcePhase: string | null;
+  readonly sourceLabel: string | null;
+  readonly sourceReason: string | null;
+  readonly frozen: boolean;
+  readonly lastGoodAgeMs: number | null;
+  readonly partialReason: string | null;
+  readonly rankingRateLimited: boolean;
   readonly lastFetchedAt: string | null;
   readonly lastGeneratedAt: string | null;
   readonly cacheAgeMs: number | null;
@@ -1106,6 +1113,13 @@ function buildMarketTopMoversPayload(
       configured: false,
       status: 'unconfigured',
       source: null,
+      sourcePhase: null,
+      sourceLabel: null,
+      sourceReason: null,
+      frozen: false,
+      lastGoodAgeMs: null,
+      partialReason: null,
+      rankingRateLimited: false,
       lastFetchedAt: null,
       lastGeneratedAt: null,
       cacheAgeMs: null,
@@ -1123,6 +1137,13 @@ function buildMarketTopMoversPayload(
     configured: true,
     status: snapshot.status,
     source: snapshot.source,
+    sourcePhase: snapshot.sourcePhase,
+    sourceLabel: snapshot.sourceLabel,
+    sourceReason: snapshot.sourceReason,
+    frozen: snapshot.frozen,
+    lastGoodAgeMs: snapshot.lastGoodAgeMs,
+    partialReason: snapshot.partialReason,
+    rankingRateLimited: snapshot.rankingRateLimited,
     lastFetchedAt: snapshot.lastFetchedAt,
     lastGeneratedAt: snapshot.lastGeneratedAt,
     cacheAgeMs: snapshot.cacheAgeMs,
