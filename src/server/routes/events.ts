@@ -5,13 +5,15 @@
  * SSE frames produced by the injected `sseManager`. The plugin does not
  * bootstrap Fastify itself — it is registered by the Phase 8 entrypoint.
  *
- * The KIS runtime must be in `started` state before SSE clients can connect.
- * Requests arriving before that return 503 so the client can retry.
+ * Toss-first mode can use an app-level SSE manager even when KIS is not
+ * started. If no app-level manager is injected, the route falls back to the
+ * legacy KIS runtime SSE manager.
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { createChildLogger } from '@shared/logger.js';
 import type { KisRuntimeRef } from '../bootstrap-kis.js';
+import type { SseManagerHandle } from '../sse/sse-manager.js';
 
 const log = createChildLogger('routes/events');
 
@@ -21,6 +23,7 @@ const log = createChildLogger('routes/events');
 
 export interface EventsRoutesOptions extends FastifyPluginOptions {
   runtimeRef: KisRuntimeRef;
+  sseManager?: SseManagerHandle;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,14 +38,13 @@ export async function eventsRoutes(
 
   app.get('/events', (request, reply) => {
     const rs = runtimeRef.get();
-    if (rs.status !== 'started') {
+    const sseManager = opts.sseManager ?? (rs.status === 'started' ? rs.runtime.sseManager : null);
+    if (sseManager === null) {
       return reply.code(503).send({
         success: false,
-        error: { code: 'KIS_RUNTIME_NOT_READY', runtime: rs.status },
+        error: { code: 'EVENT_STREAM_NOT_READY', runtime: rs.status },
       });
     }
-
-    const { sseManager } = rs.runtime;
 
     // SSE-required headers
     void reply.raw.writeHead(200, {

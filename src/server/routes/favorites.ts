@@ -10,8 +10,10 @@
  * This plugin is pure — it does NOT bind to a port. Phase 8 bootstrap owns
  * the Fastify instance and registers this plugin with the live dependencies.
  *
- * The KIS runtime must be in `started` state for mutating operations. Requests
- * arriving before that return 503 so the client can retry.
+ * The KIS runtime is optional for Toss-first mode. When KIS is not started,
+ * the route still reads/writes the local favorite repository and marks new
+ * favorites as polling-only. When KIS is started, tier diffs are forwarded to
+ * the realtime bridge.
  *
  * Error surface:
  *   - 400 on zod validation failure.
@@ -72,10 +74,7 @@ export async function favoritesRoutes(
   app.get('/favorites', async (_request, reply) => {
     const rs = runtimeRef.get();
     if (rs.status !== 'started') {
-      return reply.code(503).send({
-        success: false,
-        error: { code: 'KIS_RUNTIME_NOT_READY', runtime: rs.status },
-      });
+      return reply.send({ success: true, data: favoriteRepo.findAll() });
     }
 
     const favorites = rs.runtime.tierManager.listFavorites();
@@ -84,22 +83,29 @@ export async function favoritesRoutes(
   });
 
   app.post<{ Body: PostBody }>('/favorites', async (request, reply) => {
-    const rs = runtimeRef.get();
-    if (rs.status !== 'started') {
-      return reply.code(503).send({
-        success: false,
-        error: { code: 'KIS_RUNTIME_NOT_READY', runtime: rs.status },
-      });
-    }
-
-    const { tierManager, bridge } = rs.runtime;
-
     const parsed = postBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply
         .status(400)
         .send({ success: false, error: parsed.error.issues });
     }
+
+    const rs = runtimeRef.get();
+    if (rs.status !== 'started') {
+      const favorite: Favorite = {
+        ticker: parsed.data.ticker,
+        tier: 'polling',
+        addedAt: new Date().toISOString(),
+      };
+      favoriteRepo.upsert(favorite);
+      const body: FavoriteAddResponse = {
+        ticker: favorite.ticker,
+        tier: favorite.tier,
+      };
+      return reply.status(201).send({ success: true, data: body });
+    }
+
+    const { tierManager, bridge } = rs.runtime;
 
     const { ticker } = parsed.data;
 
@@ -130,17 +136,18 @@ export async function favoritesRoutes(
   app.delete<{ Params: { ticker: string } }>(
     '/favorites/:ticker',
     async (request, reply) => {
+      const { ticker } = request.params;
       const rs = runtimeRef.get();
       if (rs.status !== 'started') {
-        return reply.code(503).send({
-          success: false,
-          error: { code: 'KIS_RUNTIME_NOT_READY', runtime: rs.status },
-        });
+        const existing = favoriteRepo.findByTicker(ticker);
+        if (existing === null) {
+          return reply.status(404).send({ success: false, error: 'not found' });
+        }
+        favoriteRepo.delete(ticker);
+        return reply.status(204).send();
       }
 
       const { tierManager, bridge } = rs.runtime;
-
-      const { ticker } = request.params;
       const existing = favoriteRepo.findByTicker(ticker);
       if (existing === null) {
         return reply.status(404).send({ success: false, error: 'not found' });

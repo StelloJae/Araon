@@ -1,20 +1,18 @@
 /**
  * Bootstrap — top-level gate for `<App />`.
  *
- * Polls `GET /credentials/status` until KIS runtime reaches a terminal state:
- *   - `unconfigured` → render <CredentialsSetup>
+ * Polls `GET /credentials/status` until KIS runtime reaches a usable state:
+ *   - `unconfigured` → render Toss-first <App>
  *   - `starting`     → render loading screen
  *   - `started`      → render <App>
- *   - `failed`       → render error + <CredentialsSetup>
+ *   - `failed`       → render Toss-first <App>; KIS can be repaired in settings
  *
- * The dashboard never renders before runtime === 'started', so all KIS-backed
- * routes (`/stocks`, `/favorites`, `/events`) return 503 + KIS_RUNTIME_NOT_READY
- * are not reachable from a happy-path render.
+ * KIS is now a fallback/provider-specific subsystem. It must not block the
+ * default dashboard when Toss-backed market data is available.
  */
 
 import { useEffect, useState } from 'react';
 import { App } from './App';
-import { CredentialsSetup } from './components/CredentialsSetup';
 import { startLauncherHeartbeat } from './lib/launcher-heartbeat';
 
 type RuntimeStatus = 'unconfigured' | 'starting' | 'started' | 'failed';
@@ -39,7 +37,6 @@ async function fetchStatus(): Promise<StatusBody> {
 
 export function Bootstrap() {
   const [status, setStatus] = useState<RuntimeStatus | 'loading'>('loading');
-  const [errMsg, setErrMsg] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
 
   useEffect(() => {
@@ -69,7 +66,6 @@ export function Bootstrap() {
           const data = await fetchStatus();
           if (cancelled) return;
           setStatus(data.runtime);
-          setErrMsg(data.error?.message ?? null);
           if (
             data.runtime === 'started' ||
             data.runtime === 'unconfigured' ||
@@ -93,28 +89,6 @@ export function Bootstrap() {
 
   if (status === 'loading' || status === 'starting') {
     return <CenterMessage label="초기화 중…" hint={slow ? '잠시만 기다려주세요.' : null} />;
-  }
-
-  if (status === 'failed') {
-    return (
-      <div style={{ padding: 40, maxWidth: 480, margin: '0 auto' }}>
-        <div
-          style={{
-            color: 'var(--kr-up)',
-            fontWeight: 600,
-            fontSize: 14,
-            marginBottom: 16,
-          }}
-        >
-          KIS 초기화 실패{errMsg ? ` — ${errMsg}` : ''}
-        </div>
-        <CredentialsSetup onSuccess={() => setStatus('started')} />
-      </div>
-    );
-  }
-
-  if (status === 'unconfigured') {
-    return <CredentialsSetup onSuccess={() => setStatus('started')} />;
   }
 
   return <App />;

@@ -37,6 +37,9 @@ The public phase covers:
   REST polling is suppressed so KIS remains a fallback path instead of consuming
   the primary quote-refresh budget. After repeated Toss quote failures, KIS
   polling is allowed to resume through its existing governor.
+- The default dashboard can render without KIS credentials. Local stocks and
+  favorites remain available, `/events` uses an app-level SSE manager, and KIS
+  setup moves to an optional/fallback connection path instead of a boot gate.
 
 The quote batch currently maps Toss rows into Araon's existing `Price` contract
 with `source='rest'` for compatibility. A future provider-neutral source label
@@ -53,6 +56,20 @@ KIS remains in place for:
 - Chart/backfill paths.
 - KIS watchlist import and master metadata.
 - Rollback while Toss parity is still unproven.
+
+## KIS Dependency Inventory
+
+| Area | Current status | Toss-first decision |
+| --- | --- | --- |
+| App boot | No longer blocks on KIS credentials. | Keep Toss-first app render as default. |
+| TOP100 | Toss overview ranking is primary. | Keep KIS ranking as historical fallback only if explicitly re-enabled. |
+| Foreground quote refresh | Toss quote batch first, KIS fallback second. | Keep fallback until live Toss quote observation is stable. |
+| Watchlist quote polling | Toss batch polling first; KIS REST polling suppressed while Toss is healthy. | Keep KIS as automatic fallback after repeated Toss quote failures. |
+| SSE price delivery | App-level SSE manager now works without KIS runtime. | Use it for Toss polling updates and KIS/other providers alike. |
+| KIS realtime WebSocket | Still KIS-only. | Retain until Toss authenticated realtime proves true price-tick coverage. |
+| Charts/backfill | Still KIS daily/minute candle endpoints. | Retain; Toss chart alternative is not proven yet. |
+| Search/master metadata | Still KIS MST/local master cache. | Retain until Toss or another full-market metadata source is implemented. |
+| KIS watchlist import | Still KIS-only import convenience. | Retain as optional import, not core runtime. |
 
 Do not remove KIS runtime, credentials, or governor code until Toss quote,
 authenticated realtime, chart, and metadata coverage have explicit evidence.

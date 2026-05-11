@@ -40,6 +40,7 @@ import {
   defaultActuallyStart,
   fetchRuntimeRestQuoteWithFallback,
 } from './bootstrap-kis.js';
+import { createSseManager } from './sse/sse-manager.js';
 import { fetchKisDailyCandles } from './kis/kis-daily-chart.js';
 import { fetchKisHistoricalMinuteCandles } from './kis/kis-historical-minute-chart.js';
 import { fetchKisTodayMinuteCandles } from './kis/kis-today-minute-chart.js';
@@ -190,6 +191,16 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     },
     { actuallyStart: defaultActuallyStart },
   );
+  const appSseManager = createSseManager({
+    priceStore,
+    getInitialSnapshot: () => priceStore.getAllPrices(),
+    getMarketStatus: () => {
+      const state = runtimeRef.get();
+      return state.status === 'started'
+        ? state.runtime.marketHoursScheduler.getCurrentPhase()
+        : 'snapshot';
+    },
+  });
   const masterService = createMasterStockService({
     repo: masterRepo,
     meta: masterMetaRepo,
@@ -398,7 +409,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   await app.register(tossRealtimeRoutes, {
     realtimeService: tossRealtimeService,
   });
-  await app.register(eventsRoutes, { runtimeRef });
+  await app.register(eventsRoutes, { runtimeRef, sseManager: appSseManager });
   await app.register(runtimeRoutes, {
     runtimeRef,
     settingsStore,
@@ -446,6 +457,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     backgroundBackfill.stop();
     await tossQuotePollingService?.stop();
     dataRetention.stop();
+    await appSseManager.closeAll();
     await runtimeRef.stop();
     await candleRecorder.stop();
     await priceHistoryRecorder.stop();
