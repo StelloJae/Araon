@@ -62,6 +62,8 @@ Chrome/CDP login capture service:
 
 These routes expose only counts, timestamps, and state labels. They do not expose
 cookie names, cookie values, storage values, QR payloads, or raw Toss responses.
+The settings connection tab surfaces the same sanitized session/login status and
+starts or cancels QR capture without rendering session values.
 
 The login capture opens an isolated Chrome profile, waits for QR login, and saves
 only a persistent session after the user confirms "이 기기 로그인 유지" on the phone.
@@ -91,6 +93,9 @@ This stream is marked `thinNotificationOnly=true`: it can tell Araon that a
 stock/account-related event happened, but it does not replace quote REST reads by
 itself. For prices, Araon must pair Toss SSE events with Toss quote refresh or
 continue conservative Toss REST polling.
+The settings connection tab can start/stop this SSE service after a sanitized
+Toss session is present, and shows only event counts, timestamps, state, and
+safe error labels.
 
 Before it becomes the default realtime source, it still needs a minimal live
 probe with an authenticated Toss session. If price refresh events are not

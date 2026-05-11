@@ -12,6 +12,7 @@ const API_PREFIXES = [
   '/favorites',
   '/settings',
   '/runtime',
+  '/toss',
   '/import',
   '/master',
   '/market',

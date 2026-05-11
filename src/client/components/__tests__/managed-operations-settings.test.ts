@@ -10,6 +10,7 @@ import {
   NotifTab,
   RealtimeSessionControl,
   SurgeTab,
+  TossDataControl,
 } from '../SettingsModal';
 
 describe('managed operations settings copy', () => {
@@ -56,6 +57,66 @@ describe('managed operations settings copy', () => {
     );
 
     expect(html).toContain('운영자 재검증');
+  });
+
+  it('exposes Toss session and SSE controls without raw session values', () => {
+    const html = renderToStaticMarkup(
+      createElement(TossDataControl, {
+        session: {
+          configured: true,
+          state: 'persistent',
+          provider: 'toss',
+          persistent: true,
+          cookieCount: 6,
+          localStorageKeyCount: 2,
+          sessionStorageKeyCount: 1,
+          retrievedAt: '2026-05-11T06:00:00.000Z',
+          expiresAt: '2026-06-11T06:00:00.000Z',
+          serverExpiresAt: null,
+          expiresInMs: 30 * 24 * 60 * 60 * 1000,
+        },
+        login: {
+          state: 'idle',
+          startedAt: null,
+          updatedAt: null,
+          finishedAt: null,
+          message: null,
+          persistent: false,
+          cookieCount: 0,
+          localStorageKeyCount: 0,
+          sessionStorageKeyCount: 0,
+          expiresAt: null,
+          missingCookieCount: 0,
+          missingLocalStorageKeyCount: 0,
+        },
+        realtime: {
+          state: 'connected',
+          startedAt: '2026-05-11T06:01:00.000Z',
+          updatedAt: '2026-05-11T06:02:00.000Z',
+          stoppedAt: null,
+          eventCount: 3,
+          reconnectCount: 0,
+          lastEventType: 'wts-notification',
+          lastStockCode: '005930',
+          lastEventAt: '2026-05-11T06:02:00.000Z',
+          lastError: null,
+          thinNotificationOnly: true,
+        },
+        phase: { kind: 'idle' },
+        onLoginStart: vi.fn(),
+        onLoginCancel: vi.fn(),
+        onSessionClear: vi.fn(),
+        onRealtimeStart: vi.fn(),
+        onRealtimeStop: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('토스 데이터 연결');
+    expect(html).toContain('세션 유지');
+    expect(html).toContain('SSE 알림');
+    expect(html).toContain('thin notification');
+    expect(html).not.toContain('session-value');
+    expect(html).not.toContain('storage-value');
   });
 
   it('presents dev mode as the explicit switch for simulated tools', () => {

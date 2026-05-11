@@ -108,6 +108,119 @@ export async function getTossRealtimeRanking(
   return unwrap<TossRealtimeRankingResponse>(res);
 }
 
+// === Toss auth/realtime controls ==========================================
+
+export type TossSessionState =
+  | 'logged_out'
+  | 'session_scoped'
+  | 'persistent'
+  | 'expiring'
+  | 'expired';
+
+export interface TossSessionStatusPayload {
+  configured: boolean;
+  state: TossSessionState;
+  provider: 'toss' | null;
+  persistent: boolean;
+  cookieCount: number;
+  localStorageKeyCount: number;
+  sessionStorageKeyCount: number;
+  retrievedAt: string | null;
+  expiresAt: string | null;
+  serverExpiresAt: string | null;
+  expiresInMs: number | null;
+}
+
+export type TossLoginJobState =
+  | 'idle'
+  | 'starting'
+  | 'waiting_for_qr'
+  | 'waiting_for_persistent'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+export interface TossLoginStatusPayload {
+  state: TossLoginJobState;
+  startedAt: string | null;
+  updatedAt: string | null;
+  finishedAt: string | null;
+  message: string | null;
+  persistent: boolean;
+  cookieCount: number;
+  localStorageKeyCount: number;
+  sessionStorageKeyCount: number;
+  expiresAt: string | null;
+  missingCookieCount: number;
+  missingLocalStorageKeyCount: number;
+}
+
+export type TossRealtimeState =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'stopped'
+  | 'failed';
+
+export interface TossSseStatusPayload {
+  state: TossRealtimeState;
+  startedAt: string | null;
+  updatedAt: string | null;
+  stoppedAt: string | null;
+  eventCount: number;
+  reconnectCount: number;
+  lastEventType: string | null;
+  lastStockCode: string | null;
+  lastEventAt: string | null;
+  lastError: string | null;
+  thinNotificationOnly: boolean;
+}
+
+export async function getTossAuthStatus(): Promise<TossSessionStatusPayload> {
+  const res = await fetch('/toss/auth/status');
+  return unwrap<TossSessionStatusPayload>(res);
+}
+
+export async function clearTossSession(): Promise<TossSessionStatusPayload> {
+  const res = await fetch('/toss/auth/session', { method: 'DELETE' });
+  return unwrap<TossSessionStatusPayload>(res);
+}
+
+export async function getTossLoginStatus(): Promise<TossLoginStatusPayload | null> {
+  const res = await fetch('/toss/auth/login/status');
+  return unwrap<TossLoginStatusPayload | null>(res);
+}
+
+export async function startTossLogin(): Promise<TossLoginStatusPayload> {
+  const res = await fetch('/toss/auth/login/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ headless: false }),
+  });
+  return unwrap<TossLoginStatusPayload>(res);
+}
+
+export async function cancelTossLogin(): Promise<TossLoginStatusPayload> {
+  const res = await fetch('/toss/auth/login/cancel', { method: 'POST' });
+  return unwrap<TossLoginStatusPayload>(res);
+}
+
+export async function getTossSseStatus(): Promise<TossSseStatusPayload> {
+  const res = await fetch('/toss/realtime/status');
+  return unwrap<TossSseStatusPayload>(res);
+}
+
+export async function startTossSse(): Promise<TossSseStatusPayload> {
+  const res = await fetch('/toss/realtime/start', { method: 'POST' });
+  return unwrap<TossSseStatusPayload>(res);
+}
+
+export async function stopTossSse(): Promise<TossSseStatusPayload> {
+  const res = await fetch('/toss/realtime/stop', { method: 'POST' });
+  return unwrap<TossSseStatusPayload>(res);
+}
+
 /**
  * Remove a tracked stock. Server cascades the FK so favorites/tags/prices
  * for this ticker are wiped server-side. Master catalog is independent.

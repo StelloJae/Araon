@@ -26,6 +26,7 @@ export default defineConfig({
       '/favorites': SERVER_ORIGIN,
       '/settings': SERVER_ORIGIN,
       '/runtime': SERVER_ORIGIN,
+      '/toss': SERVER_ORIGIN,
       '/import': SERVER_ORIGIN,
       '/master': SERVER_ORIGIN,
       '/market': SERVER_ORIGIN,

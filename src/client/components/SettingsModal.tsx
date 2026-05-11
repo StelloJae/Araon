@@ -43,10 +43,15 @@ import { ensureAudioUnlocked, playBleep } from '../lib/sound';
 import {
   ApiError,
   addCredentialProfile,
+  cancelTossLogin,
+  clearTossSession,
   disableRealtimeSession,
   emergencyDisableRealtime,
   enableRealtimeSession,
   exportLocalBackup,
+  getTossAuthStatus,
+  getTossLoginStatus,
+  getTossSseStatus,
   getFavorites,
   getCredentialProfiles,
   getPhoneNotificationStatus,
@@ -58,6 +63,9 @@ import {
   importKisWatchlist,
   restoreLocalBackup,
   sendPhoneNotificationTest,
+  startTossLogin,
+  startTossSse,
+  stopTossSse,
   updateServerSettings,
   type KisWatchlistImportResult,
   type RealtimeStatusPayload,
@@ -65,6 +73,9 @@ import {
   type ServerRuntimeSettings,
   type CredentialProfileSummary,
   type PhoneNotificationStatusPayload,
+  type TossLoginStatusPayload,
+  type TossSessionStatusPayload,
+  type TossSseStatusPayload,
 } from '../lib/api-client';
 import {
   REALTIME_ADVANCED_RECHECK_LABEL,
@@ -256,6 +267,20 @@ type RealtimeOperatorPhase =
   | { kind: 'success'; message: string }
   | { kind: 'error'; message: string };
 
+type TossOperatorPhase =
+  | { kind: 'idle' }
+  | {
+      kind: 'running';
+      action:
+        | 'login'
+        | 'cancel-login'
+        | 'clear-session'
+        | 'start-realtime'
+        | 'stop-realtime';
+    }
+  | { kind: 'success'; message: string }
+  | { kind: 'error'; message: string };
+
 type ServerSettingsPhase =
   | { kind: 'idle' }
   | { kind: 'saving' }
@@ -278,10 +303,17 @@ function ConnectionTab() {
   const [status, setStatus] = useState<CredentialStatus | null>(null);
   const [realtimeStatus, setRealtimeStatus] =
     useState<RealtimeStatusPayload | null>(null);
+  const [tossSession, setTossSession] =
+    useState<TossSessionStatusPayload | null>(null);
+  const [tossLogin, setTossLogin] =
+    useState<TossLoginStatusPayload | null>(null);
+  const [tossRealtime, setTossRealtime] =
+    useState<TossSseStatusPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [importPhase, setImportPhase] = useState<ImportPhase>({ kind: 'idle' });
   const [operatorPhase, setOperatorPhase] =
     useState<RealtimeOperatorPhase>({ kind: 'idle' });
+  const [tossPhase, setTossPhase] = useState<TossOperatorPhase>({ kind: 'idle' });
   const [serverSettings, setServerSettings] =
     useState<ServerRuntimeSettings | null>(null);
   const [dataHealth, setDataHealth] = useState<RuntimeDataHealthPayload | null>(null);
@@ -406,6 +438,85 @@ function ConnectionTab() {
     setRealtimeStatus(await getRealtimeStatus());
   }
 
+  async function reloadTossStatus(): Promise<void> {
+    const [session, login, realtime] = await Promise.all([
+      getTossAuthStatus(),
+      getTossLoginStatus(),
+      getTossSseStatus(),
+    ]);
+    setTossSession(session);
+    setTossLogin(login);
+    setTossRealtime(realtime);
+  }
+
+  async function handleTossLoginStart(): Promise<void> {
+    setTossPhase({ kind: 'running', action: 'login' });
+    try {
+      setTossLogin(await startTossLogin());
+      setTossSession(await getTossAuthStatus());
+      setTossPhase({
+        kind: 'success',
+        message: '토스 QR 로그인 창을 열었습니다',
+      });
+    } catch (err) {
+      setTossPhase({ kind: 'error', message: operatorErrorMessage(err) });
+    }
+  }
+
+  async function handleTossLoginCancel(): Promise<void> {
+    setTossPhase({ kind: 'running', action: 'cancel-login' });
+    try {
+      setTossLogin(await cancelTossLogin());
+      setTossPhase({
+        kind: 'success',
+        message: '토스 로그인 캡처를 취소했습니다',
+      });
+    } catch (err) {
+      setTossPhase({ kind: 'error', message: operatorErrorMessage(err) });
+    }
+  }
+
+  async function handleTossSessionClear(): Promise<void> {
+    setTossPhase({ kind: 'running', action: 'clear-session' });
+    try {
+      await stopTossSse().catch(() => null);
+      setTossSession(await clearTossSession());
+      setTossRealtime(await getTossSseStatus());
+      setTossPhase({
+        kind: 'success',
+        message: '토스 세션을 삭제했습니다',
+      });
+    } catch (err) {
+      setTossPhase({ kind: 'error', message: operatorErrorMessage(err) });
+    }
+  }
+
+  async function handleTossRealtimeStart(): Promise<void> {
+    setTossPhase({ kind: 'running', action: 'start-realtime' });
+    try {
+      setTossRealtime(await startTossSse());
+      setTossPhase({
+        kind: 'success',
+        message: '토스 SSE 알림 연결을 시작했습니다',
+      });
+    } catch (err) {
+      setTossPhase({ kind: 'error', message: operatorErrorMessage(err) });
+    }
+  }
+
+  async function handleTossRealtimeStop(): Promise<void> {
+    setTossPhase({ kind: 'running', action: 'stop-realtime' });
+    try {
+      setTossRealtime(await stopTossSse());
+      setTossPhase({
+        kind: 'success',
+        message: '토스 SSE 알림 연결을 중지했습니다',
+      });
+    } catch (err) {
+      setTossPhase({ kind: 'error', message: operatorErrorMessage(err) });
+    }
+  }
+
   async function saveServerSettings(
     patch: Partial<ServerRuntimeSettings>,
     message = '운영 설정을 저장했습니다',
@@ -442,6 +553,16 @@ function ConnectionTab() {
     }, 5_000);
     return () => window.clearInterval(id);
   }, [realtimeStatus?.sessionRealtimeEnabled]);
+
+  useEffect(() => {
+    if (!isTossLoginRunning(tossLogin?.state) && !isTossRealtimeRunning(tossRealtime?.state)) return;
+    const id = window.setInterval(() => {
+      void reloadTossStatus().catch((err) => {
+        setTossPhase({ kind: 'error', message: operatorErrorMessage(err) });
+      });
+    }, 3_000);
+    return () => window.clearInterval(id);
+  }, [tossLogin?.state, tossRealtime?.state]);
 
   async function handleSessionEnable(): Promise<void> {
     setOperatorPhase({ kind: 'running', action: 'enable' });
@@ -546,16 +667,22 @@ function ConnectionTab() {
           runtime: data.runtime ?? 'unconfigured',
           errorMessage: data.error?.message ?? null,
         });
-        const [realtime, settings, health] = await Promise.all([
+        const [realtime, settings, health, tossSessionStatus, tossLoginStatus, tossRealtimeStatus] = await Promise.all([
           getRealtimeStatus(),
           getServerSettings(),
           getRuntimeDataHealth(),
+          getTossAuthStatus(),
+          getTossLoginStatus(),
+          getTossSseStatus(),
         ]);
         const profiles = await getCredentialProfiles().catch(() => []);
         if (!cancelled) {
           setRealtimeStatus(realtime);
           setServerSettings(settings);
           setDataHealth(health);
+          setTossSession(tossSessionStatus);
+          setTossLogin(tossLoginStatus);
+          setTossRealtime(tossRealtimeStatus);
           setCredentialProfiles(profiles);
         }
       } catch (err) {
@@ -657,6 +784,17 @@ function ConnectionTab() {
         onEnable={() => void handleSessionEnable()}
         onDisable={() => void handleSessionDisable()}
         onEmergencyDisable={() => void handleRealtimeEmergencyDisable()}
+      />
+      <TossDataControl
+        session={tossSession}
+        login={tossLogin}
+        realtime={tossRealtime}
+        phase={tossPhase}
+        onLoginStart={() => void handleTossLoginStart()}
+        onLoginCancel={() => void handleTossLoginCancel()}
+        onSessionClear={() => void handleTossSessionClear()}
+        onRealtimeStart={() => void handleTossRealtimeStart()}
+        onRealtimeStop={() => void handleTossRealtimeStop()}
       />
       {IS_DEV_BUILD && (
         <DevModeControl
@@ -1200,6 +1338,180 @@ export function RealtimeSessionControl({
             <div style={operatorMessageStyle('var(--accent-soft)')}>{phase.message}</div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+export function TossDataControl({
+  session,
+  login,
+  realtime,
+  phase,
+  onLoginStart,
+  onLoginCancel,
+  onSessionClear,
+  onRealtimeStart,
+  onRealtimeStop,
+}: {
+  session: TossSessionStatusPayload | null;
+  login: TossLoginStatusPayload | null;
+  realtime: TossSseStatusPayload | null;
+  phase: TossOperatorPhase;
+  onLoginStart: () => void;
+  onLoginCancel: () => void;
+  onSessionClear: () => void;
+  onRealtimeStart: () => void;
+  onRealtimeStop: () => void;
+}) {
+  const busy = phase.kind === 'running';
+  const loginRunning = isTossLoginRunning(login?.state);
+  const realtimeRunning = isTossRealtimeRunning(realtime?.state);
+  const sessionReady =
+    session?.configured === true &&
+    session.state !== 'expired' &&
+    session.state !== 'logged_out';
+  return (
+    <div
+      data-testid="toss-data-control"
+      style={{
+        marginTop: 18,
+        padding: '12px 14px',
+        background: 'var(--bg-tint)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
+          토스 데이터 연결
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 800,
+            color: 'var(--gold-text)',
+            border: '1px solid var(--gold)',
+            borderRadius: 4,
+            padding: '2px 5px',
+          }}
+        >
+          Toss-first
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        TOP100과 foreground quote는 토스 공개 데이터를 먼저 사용합니다.
+        <br />
+        로그인 세션은 알림 SSE 확인용이며 가격 갱신은 quote REST와 함께 처리됩니다.
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gap: 8,
+          marginTop: 12,
+        }}
+      >
+        <Row
+          k="세션"
+          v={tossSessionLabel(session)}
+          chipColor={tossSessionColor(session)}
+        />
+        <Row
+          k="로그인"
+          v={tossLoginLabel(login)}
+          chipColor={loginRunning ? 'var(--gold-text)' : 'var(--text-muted)'}
+        />
+        <Row
+          k="SSE 알림"
+          v={tossRealtimeLabel(realtime)}
+          chipColor={realtimeRunning ? 'var(--kr-up)' : 'var(--text-muted)'}
+        />
+        <Row
+          k="수신 이벤트"
+          v={`${realtime?.eventCount ?? 0}개`}
+          chipColor={(realtime?.eventCount ?? 0) > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
+        />
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        세션 만료: {formatMaybeLocal(session?.expiresAt ?? null)}
+        <br />
+        최근 SSE: {formatMaybeLocal(realtime?.lastEventAt ?? null)}
+        {realtime?.thinNotificationOnly === true && <> · thin notification</>}
+        {realtime?.lastError !== null && realtime?.lastError !== undefined && (
+          <>
+            <br />
+            SSE 상태: {realtime.lastError}
+          </>
+        )}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+        <button
+          type="button"
+          onClick={onLoginStart}
+          disabled={busy || loginRunning}
+          data-testid="toss-login-start"
+          style={operatorButtonStyle(!busy && !loginRunning)}
+        >
+          {phase.kind === 'running' && phase.action === 'login' ? '여는 중…' : 'QR 로그인'}
+        </button>
+        <button
+          type="button"
+          onClick={onLoginCancel}
+          disabled={busy || !loginRunning}
+          data-testid="toss-login-cancel"
+          style={operatorButtonStyle(!busy && loginRunning)}
+        >
+          로그인 취소
+        </button>
+        <button
+          type="button"
+          onClick={onRealtimeStart}
+          disabled={busy || !sessionReady || realtimeRunning}
+          data-testid="toss-realtime-start"
+          style={operatorButtonStyle(!busy && sessionReady && !realtimeRunning)}
+        >
+          {phase.kind === 'running' && phase.action === 'start-realtime'
+            ? '연결 중…'
+            : 'SSE 시작'}
+        </button>
+        <button
+          type="button"
+          onClick={onRealtimeStop}
+          disabled={busy || !realtimeRunning}
+          data-testid="toss-realtime-stop"
+          style={operatorButtonStyle(!busy && realtimeRunning)}
+        >
+          SSE 중지
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={onSessionClear}
+        disabled={busy || session?.configured !== true}
+        data-testid="toss-session-clear"
+        style={{
+          ...operatorButtonStyle(!busy && session?.configured === true),
+          width: '100%',
+          marginTop: 8,
+        }}
+      >
+        {phase.kind === 'running' && phase.action === 'clear-session'
+          ? '삭제 중…'
+          : '토스 세션 삭제'}
+      </button>
+      {phase.kind === 'success' && (
+        <div style={operatorMessageStyle('var(--up-tint-1)')}>{phase.message}</div>
+      )}
+      {phase.kind === 'error' && (
+        <div style={operatorMessageStyle('var(--accent-soft)')}>{phase.message}</div>
       )}
     </div>
   );
@@ -1972,6 +2284,82 @@ export function LocalBackupPanel({
       )}
     </div>
   );
+}
+
+function isTossLoginRunning(state: TossLoginStatusPayload['state'] | undefined): boolean {
+  return state === 'starting' || state === 'waiting_for_qr' || state === 'waiting_for_persistent';
+}
+
+function isTossRealtimeRunning(state: TossSseStatusPayload['state'] | undefined): boolean {
+  return state === 'connecting' || state === 'connected' || state === 'reconnecting';
+}
+
+function tossSessionLabel(session: TossSessionStatusPayload | null): string {
+  if (session === null) return '확인 중';
+  switch (session.state) {
+    case 'logged_out':
+      return '로그아웃';
+    case 'session_scoped':
+      return '세션 범위';
+    case 'persistent':
+      return '세션 유지';
+    case 'expiring':
+      return '만료 임박';
+    case 'expired':
+      return '만료됨';
+  }
+}
+
+function tossSessionColor(session: TossSessionStatusPayload | null): string {
+  if (session === null) return 'var(--text-muted)';
+  switch (session.state) {
+    case 'persistent':
+      return 'var(--kr-up)';
+    case 'session_scoped':
+    case 'expiring':
+      return 'var(--gold-text)';
+    case 'logged_out':
+    case 'expired':
+      return 'var(--text-muted)';
+  }
+}
+
+function tossLoginLabel(login: TossLoginStatusPayload | null): string {
+  if (login === null) return '대기';
+  switch (login.state) {
+    case 'idle':
+      return '대기';
+    case 'starting':
+      return '시작 중';
+    case 'waiting_for_qr':
+      return 'QR 대기';
+    case 'waiting_for_persistent':
+      return '세션 유지 대기';
+    case 'succeeded':
+      return '완료';
+    case 'failed':
+      return '실패';
+    case 'cancelled':
+      return '취소됨';
+  }
+}
+
+function tossRealtimeLabel(realtime: TossSseStatusPayload | null): string {
+  if (realtime === null) return '확인 중';
+  switch (realtime.state) {
+    case 'idle':
+      return '대기';
+    case 'connecting':
+      return '연결 중';
+    case 'connected':
+      return '연결됨';
+    case 'reconnecting':
+      return '재연결';
+    case 'stopped':
+      return '중지됨';
+    case 'failed':
+      return '실패';
+  }
 }
 
 function operatorErrorMessage(err: unknown): string {
