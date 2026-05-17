@@ -198,12 +198,12 @@ describe('BackfillStatusPill', () => {
     expect(html).not.toContain('favorites와 추적 종목');
   });
 
-  it('reports up-to-date tracked tickers without implying a failure', () => {
+  it('reports up-to-date visible tickers without implying a failure', () => {
     const status = describeDailyBackfillStatus(
       health({ lastSkippedReason: 'no_stale_tickers' }),
     );
 
     expect(status.label).toContain('최신 상태');
-    expect(status.detail).toContain('보강 필요한 추적 종목이 없습니다');
+    expect(status.detail).toContain('보강 필요한 화면 종목이 없습니다');
   });
 });

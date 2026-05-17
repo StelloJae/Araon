@@ -1,5 +1,5 @@
 /**
- * ToastStack — fixed top-right column of alert toasts.
+ * ToastStack — fixed bottom-center column of alert toasts.
  *
  * Each toast manages its own auto-dismiss timer (so a settings change
  * doesn't restart in-flight timers). Click anywhere on a toast (except the
@@ -27,12 +27,15 @@ export function ToastStack({ onPickStock }: ToastStackProps) {
     <div
       style={{
         position: 'fixed',
-        top: 80,
-        right: 20,
+        bottom: 56,
+        left: '50%',
+        transform: 'translateX(-50%)',
         zIndex: 300,
+        maxHeight: 160,
+        overflowY: 'auto',
         display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
+        flexDirection: 'column-reverse',
+        gap: 8,
         pointerEvents: 'none',
       }}
       aria-live="polite"
@@ -80,9 +83,9 @@ function Toast({ toast, durationMs, onDismiss, onPick }: ToastProps) {
       }}
       role="status"
       style={{
-        width: 340,
-        padding: '12px 14px',
-        borderRadius: 10,
+        width: 'min(300px, calc(100vw - 32px))',
+        padding: '9px 10px',
+        borderRadius: 8,
         background: 'var(--bg-card)',
         border: `1px solid ${accent}`,
         borderLeft: `4px solid ${accent}`,
@@ -91,21 +94,21 @@ function Toast({ toast, durationMs, onDismiss, onPick }: ToastProps) {
         cursor: 'pointer',
         display: 'grid',
         gridTemplateColumns: 'auto 1fr auto',
-        gap: 10,
+        gap: 8,
         alignItems: 'flex-start',
       }}
     >
       <div
         style={{
-          width: 30,
-          height: 30,
+          width: 24,
+          height: 24,
           borderRadius: 7,
           background: bg,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           color: accent,
-          fontSize: 14,
+          fontSize: 12,
           fontWeight: 800,
           flexShrink: 0,
         }}
@@ -115,7 +118,7 @@ function Toast({ toast, durationMs, onDismiss, onPick }: ToastProps) {
       <div style={{ minWidth: 0 }}>
         <div
           style={{
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 700,
             color: 'var(--text-primary)',
             lineHeight: 1.3,
@@ -125,7 +128,7 @@ function Toast({ toast, durationMs, onDismiss, onPick }: ToastProps) {
         </div>
         <div
           style={{
-            fontSize: 11,
+            fontSize: 10,
             color: 'var(--text-secondary)',
             marginTop: 2,
             lineHeight: 1.4,

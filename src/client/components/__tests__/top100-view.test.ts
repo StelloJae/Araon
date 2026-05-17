@@ -2,10 +2,13 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { MarketTopMoversResponse } from '@shared/types';
+import type { MarketTopMoversResponse, TossRealtimeRankingResponse } from '@shared/types';
+import {
+  normalizeMarketTop100RefreshDelayMs,
+  shouldScheduleMarketTop100Refresh,
+} from '../SectionStack';
 import { TopMoversBoard } from '../TopMoversBoard';
 import { TossRealtimeRankingBoard } from '../TossRealtimeRankingBoard';
-import { ViewToggle } from '../ViewToggle';
 
 function topMovers(): MarketTopMoversResponse {
   return {
@@ -65,21 +68,67 @@ function topMovers(): MarketTopMoversResponse {
   };
 }
 
+function unsupportedTopMovers(): MarketTopMoversResponse {
+  return {
+    ...topMovers(),
+    fetchedAt: null,
+    source: 'toss-overview-ranking',
+    sourcePhase: 'unsupported',
+    sourceLabel: '토스 웹 랭킹',
+    status: 'unconfigured',
+    message: '현재 시간대에 사용할 TOP100 랭킹 소스가 없습니다.',
+    partialReason: 'source_unsupported',
+    stopReason: null,
+    coverage: {
+      requestedLimit: 100,
+      gainersCount: 0,
+      losersCount: 0,
+      gainersComplete: false,
+      losersComplete: false,
+      marketUniverse: 'toss-web-ranking',
+      guaranteedTop100: false,
+      includesLocalFallback: false,
+    },
+    gainers: [],
+    losers: [],
+  };
+}
+
+function tossRealtimeRanking(): TossRealtimeRankingResponse {
+  return {
+    generatedAt: '2026-05-11T06:05:00.000Z',
+    fetchedAt: '2026-05-11T06:05:00.000Z',
+    rankingDateTime: '2025-03-10T16:44:43',
+    rankingTimestampStatus: 'stale',
+    source: 'toss-public-realtime-ranking',
+    sourceLabel: '토스 실시간 인기',
+    status: 'partial',
+    message: '토스 공개 인기 랭킹입니다. 랭킹 시각이 오래되어 가격만 별도 갱신했습니다.',
+    refreshIntervalMs: 15_000,
+    coverage: {
+      requestedLimit: 100,
+      returnedCount: 1,
+      pricedCount: 1,
+      market: 'kr',
+    },
+    items: [
+      {
+        rank: 1,
+        ticker: '005930',
+        productCode: 'A005930',
+        name: '삼성전자',
+        market: '코스피',
+        currency: 'KRW',
+        price: 284_000,
+        changeAbs: 15_500,
+        changePct: 5.77,
+        volume: 56_326_493,
+      },
+    ],
+  };
+}
+
 describe('TOP100 view chrome', () => {
-  it('replaces tag/mixed tabs with a focused TOP100 tab', () => {
-    const html = renderToStaticMarkup(
-      createElement(ViewToggle, {
-        value: 'top100',
-        onChange: vi.fn(),
-      }),
-    );
-
-    expect(html).toContain('섹터');
-    expect(html).toContain('TOP100');
-    expect(html).not.toContain('태그');
-    expect(html).not.toContain('혼합');
-  });
-
   it('renders gainers and losers in the compact section-card style', () => {
     const html = renderToStaticMarkup(
       createElement(TopMoversBoard, {
@@ -95,6 +144,29 @@ describe('TOP100 view chrome', () => {
     expect(html).toContain('3초');
     expect(html).toContain('삼성전자');
     expect(html).toContain('SK하이닉스');
+  });
+
+  it('renders sub-second TOP100 refresh cadence without rounding up to one second', () => {
+    const html = renderToStaticMarkup(
+      createElement(TopMoversBoard, {
+        data: {
+          ...topMovers(),
+          refreshIntervalMs: 500,
+          cacheTtlMs: 500,
+        },
+        onOpenTicker: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('0.5초마다');
+    expect(html).not.toContain('1초마다');
+  });
+
+  it('keeps TOP100 polling sub-second but never schedules after cancellation', () => {
+    expect(normalizeMarketTop100RefreshDelayMs(500)).toBe(500);
+    expect(normalizeMarketTop100RefreshDelayMs(250)).toBe(300);
+    expect(shouldScheduleMarketTop100Refresh(false)).toBe(true);
+    expect(shouldScheduleMarketTop100Refresh(true)).toBe(false);
   });
 
   it('does not turn local watchlist rows into a fake full-market TOP100 fallback', () => {
@@ -209,37 +281,7 @@ describe('TOP100 view chrome', () => {
   it('renders Toss realtime popularity ranking as a separate, honest source', () => {
     const html = renderToStaticMarkup(
       createElement(TossRealtimeRankingBoard, {
-        data: {
-          generatedAt: '2026-05-11T06:05:00.000Z',
-          fetchedAt: '2026-05-11T06:05:00.000Z',
-          rankingDateTime: '2025-03-10T16:44:43',
-          rankingTimestampStatus: 'stale',
-          source: 'toss-public-realtime-ranking',
-          sourceLabel: '토스 실시간 인기',
-          status: 'partial',
-          message: '토스 공개 인기 랭킹입니다. 랭킹 시각이 오래되어 가격만 별도 갱신했습니다.',
-          refreshIntervalMs: 15_000,
-          coverage: {
-            requestedLimit: 100,
-            returnedCount: 1,
-            pricedCount: 1,
-            market: 'kr',
-          },
-          items: [
-            {
-              rank: 1,
-              ticker: '005930',
-              productCode: 'A005930',
-              name: '삼성전자',
-              market: '코스피',
-              currency: 'KRW',
-              price: 284_000,
-              changeAbs: 15_500,
-              changePct: 5.77,
-              volume: 56_326_493,
-            },
-          ],
-        },
+        data: tossRealtimeRanking(),
         onOpenTicker: vi.fn(),
       }),
     );
@@ -248,5 +290,19 @@ describe('TOP100 view chrome', () => {
     expect(html).toContain('랭킹 시각 오래됨');
     expect(html).toContain('가격 1/1');
     expect(html).toContain('삼성전자');
+  });
+
+  it('keeps the gainers and losers TOP100 surface when movers are unavailable', () => {
+    const html = renderToStaticMarkup(
+      createElement(TopMoversBoard, {
+        data: unsupportedTopMovers(),
+        onOpenTicker: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('상승 TOP100');
+    expect(html).toContain('하락 TOP100');
+    expect(html).toContain('현재 시간대에 사용할 TOP100 랭킹 소스가 없습니다.');
+    expect(html).not.toContain('토스 실시간 인기 TOP100');
   });
 });

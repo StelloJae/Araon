@@ -15,7 +15,7 @@ export interface ToastEntry extends ToastSpec {
   pushedAt: number;
 }
 
-export const MAX_TOASTS = 5;
+export const MAX_TOASTS = 2;
 
 interface ToastState {
   toasts: ToastEntry[];

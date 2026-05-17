@@ -8,8 +8,8 @@
  *
  * Open state: a 280px panel anchored under the pill, listing the actual data
  * sources the dashboard is using:
- *   - WebSocket (즐겨찾기) — `realtimeCount` / 40 capacity
- *   - REST 폴링 — `pollingCount` 종목
+ *   - 실시간 추적 — `realtimeCount` / 40 capacity
+ *   - 비실시간 — `pollingCount` 종목
  *   - 마지막 이벤트 — relative time vs the last incoming SSE message
  *
  * The panel is intentionally light on numbers we can't actually measure: we
@@ -196,15 +196,15 @@ export function SSEIndicator({
               데이터 소스
             </div>
             <PanelRow
-              k="WebSocket (즐겨찾기)"
+              k="실시간 추적"
               v={`${realtimeCount} / 40 종목`}
               chip={wsChip}
               chipColor={cfg.dot}
             />
             <PanelRow
-              k="REST 폴링"
+              k="비실시간"
               v={`${pollingCount} 종목`}
-              chip="활성"
+              chip="Toss 가격"
               chipColor="var(--text-muted)"
             />
             <PanelRow
@@ -214,7 +214,7 @@ export function SSEIndicator({
               chipColor={status === 'connected' ? cfg.dot : 'var(--text-muted)'}
             />
             <PanelRow
-              k="WS 런타임"
+              k="추적 런타임"
               v={runtimeStatusLabel(runtimeStatus, runtimeStatusError)}
               chip={runtimeSourceChip(runtimeStatus?.source)}
               chipColor="var(--text-muted)"
@@ -316,7 +316,7 @@ export function SSEIndicator({
               }}
             >
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                통합 실시간은 기본 상시 운영이며, REST 폴링은 fallback으로 계속 유지됩니다.
+                통합 실시간은 기본 상시 운영이며, KIS REST 보조 경로는 명시적으로 열릴 때만 사용됩니다.
               </div>
             </div>
           </div>
@@ -371,7 +371,7 @@ function runtimeCountersLabel(status: RealtimeStatusPayload | null): string {
 
 function runtimeCoverageLabel(status: RealtimeStatusPayload | null): string {
   if (status === null) return '대기';
-  return `${status.coverage.assignedTickerCount}/${status.coverage.totalCapacity} · fallback ${status.coverage.fallbackTickerCount}`;
+  return `${status.coverage.assignedTickerCount}/${status.coverage.totalCapacity} · 대기 ${status.coverage.fallbackTickerCount}`;
 }
 
 function runtimeSessionLimitLabel(status: RealtimeStatusPayload | null): string {

@@ -1,18 +1,21 @@
 /**
- * SectionStack — right column of the ARAON dashboard.
+ * SectionStack — market board of the ARAON dashboard.
  *
  * Renders sector / TOP100 views by routing on `useWatchlistStore.view`.
  *
  *   'sector' → SectorsCombinedBlock: single card, internal 2-col grid splitting
  *              theme sectors by even/odd index. No collapse / sort (compact).
- *   'top100' → KIS 등락률 순위 기반 상승/하락 TOP100 board.
+ *   'top100' → Toss 웹 랭킹 기반 상승/하락 TOP100 board.
  *
  * Watchlist tickers without a manual theme or KIS official index industry fall
  * into a synthetic '미분류' sector at the end.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import type { MarketTopMoversResponse } from '@shared/types';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import type {
+  MarketTopMoversMarket,
+  MarketTopMoversResponse,
+} from '@shared/types';
 import { getMarketTopMovers } from '../lib/api-client';
 import {
   buildStockVM,
@@ -31,6 +34,21 @@ const OTHERS_META: SectorMeta = {
   tagline: '공식 지수업종 없음',
 };
 
+const MIN_TOP100_REFRESH_INTERVAL_MS = 300;
+const HIDDEN_TOP100_REFRESH_INTERVAL_MS = 3_000;
+const FAILED_TOP100_REFRESH_INTERVAL_MS = 10_000;
+
+export function normalizeMarketTop100RefreshDelayMs(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return MIN_TOP100_REFRESH_INTERVAL_MS;
+  }
+  return Math.max(MIN_TOP100_REFRESH_INTERVAL_MS, Math.trunc(value));
+}
+
+export function shouldScheduleMarketTop100Refresh(cancelled: boolean): boolean {
+  return !cancelled;
+}
+
 interface SectionStackProps {
   onToggleFav: (ticker: string) => void;
   onOpenDetail: (code: string) => void;
@@ -48,6 +66,7 @@ export function SectionStack({
   const flashSeeds = useStocksStore((s) => s.flashSeeds);
 
   const view = useWatchlistStore((s) => s.view);
+  const setView = useWatchlistStore((s) => s.setView);
   const favorites = useWatchlistStore((s) => s.favorites);
 
   const stocksBySector = useMemo<Record<string, StockViewModel[]>>(() => {
@@ -83,6 +102,8 @@ export function SectionStack({
   if (view === 'top100') {
     return (
       <MarketTop100Block
+        view={view}
+        onViewChange={setView}
         onOpenTicker={onOpenRankingTicker ?? onOpenDetail}
       />
     );
@@ -125,6 +146,8 @@ export function SectionStack({
       onToggleFav={onToggleFav}
       onOpenDetail={onOpenDetail}
       flashSeeds={flashSeeds}
+      view={view}
+      onViewChange={setView}
     />
   );
 }
@@ -138,6 +161,8 @@ interface SectorsCombinedBlockProps {
   onToggleFav: (code: string) => void;
   onOpenDetail: (code: string) => void;
   flashSeeds: Record<string, number>;
+  view: 'sector' | 'top100';
+  onViewChange: (view: 'sector' | 'top100') => void;
 }
 
 function SectorsCombinedBlock({
@@ -147,6 +172,8 @@ function SectorsCombinedBlock({
   onToggleFav,
   onOpenDetail,
   flashSeeds,
+  view,
+  onViewChange,
 }: SectorsCombinedBlockProps) {
   const cols: SectorMeta[][] = [
     sectors.filter((_, i) => i % 2 === 0),
@@ -154,35 +181,33 @@ function SectorsCombinedBlock({
   ];
   return (
     <div
-      style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderRadius: 12,
-        overflow: 'hidden',
-        display: 'grid',
-        gridTemplateColumns: '1fr 1px 1fr',
-        width: '100%',
-        minWidth: 0,
-      }}
+      className="market-board"
     >
-      {cols.map((colSectors, colIdx) => (
-        <ColumnAndDivider
-          key={`col-${colIdx}`}
-          showDivider={colIdx === 0}
-          colSectors={colSectors}
-          stocksBySector={stocksBySector}
-          favorites={favorites}
-          onToggleFav={onToggleFav}
-          onOpenDetail={onOpenDetail}
-          flashSeeds={flashSeeds}
-        />
-      ))}
+      <MarketBoardHeader view={view} onViewChange={onViewChange}>
+        <span className="market-board__count">{sectors.length}개 그룹</span>
+      </MarketBoardHeader>
+      <div className="market-board__body market-board__body--sectors">
+        {cols.map((colSectors, colIdx) => (
+          <div
+            key={`col-${colIdx}`}
+            className={colIdx === 0 ? 'market-board__column' : 'market-board__column market-board__column--divided'}
+          >
+            <SectorColumn
+              colSectors={colSectors}
+              stocksBySector={stocksBySector}
+              favorites={favorites}
+              onToggleFav={onToggleFav}
+              onOpenDetail={onOpenDetail}
+              flashSeeds={flashSeeds}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-interface ColumnAndDividerProps {
-  showDivider: boolean;
+interface SectorColumnProps {
   colSectors: SectorMeta[];
   stocksBySector: Record<string, StockViewModel[]>;
   favorites: Set<string>;
@@ -191,98 +216,94 @@ interface ColumnAndDividerProps {
   flashSeeds: Record<string, number>;
 }
 
-function ColumnAndDivider({
-  showDivider,
+function SectorColumn({
   colSectors,
   stocksBySector,
   favorites,
   onToggleFav,
   onOpenDetail,
   flashSeeds,
-}: ColumnAndDividerProps) {
+}: SectorColumnProps) {
   return (
     <>
-      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {colSectors.map((sector, rowIdx) => {
-          const stocks = sortByChangeDesc(stocksBySector[sector.id] ?? []);
-          return (
+      {colSectors.map((sector, rowIdx) => {
+        const stocks = sortByChangeDesc(stocksBySector[sector.id] ?? []);
+        return (
+          <div
+            key={sector.id}
+            style={{
+              borderTop: rowIdx === 0 ? 'none' : '1px solid var(--border)',
+              display: 'flex',
+              flexDirection: 'column',
+              minWidth: 0,
+            }}
+          >
             <div
-              key={sector.id}
               style={{
-                borderTop: rowIdx === 0 ? 'none' : '1px solid var(--border)',
+                padding: '12px 14px 8px',
                 display: 'flex',
-                flexDirection: 'column',
-                minWidth: 0,
+                alignItems: 'baseline',
+                gap: 8,
               }}
             >
               <div
                 style={{
-                  padding: '12px 14px 8px',
-                  display: 'flex',
-                  alignItems: 'baseline',
-                  gap: 8,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  letterSpacing: -0.1,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    letterSpacing: -0.1,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {sector.name}
-                </div>
-                <div
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 500,
-                    color: 'var(--text-muted)',
-                    flex: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {sector.tagline}
-                </div>
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: 'var(--text-secondary)',
-                    background: 'var(--bg-tint)',
-                    padding: '2px 7px',
-                    borderRadius: 50,
-                    letterSpacing: 0.3,
-                    flexShrink: 0,
-                  }}
-                >
-                  {stocks.length}
-                </span>
+                {sector.name}
               </div>
-              <div>
-                {stocks.map((s, i) => (
-                  <StockRow
-                    key={s.code}
-                    stock={s}
-                    rank={i + 1}
-                    isFav={favorites.has(s.code)}
-                    onToggleFav={onToggleFav}
-                    onOpenDetail={onOpenDetail}
-                    flashSeed={flashSeeds[s.code] ?? 0}
-                    isFirst={i === 0}
-                  />
-                ))}
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 500,
+                  color: 'var(--text-muted)',
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {sector.tagline}
               </div>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: 'var(--text-secondary)',
+                  background: 'var(--bg-tint)',
+                  padding: '2px 7px',
+                  borderRadius: 50,
+                  letterSpacing: 0.3,
+                  flexShrink: 0,
+                }}
+              >
+                {stocks.length}
+              </span>
             </div>
-          );
-        })}
-      </div>
-      {showDivider && <div style={{ background: 'var(--border)' }} />}
+            <div>
+              {stocks.map((s, i) => (
+                <StockRow
+                  key={s.code}
+                  stock={s}
+                  rank={i + 1}
+                  isFav={favorites.has(s.code)}
+                  onToggleFav={onToggleFav}
+                  onOpenDetail={onOpenDetail}
+                  flashSeed={flashSeeds[s.code] ?? 0}
+                  isFirst={i === 0}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -290,34 +311,49 @@ function ColumnAndDivider({
 // ---------- TOP100 live ranking ----------
 
 function MarketTop100Block({
+  view,
+  onViewChange,
   onOpenTicker,
 }: {
+  view: 'sector' | 'top100';
+  onViewChange: (view: 'sector' | 'top100') => void;
   onOpenTicker: (ticker: string) => void;
 }) {
   const [data, setData] = useState<MarketTopMoversResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [market, setMarket] = useState<MarketTopMoversMarket>('kr');
 
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    setData(null);
+    setError(null);
 
     async function load() {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        timer = setTimeout(load, 3_000);
+        if (shouldScheduleMarketTop100Refresh(cancelled)) {
+          timer = setTimeout(load, HIDDEN_TOP100_REFRESH_INTERVAL_MS);
+        }
         return;
       }
       try {
-        const next = await getMarketTopMovers({ limit: 100 });
-        if (!cancelled) {
-          setData(next);
-          setError(null);
+        const next = await getMarketTopMovers({ limit: 100, market });
+        if (cancelled) {
+          return;
         }
-        timer = setTimeout(load, next.refreshIntervalMs);
+        setData(next);
+        setError(null);
+        if (shouldScheduleMarketTop100Refresh(cancelled)) {
+          timer = setTimeout(load, normalizeMarketTop100RefreshDelayMs(next.refreshIntervalMs));
+        }
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
+        if (cancelled) {
+          return;
         }
-        timer = setTimeout(load, 10_000);
+        setError(err instanceof Error ? err.message : String(err));
+        if (shouldScheduleMarketTop100Refresh(cancelled)) {
+          timer = setTimeout(load, FAILED_TOP100_REFRESH_INTERVAL_MS);
+        }
       }
     }
 
@@ -326,35 +362,130 @@ function MarketTop100Block({
       cancelled = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, []);
+  }, [market]);
 
   if (data === null) {
     return (
-      <div
-        style={{
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border)',
-          borderRadius: 12,
-          padding: 48,
-          textAlign: 'center',
-          color: 'var(--text-muted)',
-          fontSize: 13,
-          fontWeight: 600,
-        }}
-      >
-        전체 종목 TOP100 랭킹을 불러오는 중
-        {error !== null && (
-          <div style={{ marginTop: 8, color: 'var(--gold-text)' }}>{error}</div>
-        )}
+      <div className="market-board">
+        <MarketBoardHeader view={view} onViewChange={onViewChange}>
+          <Top100MarketSelector market={market} onSelect={setMarket} />
+        </MarketBoardHeader>
+        <div className="market-board__empty">
+          <span>{market === 'us' ? '미국' : '국내'} TOP100 랭킹을 불러오는 중</span>
+          {error !== null && <em>{error}</em>}
+        </div>
       </div>
     );
   }
 
   return (
-    <TopMoversBoard
-      data={data}
-      onOpenTicker={onOpenTicker}
-    />
+    <div className="market-board">
+      <MarketBoardHeader view={view} onViewChange={onViewChange}>
+        <Top100MarketSelector market={market} onSelect={setMarket} />
+      </MarketBoardHeader>
+      <div className="market-board__body">
+        <TopMoversBoard
+          data={data}
+          compact
+          embedded
+          onOpenTicker={onOpenTicker}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MarketBoardHeader({
+  view,
+  onViewChange,
+  children,
+}: {
+  view: 'sector' | 'top100';
+  onViewChange: (view: 'sector' | 'top100') => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="market-board__header">
+      <div className="market-board__title">
+        <strong>{view === 'top100' ? 'TOP100' : '섹터'}</strong>
+        <span>{view === 'top100' ? '상승/하락 랭킹' : '테마/업종 그룹'}</span>
+      </div>
+      <div className="market-board__actions">
+        <ViewModeButton view="sector" selected={view === 'sector'} onSelect={onViewChange}>
+          섹터
+        </ViewModeButton>
+        <ViewModeButton view="top100" selected={view === 'top100'} onSelect={onViewChange}>
+          TOP100
+        </ViewModeButton>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ViewModeButton({
+  view,
+  selected,
+  onSelect,
+  children,
+}: {
+  view: 'sector' | 'top100';
+  selected: boolean;
+  onSelect: (view: 'sector' | 'top100') => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={selected ? 'market-board__segment market-board__segment--active' : 'market-board__segment'}
+      aria-pressed={selected}
+      onClick={() => onSelect(view)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Top100MarketSelector({
+  market,
+  onSelect,
+}: {
+  market: MarketTopMoversMarket;
+  onSelect: (market: MarketTopMoversMarket) => void;
+}) {
+  return (
+    <div className="market-board__market" role="tablist" aria-label="TOP100 시장">
+      <Top100MarketButton market="kr" selected={market === 'kr'} onSelect={onSelect}>
+        국내
+      </Top100MarketButton>
+      <Top100MarketButton market="us" selected={market === 'us'} onSelect={onSelect}>
+        미국
+      </Top100MarketButton>
+    </div>
+  );
+}
+
+function Top100MarketButton({
+  market,
+  selected,
+  onSelect,
+  children,
+}: {
+  market: MarketTopMoversMarket;
+  selected: boolean;
+  onSelect: (market: MarketTopMoversMarket) => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={() => onSelect(market)}
+      className={selected ? 'market-board__market-button market-board__market-button--active' : 'market-board__market-button'}
+    >
+      {children}
+    </button>
   );
 }
 

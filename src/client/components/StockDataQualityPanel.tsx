@@ -158,7 +158,7 @@ function priceSourceReason(source: StockViewModel['source']): string {
     case 'ws-nxt':
       return 'NXT 실시간';
     case 'rest':
-      return 'REST fallback';
+      return 'REST 보조';
     default:
       return '실시간 LIVE';
   }

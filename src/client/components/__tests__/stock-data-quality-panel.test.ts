@@ -61,7 +61,7 @@ describe('StockDataQualityPanel', () => {
     expect(quality.reasons).toContain('일봉 보강 대기');
   });
 
-  it('labels REST fallback separately from integrated realtime', () => {
+  it('labels REST auxiliary data separately from integrated realtime', () => {
     const quality = buildStockDataQuality(stock({ source: 'rest' }), {
       minuteCount: 1,
       minuteNewestAt: '2026-05-06T01:00:00.000Z',
@@ -69,6 +69,6 @@ describe('StockDataQualityPanel', () => {
       dailyNewestAt: '2026-05-05T15:00:00.000Z',
     });
 
-    expect(quality.reasons).toContain('REST fallback');
+    expect(quality.reasons).toContain('REST 보조');
   });
 });

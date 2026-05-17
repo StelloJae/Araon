@@ -121,6 +121,24 @@ export function StockDetailModal({
     const d = new Date(stock.updatedAt);
     return Number.isNaN(d.getTime()) ? null : d;
   }, [stock.updatedAt]);
+  const liveQuote = useMemo(
+    () => ({
+      ticker: stock.code,
+      price: stock.price,
+      volume: stock.volume,
+      updatedAt: stock.updatedAt,
+      isSnapshot: stock.isSnapshot,
+      source: stock.source ?? null,
+    }),
+    [
+      stock.code,
+      stock.isSnapshot,
+      stock.price,
+      stock.source,
+      stock.updatedAt,
+      stock.volume,
+    ],
+  );
   return (
     <div
       onClick={onClose}
@@ -232,7 +250,10 @@ export function StockDetailModal({
           {activeTab === 'realtime' ? (
             <ChartArea history={history} positive={stock.changePct >= 0} />
           ) : (
-            <StockCandleChart ticker={stock.code} />
+            <StockCandleChart
+              ticker={stock.code}
+              liveQuote={liveQuote}
+            />
           )}
 
           <StockDataQualityPanel stock={stock} />

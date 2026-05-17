@@ -1,8 +1,8 @@
 /**
  * Header — sticky top chrome.
  *
- *   [logo · 아라온]  [MarketBadge]  [GlobalSearch · backfill pill]
- *     [ViewToggle] | [ThemeToggle] [SettingsBtn] | [SSEIndicator]
+ *   [logo · 아라온]  [MarketBadge]  [GlobalSearch]
+ *     [ThemeToggle] [SettingsBtn] | [SSEIndicator]
  *
  * 64px tall, sticky z-40. Uses theme tokens so light/dark flips smoothly.
  * The settings button shows a small red dot when notifications are globally
@@ -12,17 +12,14 @@
 import type { MarketStatus } from '@shared/types';
 import { LogoMark, SettingsIcon } from '../lib/icons';
 import type { StockViewModel } from '../lib/view-models';
-import { BackfillStatusPill } from './BackfillStatusStrip';
 import { GlobalSearch } from './GlobalSearch';
 import { MarketBadge } from './MarketBadge';
 import { SSEIndicator, type SseStatus } from './SSEIndicator';
 import { ThemeToggle } from './ThemeToggle';
-import { ViewToggle, type ViewKind } from './ViewToggle';
 
 interface HeaderProps {
   marketStatus: MarketStatus;
-  view: ViewKind;
-  onViewChange: (view: ViewKind) => void;
+  onHome: () => void;
   sseStatus: SseStatus;
   lastUpdate: Date | null;
   allStocks: ReadonlyArray<StockViewModel>;
@@ -66,8 +63,7 @@ function Wordmark() {
 
 export function Header({
   marketStatus,
-  view,
-  onViewChange,
+  onHome,
   sseStatus,
   lastUpdate,
   allStocks,
@@ -93,10 +89,25 @@ export function Header({
         gap: 20,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <button
+        type="button"
+        onClick={onHome}
+        aria-label="운영 홈으로 이동"
+        title="운영 홈"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          border: 'none',
+          background: 'transparent',
+          padding: 0,
+          font: 'inherit',
+          cursor: 'pointer',
+        }}
+      >
         <LogoMark size={26} />
         <Wordmark />
-      </div>
+      </button>
       <MarketBadge status={marketStatus} />
       <div
         style={{
@@ -113,10 +124,7 @@ export function Header({
           onPickStock={onPickStock}
           {...(onPickMasterTicker !== undefined ? { onPickMasterTicker } : {})}
         />
-        <BackfillStatusPill />
       </div>
-      <ViewToggle value={view} onChange={onViewChange} />
-      <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
       <ThemeToggle />
       <button
         type="button"

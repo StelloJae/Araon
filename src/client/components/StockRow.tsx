@@ -145,8 +145,8 @@ function StockRowComponent({
     display: 'grid',
     gridTemplateColumns:
       rank !== null
-        ? '20px 16px minmax(0, 1fr) auto auto'
-        : '16px minmax(0, 1fr) auto auto',
+        ? '20px 16px minmax(0, 1fr) 78px auto auto'
+        : '16px minmax(0, 1fr) 78px auto auto',
     gap: 8,
     alignItems: 'center',
     padding: '9px 12px',
@@ -289,17 +289,17 @@ function StockRowComponent({
         </div>
       </div>
 
-      {history.length >= 2 && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 140,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            pointerEvents: 'none',
-            opacity: 0.85,
-          }}
-        >
+      <div
+        style={{
+          width: 78,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+          opacity: 0.85,
+        }}
+      >
+        {history.length >= 2 && (
           <Sparkline
             history={history}
             width={70}
@@ -307,8 +307,8 @@ function StockRowComponent({
             positive={changePct >= 0}
             mini
           />
-        </div>
-      )}
+        )}
+      </div>
 
       <div
         style={{

@@ -307,9 +307,9 @@ function FilterChrome({
     title: string;
   }> = [
     { v: 'all', l: '시총 전체', title: '전체 시총 규모' },
-    { v: 'large', l: '대형', title: 'KIS 시총규모 1' },
-    { v: 'mid', l: '중형', title: 'KIS 시총규모 2' },
-    { v: 'small', l: '소형', title: 'KIS 시총규모 3' },
+    { v: 'large', l: '대형', title: '시총 규모 대형' },
+    { v: 'mid', l: '중형', title: '시총 규모 중형' },
+    { v: 'small', l: '소형', title: '시총 규모 소형' },
   ];
 
   return (
@@ -323,7 +323,7 @@ function FilterChrome({
         gap: 6,
       }}
     >
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
         {filterOpts.map((o) => {
           const active = filter === o.v;
           const disabled = o.disabled;
@@ -360,6 +360,8 @@ function FilterChrome({
                 }`,
                 borderRadius: 6,
                 opacity: disabled ? 0.6 : 1,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               {o.l}
@@ -367,7 +369,7 @@ function FilterChrome({
           );
         })}
       </div>
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
         {capOpts.map((o) => {
           const active = marketCapFilter === o.v;
           return (
@@ -387,6 +389,8 @@ function FilterChrome({
                   active ? 'var(--accent)' : 'var(--border)'
                 }`,
                 borderRadius: 5,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               {o.l}

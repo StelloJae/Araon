@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   KisBudgetPill,
   MarketTape,
+  StatusBar,
   TossQuotePollingPill,
   shouldShowKisBudgetPill,
   type KisBudgetSummary,
@@ -35,6 +36,26 @@ describe('MarketTape', () => {
     expect(html).toContain('2,700.12');
     expect(html).toContain('USD/KRW');
     expect(html).toContain('WTI');
+  });
+});
+
+describe('StatusBar', () => {
+  it('uses final-product copy for non-realtime rows instead of polling wording', () => {
+    const html = renderToStaticMarkup(
+      createElement(StatusBar, {
+        totalCount: 50,
+        favCount: 10,
+        pollingCount: 40,
+        lastUpdate: '20:09:00',
+        kstTime: '20:09:00 KST',
+        marketSummary: null,
+        onOpenSettings: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('비실시간');
+    expect(html).not.toContain('일반 갱신');
+    expect(html).not.toContain('폴링');
   });
 });
 
@@ -76,7 +97,7 @@ describe('KisBudgetPill', () => {
 
     expect(html).toContain('KIS 여유');
     expect(html).toContain('1.0/s');
-    expect(html).toContain('polling 0.83/s');
+    expect(html).toContain('REST 0.83/s');
   });
 });
 
@@ -108,7 +129,39 @@ describe('TossQuotePollingPill', () => {
 
     expect(html).toContain('Toss 부분');
     expect(html).toContain('11/12');
-    expect(html).toContain('KIS polling 억제');
+    expect(html).toContain('실시간 추적 억제');
+  });
+
+  it('does not imply KIS REST helper is open when repeated Toss failures are still suppressed', () => {
+    const polling: TossQuotePollingSummary = {
+      configured: true,
+      running: true,
+      enabled: true,
+      source: 'toss-public',
+      cycleCount: 8,
+      lastCycleMs: 1200,
+      tickersInCycle: 4,
+      requestedCount: 4,
+      returnedCount: 0,
+      missingCount: 4,
+      errorCount: 3,
+      consecutiveFailureCount: 3,
+      lastSuccessAt: null,
+      lastFailureAt: '2026-05-12T00:00:00.000Z',
+      lastErrorCode: 'TOSS_QUOTE_POLLING_FAILED',
+      lastMessage: null,
+      intervalMs: 3000,
+      batchSize: 100,
+      suppressingKisPolling: true,
+    };
+
+    const html = renderToStaticMarkup(createElement(TossQuotePollingPill, { polling }));
+
+    expect(html).toContain('Toss 실패 · 추적 잠금');
+    expect(html).toContain('실시간 추적 비활성');
+    expect(html).not.toContain('실시간 추적 허용');
+    expect(html).not.toContain('fallback');
+    expect(html).not.toContain('polling');
   });
 });
 
