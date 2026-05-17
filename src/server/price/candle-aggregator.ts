@@ -1,4 +1,5 @@
 import { createChildLogger } from '@shared/logger.js';
+import { isRealtimePriceSource } from '@shared/price-source.js';
 import type { Price, PriceCandle, PriceCandleSource } from '@shared/types.js';
 import type { PriceStore } from './price-store.js';
 import {
@@ -162,7 +163,7 @@ export function createCandleAggregator(options: CandleAggregatorOptions): Candle
 }
 
 function isRealtimeCandleSource(source: Price['source']): boolean {
-  return source === 'ws-krx' || source === 'ws-integrated' || source === 'ws-nxt';
+  return isRealtimePriceSource(source);
 }
 
 export interface CandleRecorderOptions {

@@ -194,6 +194,32 @@ describe('market routes', () => {
     });
   });
 
+  it('updates the bounded Toss fast quote current ticker set', async () => {
+    const app = Fastify({ logger: false });
+    const setCurrentTickers = vi.fn();
+    await app.register(marketRoutes, {
+      service: {
+        getSummary: vi.fn(),
+      },
+      tossFastQuoteSelectionService: {
+        setCurrentTickers,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/market/toss/fast-quote/current',
+      payload: { tickers: ['A005930', '0011T0', '000660'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(setCurrentTickers).toHaveBeenCalledWith(['005930', '000660']);
+    expect(res.json()).toEqual({
+      success: true,
+      data: { tickers: ['005930', '000660'] },
+    });
+  });
+
   it('returns Toss public stock search results through a read-only route', async () => {
     const app = Fastify({ logger: false });
     const searchStocks = vi.fn(async () => ({

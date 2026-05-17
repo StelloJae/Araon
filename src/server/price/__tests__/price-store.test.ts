@@ -254,6 +254,44 @@ describe('T1 — set 500 prices → saveAll → DB has 500 rows', () => {
   });
 });
 
+describe('snapshot persistence guard', () => {
+  let db: Database.Database;
+  let repo: PriceSnapshotRepository;
+
+  beforeEach(() => {
+    db = openMemoryDb();
+    migrateUp(db);
+    seedStocks(db, 1);
+    repo = new PriceSnapshotRepository(db);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('skips transient untracked prices before inserting FK-backed snapshots', async () => {
+    const store = new PriceStore();
+    store.setPrice(makePrices(1)[0]!);
+    store.setPrice({
+      ticker: '999999',
+      price: 12345,
+      changeRate: 0.12,
+      volume: 10,
+      updatedAt: new Date().toISOString(),
+      isSnapshot: false,
+      source: 'toss-fast-quote',
+    });
+
+    const snapshotStore = new SnapshotStore(repo, {
+      shouldPersistTicker: (ticker) => ticker === '000001',
+    });
+
+    await snapshotStore.saveAll(store);
+
+    expect(repo.findLatestAll().map((row) => row.ticker)).toEqual(['000001']);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // T2 — round-trip: DB → primeStoreFromSnapshot → store entries correct
 // ---------------------------------------------------------------------------

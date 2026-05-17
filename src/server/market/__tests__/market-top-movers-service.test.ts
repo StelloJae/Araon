@@ -44,6 +44,30 @@ describe('market top movers service', () => {
     expect(result.cacheTtlMs).toBe(result.refreshIntervalMs);
   });
 
+  it('can run Toss overview ranking on a sub-second refresh cadence', async () => {
+    let now = Date.parse('2026-05-11T06:19:00.000Z');
+    const fetchRanking = vi.fn(async ({ direction }) => makeRows(direction, 100));
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      fetchRanking,
+      sourceKind: 'toss-overview-ranking',
+      ttlMs: 500,
+    });
+
+    const first = await service.getTopMovers({ limit: 100 });
+    now += 499;
+    const cached = await service.getTopMovers({ limit: 100 });
+    now += 2;
+    const refreshed = await service.getTopMovers({ limit: 100 });
+
+    expect(first.refreshIntervalMs).toBe(500);
+    expect(first.cacheTtlMs).toBe(500);
+    expect(first.message).toBe('토스 웹 랭킹 · 0.5초마다 갱신');
+    expect(cached.fetchedAt).toBe(first.fetchedAt);
+    expect(refreshed.fetchedAt).not.toBe(first.fetchedAt);
+    expect(fetchRanking).toHaveBeenCalledTimes(4);
+  });
+
   it('can expose TOP100 coverage as Toss web ranking instead of KIS ranking', async () => {
     const fetchRanking = vi.fn(async ({ direction }) => makeRows(direction, 100));
     const service = createMarketTopMoversService({
@@ -64,6 +88,177 @@ describe('market top movers service', () => {
       guaranteedTop100: true,
       includesLocalFallback: false,
     });
+  });
+
+  it('keeps Toss overview TOP100 fetchable after the KIS fetch window closes', async () => {
+    const fetchRanking = vi.fn(async ({ direction, sourcePhase }) => {
+      expect(sourcePhase).toBe('stale_snapshot');
+      return makeRows(direction, 100);
+    });
+    const service = createMarketTopMoversService({
+      now: () => new Date('2026-05-13T17:30:00.000Z'),
+      fetchRanking,
+      sourceKind: 'toss-overview-ranking',
+    });
+
+    const result = await service.getTopMovers({ limit: 100 });
+
+    expect(fetchRanking).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe('ready');
+    expect(result.source).toBe('toss-overview-ranking');
+    expect(result.sourcePhase).toBe('stale_snapshot');
+    expect(result.gainers).toHaveLength(100);
+    expect(result.losers).toHaveLength(100);
+    expect(result.coverage).toMatchObject({
+      gainersCount: 100,
+      losersCount: 100,
+      marketUniverse: 'toss-web-ranking',
+      guaranteedTop100: true,
+      includesLocalFallback: false,
+    });
+  });
+
+  it('exposes a conservative cached TOP100 rotation sample for KIS WS slots', async () => {
+    let now = Date.parse('2026-05-11T06:19:00.000Z');
+    const fetchRanking = vi.fn(async ({ direction }) => makeRows(direction, 7));
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      fetchRanking,
+      staleAfterMs: 300_000,
+    });
+
+    await service.getTopMovers({ limit: 100 });
+    now += 60_000;
+
+    expect(service.snapshot().rotationCandidates).toEqual([
+      expect.objectContaining({
+        ticker: '000001',
+        direction: 'gainers',
+        rank: 1,
+        reason: 'TOP100 상승 #1',
+        score: 1,
+        ttlMs: 240_000,
+        lastSeenAt: '2026-05-11T06:19:00.000Z',
+      }),
+      expect.objectContaining({
+        ticker: '000002',
+        direction: 'gainers',
+        rank: 2,
+      }),
+      expect.objectContaining({
+        ticker: '000003',
+        direction: 'gainers',
+        rank: 3,
+      }),
+      expect.objectContaining({
+        ticker: '000004',
+        direction: 'gainers',
+        rank: 4,
+      }),
+      expect.objectContaining({
+        ticker: '000005',
+        direction: 'gainers',
+        rank: 5,
+      }),
+      expect.objectContaining({
+        ticker: '000001',
+        direction: 'losers',
+        rank: 1,
+        reason: 'TOP100 하락 #1',
+      }),
+      expect.objectContaining({
+        ticker: '000002',
+        direction: 'losers',
+        rank: 2,
+      }),
+      expect.objectContaining({
+        ticker: '000003',
+        direction: 'losers',
+        rank: 3,
+      }),
+      expect.objectContaining({
+        ticker: '000004',
+        direction: 'losers',
+        rank: 4,
+      }),
+      expect.objectContaining({
+        ticker: '000005',
+        direction: 'losers',
+        rank: 5,
+      }),
+    ]);
+  });
+
+  it('notifies only newly entered TOP100 rotation samples after the first refresh', async () => {
+    let now = Date.parse('2026-05-11T06:19:00.000Z');
+    let rows = ['000001', '000002', '000003', '000004', '000005'];
+    const entered: string[] = [];
+    const fetchRanking = vi.fn(async ({ direction }) =>
+      rows.map((ticker, index) => ({
+        rank: index + 1,
+        ticker,
+        name: `${direction}-${ticker}`,
+        price: 10_000 + index,
+        changeAbs: direction === 'gainers' ? 100 : -100,
+        changePct: direction === 'gainers' ? 1 + index : -1 - index,
+        volume: 1_000,
+      })),
+    );
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      ttlMs: 1,
+      fetchRanking,
+      onRotationSampleEntered: ({ candidate }) => {
+        entered.push(`${candidate.direction}:${candidate.ticker}:${candidate.rank}`);
+      },
+    });
+
+    await service.getTopMovers({ limit: 100 });
+    expect(entered).toEqual([]);
+
+    now += 2;
+    rows = ['000001', '000006', '000003', '000004', '000005'];
+    await service.getTopMovers({ limit: 100 });
+
+    expect(entered).toEqual([
+      'gainers:000006:2',
+      'losers:000006:2',
+    ]);
+
+    await service.getTopMovers({ limit: 100 });
+    expect(entered).toHaveLength(2);
+  });
+
+  it('keeps TOP100 refresh usable when rotation sample notification fails', async () => {
+    let now = Date.parse('2026-05-11T06:19:00.000Z');
+    let rows = ['000001', '000002', '000003', '000004', '000005'];
+    const fetchRanking = vi.fn(async ({ direction }) =>
+      rows.map((ticker, index) => ({
+        rank: index + 1,
+        ticker,
+        name: `${direction}-${ticker}`,
+        price: 10_000 + index,
+        changeAbs: direction === 'gainers' ? 100 : -100,
+        changePct: direction === 'gainers' ? 1 + index : -1 - index,
+        volume: 1_000,
+      })),
+    );
+    const service = createMarketTopMoversService({
+      now: () => new Date(now),
+      ttlMs: 1,
+      fetchRanking,
+      onRotationSampleEntered: () => {
+        throw new Error('agent event store unavailable');
+      },
+    });
+
+    await service.getTopMovers({ limit: 100 });
+    now += 2;
+    rows = ['000001', '000006', '000003', '000004', '000005'];
+    const result = await service.getTopMovers({ limit: 100 });
+
+    expect(result.status).toBe('partial');
+    expect(result.gainers[1]?.ticker).toBe('000006');
   });
 
   it('enters cooldown on KIS rate-limit errors and keeps stale data', async () => {
@@ -125,6 +320,23 @@ describe('market top movers service', () => {
     expect(stale.message).toContain('토스 웹 랭킹 호출 제한');
     expect(stale.message).not.toContain('KIS');
     expect(service.snapshot().lastErrorCode).toBe('TOSS_RATE_LIMITED');
+  });
+
+  it('does not present KIS credentials as the normal TOP100 requirement', async () => {
+    const fetchRanking = vi.fn(async () => {
+      throw new Error('KIS runtime is not started');
+    });
+    const service = createMarketTopMoversService({
+      now: () => new Date('2026-05-11T06:19:00.000Z'),
+      fetchRanking,
+    });
+
+    const result = await service.getTopMovers({ limit: 100 });
+
+    expect(result.status).toBe('unconfigured');
+    expect(result.message).toContain('legacy KIS');
+    expect(result.message).toContain('명시적으로 켠 경우');
+    expect(result.message).not.toContain('KIS credentials 등록 후');
   });
 
   it('clamps caller limit to the top 100 contract', async () => {

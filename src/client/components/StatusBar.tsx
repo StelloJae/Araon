@@ -1,7 +1,7 @@
 /**
  * StatusBar — sticky 40px footer summarising tracking counts and last update.
  *
- *   KST + market tape | 총 종목 NN | 즐겨찾기 NN | 폴링 NN ─► 업데이트 HH:MM:SS ⚙
+ *   KST + market tape | 총 종목 NN | 즐겨찾기 NN | 비실시간 NN ─► 업데이트 HH:MM:SS ⚙
  */
 
 import { useEffect, useState } from 'react';
@@ -65,29 +65,78 @@ export function StatusBar({
 
   return (
     <footer
-      style={{
-        position: 'sticky',
-        bottom: 0,
-        zIndex: 30,
-        background: 'var(--bg-card)',
-        borderTop: '1px solid var(--border)',
-        height: 40,
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 24px',
-        gap: 14,
-        fontSize: 12,
-        fontWeight: 500,
-        color: 'var(--text-muted)',
-      }}
+      className="status-bar"
+      aria-label="시장 상태 바"
     >
+      <div className="status-bar__notice">투자 유의사항</div>
+      <div className="status-bar__viewport">
+        <div className="status-bar__track">
+          <StatusTapeSegment
+            kstTime={kstTime}
+            marketSummary={marketSummary}
+            totalCount={totalCount}
+            favCount={favCount}
+            pollingCount={pollingCount}
+            lastUpdate={lastUpdate}
+            tossQuotePolling={tossQuotePolling}
+            kisBudget={kisBudget}
+          />
+          <StatusTapeSegment
+            kstTime={kstTime}
+            marketSummary={marketSummary}
+            totalCount={totalCount}
+            favCount={favCount}
+            pollingCount={pollingCount}
+            lastUpdate={lastUpdate}
+            tossQuotePolling={tossQuotePolling}
+            kisBudget={kisBudget}
+            ariaHidden
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        data-testid="statusbar-settings-button"
+        className="status-bar__settings"
+        aria-label="설정 열기"
+      >
+        <SettingsIcon size={16} />
+      </button>
+    </footer>
+  );
+}
+
+function StatusTapeSegment({
+  kstTime,
+  marketSummary,
+  totalCount,
+  favCount,
+  pollingCount,
+  lastUpdate,
+  tossQuotePolling,
+  kisBudget,
+  ariaHidden = false,
+}: {
+  kstTime: string;
+  marketSummary: MarketTapeSummary | null;
+  totalCount: number;
+  favCount: number;
+  pollingCount: number;
+  lastUpdate: string;
+  tossQuotePolling: TossQuotePollingSummary | null;
+  kisBudget: KisBudgetSummary | null;
+  ariaHidden?: boolean;
+}) {
+  return (
+    <div className="status-bar__segment" aria-hidden={ariaHidden || undefined}>
       <MarketTape kstTime={kstTime} summary={marketSummary} />
       <Sep />
       <Stat label="총 종목" value={totalCount} />
       <Sep />
-      <Stat label="즐겨찾기 (WS)" value={favCount} highlight />
+      <Stat label="즐겨찾기" value={favCount} highlight />
       <Sep />
-      <Stat label="폴링" value={pollingCount} />
+      <Stat label="비실시간" value={pollingCount} />
       {tossQuotePolling !== null && (
         <>
           <Sep />
@@ -100,28 +149,12 @@ export function StatusBar({
           <KisBudgetPill budget={kisBudget} />
         </>
       )}
-      <div style={{ flex: 1 }} />
+      <Sep />
       <span>
         마지막 업데이트{' '}
-        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{lastUpdate}</span>
+        <span style={{ color: 'var(--text-secondary)', fontWeight: 800 }}>{lastUpdate}</span>
       </span>
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        data-testid="statusbar-settings-button"
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: 'var(--text-muted)',
-          padding: 4,
-          lineHeight: 0,
-          cursor: 'pointer',
-        }}
-        aria-label="설정 열기"
-      >
-        <SettingsIcon size={16} />
-      </button>
-    </footer>
+    </div>
   );
 }
 
@@ -205,7 +238,11 @@ export function shouldShowKisBudgetPill(
 function tossQuotePollingLabel(polling: TossQuotePollingSummary): string {
   if (!polling.configured) return 'Toss 미구성';
   if (!polling.enabled) return 'Toss 꺼짐';
-  if (polling.consecutiveFailureCount >= 2) return 'Toss 실패 · KIS fallback';
+  if (polling.consecutiveFailureCount >= 2) {
+    return polling.suppressingKisPolling
+      ? 'Toss 실패 · 추적 잠금'
+      : 'Toss 실패 · 실시간 추적';
+  }
   if (polling.lastErrorCode !== null) return 'Toss 복구 대기';
   if (polling.cycleCount === 0) return 'Toss 시작 대기';
   if (polling.missingCount > 0) return `Toss 부분 · ${polling.returnedCount}/${polling.tickersInCycle}`;
@@ -227,7 +264,11 @@ function tossQuotePollingTitle(polling: TossQuotePollingSummary): string {
   const interval = polling.intervalMs !== null
     ? `${(polling.intervalMs / 1000).toFixed(1)}s`
     : 'unknown';
-  const fallback = polling.suppressingKisPolling ? 'KIS polling 억제' : 'KIS fallback 허용';
+  const fallback = polling.suppressingKisPolling
+    ? polling.consecutiveFailureCount >= 2
+      ? '실시간 추적 비활성'
+      : '실시간 추적 억제'
+    : '실시간 추적 허용';
   return [
     `Toss 가격 갱신 ${polling.running ? '실행 중' : '대기'}`,
     `${polling.returnedCount}/${polling.tickersInCycle} 수신`,
@@ -249,14 +290,7 @@ export function MarketTape({
   return (
     <div
       data-testid="market-tape"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        minWidth: 0,
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-      }}
+      className="status-bar__market-tape"
     >
       <span style={{ color: 'var(--text-secondary)', fontWeight: 800 }}>
         {kstTime}
@@ -265,7 +299,7 @@ export function MarketTape({
         <span
           key={item.id}
           title={item.status === 'ready' ? item.label : `${item.label} 수집 중`}
-          style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4 }}
+          className="status-bar__item"
         >
           <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>
             {item.label}
@@ -332,10 +366,18 @@ function kisBudgetTitle(budget: KisBudgetSummary, queue: number): string {
   const window = budget.windows.sixtySec;
   const classes = window.byClass
     .filter((item) => item.callPerSec > 0 || item.throttleCount > 0 || item.queueDepth > 0)
-    .map((item) => `${item.priorityClass} ${item.callPerSec.toFixed(2)}/s`)
+    .map((item) => `${classLabel(item.priorityClass)} ${item.callPerSec.toFixed(2)}/s`)
     .join(' · ');
   const base = `KIS REST ${window.callPerSec.toFixed(2)}/s · throttle ${window.throttlePerMin.toFixed(1)}/min · queue ${queue}`;
   return classes.length > 0 ? `${base} · ${classes}` : base;
+}
+
+function classLabel(priorityClass: string): string {
+  if (priorityClass === 'polling') return 'REST';
+  if (priorityClass === 'ranking') return 'ranking';
+  if (priorityClass === 'foreground') return 'foreground';
+  if (priorityClass === 'background') return 'background';
+  return priorityClass;
 }
 
 interface StatProps {
@@ -361,5 +403,5 @@ function Stat({ label, value, highlight = false }: StatProps) {
 }
 
 function Sep() {
-  return <span style={{ width: 1, height: 14, background: 'var(--border)' }} />;
+  return <span className="status-bar__sep" />;
 }

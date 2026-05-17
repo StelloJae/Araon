@@ -9,11 +9,17 @@ import {
   CandleDataInspector,
   PinnedCandlePanel,
   chartCoverageTimeoutMessage,
+  candleSourceStatusText,
   formatCandleTooltipRows,
+  formatKstChartTime,
+  formatKstTickMark,
   getChartPalette,
+  mergeCandleItemOverlays,
+  mergeLiveQuoteIntoCandleItems,
   normalizeCandleRangeForInterval,
   resolveWithTimeout,
   shouldReplaceCandleTooltipRows,
+  trimNonTradingEdgeCandles,
 } from '../StockCandleChart';
 
 describe('StockCandleChart', () => {
@@ -30,6 +36,8 @@ describe('StockCandleChart', () => {
     expect(html).toContain('차트 데이터 수집 중');
     expect(html).toContain('이 종목의 저장된 candle이 아직 부족합니다');
     expect(html).toContain('장중에는 현재 선택 종목의 오늘 분봉부터 보강합니다');
+    expect(html).toContain('Toss 차트 데이터를 우선 보강합니다');
+    expect(html).not.toContain('KIS 일봉 백필 후 표시');
     expect(html).not.toContain('<canvas');
   });
 
@@ -59,6 +67,78 @@ describe('StockCandleChart', () => {
     expect(html).toContain('1m');
     expect(html).toContain('마우스를 올리면 OHLCV 표시');
     expect(html).toContain('클릭하면 봉 고정');
+  });
+
+  it('trims non-trading REST placeholder candles from chart edges', () => {
+    const trimmed = trimNonTradingEdgeCandles([
+      {
+        time: 1778607900,
+        bucketAt: '2026-05-12T17:45:00.000Z',
+        open: 272_500,
+        high: 272_500,
+        low: 272_500,
+        close: 272_500,
+        volume: 0,
+        sampleCount: 10,
+        source: 'rest',
+        isPartial: true,
+      },
+      {
+        time: 1778626800,
+        bucketAt: '2026-05-12T23:00:00.000Z',
+        open: 270_000,
+        high: 270_000,
+        low: 265_500,
+        close: 268_000,
+        volume: 634_311,
+        sampleCount: 366,
+        source: 'mixed',
+        isPartial: true,
+      },
+      {
+        time: 1778629860,
+        bucketAt: '2026-05-12T23:51:00.000Z',
+        open: 266_500,
+        high: 266_500,
+        low: 266_500,
+        close: 266_500,
+        volume: 0,
+        sampleCount: 19,
+        source: 'rest',
+        isPartial: true,
+      },
+    ]);
+
+    expect(trimmed).toHaveLength(1);
+    expect(trimmed[0]?.source).toBe('mixed');
+  });
+
+  it('keeps prior live overlay candles when a new minute bucket arrives', () => {
+    const first = mergeLiveQuoteIntoCandleItems([], {
+      ticker: '005930',
+      price: 70_000,
+      volume: 10,
+      updatedAt: '2026-05-14T00:00:10.000Z',
+      isSnapshot: false,
+      source: 'toss',
+    }, '1m');
+    const second = mergeLiveQuoteIntoCandleItems([], {
+      ticker: '005930',
+      price: 70_500,
+      volume: 12,
+      updatedAt: '2026-05-14T00:01:05.000Z',
+      isSnapshot: false,
+      source: 'toss',
+    }, '1m');
+
+    const merged = mergeCandleItemOverlays(first, second);
+
+    expect(merged).toHaveLength(2);
+    expect(merged.map((item) => item.bucketAt)).toEqual([
+      '2026-05-14T00:00:00.000Z',
+      '2026-05-14T00:01:00.000Z',
+    ]);
+    expect(merged.map((item) => item.close)).toEqual([70_000, 70_500]);
   });
 
   it('supports Korean and US candlestick color conventions', () => {
@@ -143,6 +223,11 @@ describe('StockCandleChart', () => {
       ['거래량', '12.3만'],
       ['데이터', 'kis-daily'],
     ]);
+  });
+
+  it('formats chart axis and crosshair time in KST', () => {
+    expect(formatKstChartTime(1777939200)).toContain('09:00');
+    expect(formatKstTickMark(1777939200)).toBe('09:00');
   });
 
   it('updates crosshair tooltip rows only when the candle changes', () => {
@@ -236,6 +321,12 @@ describe('StockCandleChart', () => {
     expect(chartCoverageTimeoutMessage(true)).toContain('저장된 candle을 표시');
     expect(chartCoverageTimeoutMessage(true)).toContain('백그라운드');
     expect(chartCoverageTimeoutMessage(false)).toContain('보강 확인이 오래 걸려');
+  });
+
+  it('does not attribute provider-neutral backfilled candles to KIS', () => {
+    expect(candleSourceStatusText([], true)).toBe('자동 차트 백필 포함');
+    expect(candleSourceStatusText(['toss-daily'], true)).toBe('토스 일봉 백필 포함');
+    expect(candleSourceStatusText(['kis-daily'], true)).toBe('legacy KIS 일봉 포함');
   });
 
   it('uses the coverage result when it resolves before timeout', async () => {

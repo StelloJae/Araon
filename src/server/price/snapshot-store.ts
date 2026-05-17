@@ -18,9 +18,14 @@ const log = createChildLogger('snapshot-store');
 
 export class SnapshotStore {
   private readonly repo: PriceSnapshotRepository;
+  private readonly shouldPersistTicker: (ticker: string) => boolean;
 
-  constructor(repo: PriceSnapshotRepository) {
+  constructor(
+    repo: PriceSnapshotRepository,
+    options: { shouldPersistTicker?: (ticker: string) => boolean } = {},
+  ) {
     this.repo = repo;
+    this.shouldPersistTicker = options.shouldPersistTicker ?? (() => true);
   }
 
   /**
@@ -36,13 +41,20 @@ export class SnapshotStore {
     }
 
     const snapshotAt = new Date().toISOString();
-    const snapshots: PriceSnapshot[] = prices.map((p) => ({
-      ticker: p.ticker,
-      price: p.price,
-      changeRate: p.changeRate,
-      volume: p.volume,
-      snapshotAt,
-    }));
+    const snapshots: PriceSnapshot[] = prices
+      .filter((p) => this.shouldPersistTicker(p.ticker))
+      .map((p) => ({
+        ticker: p.ticker,
+        price: p.price,
+        changeRate: p.changeRate,
+        volume: p.volume,
+        snapshotAt,
+      }));
+
+    if (snapshots.length === 0) {
+      log.debug({ skipped: prices.length }, 'saveAll: no persistable prices');
+      return;
+    }
 
     log.debug({ count: snapshots.length }, 'saving price snapshot');
     await this.repo.bulkInsert(snapshots);

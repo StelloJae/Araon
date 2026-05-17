@@ -5,6 +5,7 @@ import {
   evaluateMomentumSignal,
   MOMENTUM_BUCKET_MS,
   type ActiveMomentumSignal,
+  type EvaluateMomentumSignalInput,
   type MomentumBucket,
   type MomentumSignal,
   type MomentumSignalDecision,
@@ -49,7 +50,7 @@ export function shouldProcessRealtimeMomentumPrice(
   marketStatus: MarketStatus,
 ): boolean {
   return (
-    price.source === 'ws-integrated' &&
+    isRealtimeMomentumSource(price.source) &&
     price.isSnapshot === false &&
     isMarketLive(marketStatus) &&
     typeof price.ticker === 'string' &&
@@ -57,6 +58,10 @@ export function shouldProcessRealtimeMomentumPrice(
     Number.isFinite(price.price) &&
     price.price > 0
   );
+}
+
+function isRealtimeMomentumSource(source: Price['source']): boolean {
+  return source === 'ws-integrated' || source === 'toss-fast-quote';
 }
 
 export function momentumSessionFromMarketStatus(
@@ -87,6 +92,7 @@ export function evaluateRealtimeMomentumPrice(input: {
   buckets: ReadonlyArray<MomentumBucket>;
   now: number;
   state: MomentumFeedState;
+  minimumMomentumPct?: number;
 }): RealtimeMomentumEvaluation {
   const current = momentumBucketFromPrice(
     input.price,
@@ -97,7 +103,7 @@ export function evaluateRealtimeMomentumPrice(input: {
   const previous =
     input.state.previousMomentumByTicker[input.price.ticker] ?? {};
 
-  const decision = evaluateMomentumSignal({
+  const signalInput: EvaluateMomentumSignalInput = {
     ticker: input.price.ticker,
     name: input.name,
     currentPrice: input.price.price,
@@ -111,7 +117,12 @@ export function evaluateRealtimeMomentumPrice(input: {
     activeSignal:
       input.state.activeSignalByTicker[input.price.ticker] ?? null,
     allowInitialSignal: true,
-  });
+  };
+  if (input.minimumMomentumPct !== undefined) {
+    signalInput.minimumMomentumPct = input.minimumMomentumPct;
+  }
+
+  const decision = evaluateMomentumSignal(signalInput);
 
   input.state.previousMomentumByTicker[input.price.ticker] = {
     ...previous,

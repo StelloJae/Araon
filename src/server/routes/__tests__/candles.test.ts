@@ -159,6 +159,47 @@ describe('GET /stocks/:ticker/candles', () => {
     ]);
   });
 
+  it('returns Toss fast quote current candles for live chart progression', async () => {
+    const repo = new PriceCandleRepository(db);
+    await repo.bulkUpsertCandles([
+      candle('2026-05-05T00:00:00.000Z', {
+        open: 100,
+        high: 105,
+        low: 99,
+        close: 104,
+        volume: 0,
+        sampleCount: 2,
+        source: 'toss-fast-quote',
+        isPartial: true,
+      }),
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: repo,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/candles?interval=1m&from=2026-05-05T00:00:00.000Z&to=2026-05-05T00:01:00.000Z',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.items).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-05T00:00:00.000Z',
+        source: 'toss-fast-quote',
+        open: 100,
+        high: 105,
+        low: 99,
+        close: 104,
+        sampleCount: 2,
+      }),
+    ]);
+    expect(body.data.coverage.sourceMix).toEqual(['toss-fast-quote']);
+  });
+
   it('fills missing intraday candles from stored price history observations', async () => {
     const candleRepo = new PriceCandleRepository(db);
     const priceHistoryRepo = new PriceHistoryPointRepository(db);

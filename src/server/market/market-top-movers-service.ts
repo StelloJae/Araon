@@ -1,6 +1,7 @@
 import type {
   MarketTopMoverDirection,
   MarketTopMoverItem,
+  MarketTopMoversMarket,
   MarketTopMoversRankingDiagnostic,
   MarketTopMoversResponse,
   MarketTopMoversStopReason,
@@ -8,6 +9,10 @@ import type {
 } from '@shared/types.js';
 
 import { KisRestError } from '../kis/kis-rest-client.js';
+import {
+  isFetchableMarketTopMoversSourcePhase,
+  resolveMarketTopMoversSourcePhase,
+} from './market-top-movers-phase.js';
 
 const DEFAULT_TTL_MS = 30_000;
 const DEFAULT_STALE_AFTER_MS = 5 * 60_000;
@@ -15,17 +20,7 @@ const DEFAULT_COOLDOWN_MS = 30_000;
 const DEFAULT_REFRESH_TIMEOUT_MS = 20_000;
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 100;
-const KST_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Seoul',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
-const PREMARKET_START_MINUTES = 8 * 60;
-const OPENING_FREEZE_START_MINUTES = 8 * 60 + 50;
-const REGULAR_START_MINUTES = 9 * 60;
-const AFTER_HOURS_START_MINUTES = 15 * 60 + 30;
-const INTEGRATED_CLOSE_MINUTES = 20 * 60;
+const ROTATION_SAMPLE_PER_DIRECTION = 5;
 
 export interface FetchRankingInput {
   direction: MarketTopMoverDirection;
@@ -36,7 +31,7 @@ export interface FetchRankingInput {
 }
 
 export interface MarketTopMoversService {
-  getTopMovers(input?: { limit?: number }): Promise<MarketTopMoversResponse>;
+  getTopMovers(input?: { limit?: number; market?: MarketTopMoversMarket }): Promise<MarketTopMoversResponse>;
   snapshot(): MarketTopMoversServiceSnapshot;
 }
 
@@ -48,6 +43,13 @@ export interface CreateMarketTopMoversServiceOptions {
   cooldownMs?: number;
   refreshTimeoutMs?: number;
   sourceKind?: MarketTopMoversSourceKind;
+  onRotationSampleEntered?: (event: MarketTopMoverRotationEnteredEvent) => void;
+}
+
+export interface MarketTopMoverRotationEnteredEvent {
+  readonly candidate: MarketTopMoverRotationCandidate;
+  readonly previousFetchedAt: string;
+  readonly fetchedAt: string;
 }
 
 interface CacheEntry {
@@ -90,6 +92,17 @@ export interface MarketTopMoversServiceSnapshot {
   stopReason: MarketTopMoversResponse['stopReason'];
   rankingDiagnostics: RankingDiagnostics;
   rankingRateLimited: boolean;
+  rotationCandidates: readonly MarketTopMoverRotationCandidate[];
+}
+
+export interface MarketTopMoverRotationCandidate {
+  readonly ticker: string;
+  readonly direction: MarketTopMoverDirection;
+  readonly rank: number;
+  readonly reason: string;
+  readonly score: number;
+  readonly ttlMs: number;
+  readonly lastSeenAt: string;
 }
 
 export function createMarketTopMoversService({
@@ -100,6 +113,7 @@ export function createMarketTopMoversService({
   cooldownMs = DEFAULT_COOLDOWN_MS,
   refreshTimeoutMs = DEFAULT_REFRESH_TIMEOUT_MS,
   sourceKind = 'kis',
+  onRotationSampleEntered,
 }: CreateMarketTopMoversServiceOptions): MarketTopMoversService {
   let cache: CacheEntry | null = null;
   let inflight: Promise<CacheEntry> | null = null;
@@ -107,15 +121,18 @@ export function createMarketTopMoversService({
   let lastResponse: MarketTopMoversResponse | null = null;
   let lastErrorCode: MarketTopMoversServiceSnapshot['lastErrorCode'] = null;
 
-  async function getTopMovers(input: { limit?: number } = {}): Promise<MarketTopMoversResponse> {
+  async function getTopMovers(
+    input: { limit?: number; market?: MarketTopMoversMarket } = {},
+  ): Promise<MarketTopMoversResponse> {
     const current = now();
     const limit = clampLimit(input.limit);
     const currentMs = current.getTime();
+    const refreshLabel = formatRefreshInterval(ttlMs);
     const readyMessage = sourceKind === 'toss-overview-ranking'
-      ? `토스 웹 랭킹 · ${Math.max(1, Math.round(ttlMs / 1000))}초마다 갱신`
-      : `${Math.max(1, Math.round(ttlMs / 1000))}초마다 갱신`;
-    const sourcePhase = resolveSourcePhase(current);
-    if (!isFetchableSourcePhase(sourcePhase)) {
+      ? `토스 웹 랭킹 · ${refreshLabel}마다 갱신`
+      : `${refreshLabel}마다 갱신`;
+    const sourcePhase = resolveMarketTopMoversSourcePhase(current);
+    if (!isFetchableSourcePhaseForKind(sourcePhase, sourceKind)) {
       return remember(nonFetchableResponse(current, sourcePhase, limit), lastErrorCode);
     }
     if (cache !== null && currentMs - cache.fetchedAt.getTime() <= ttlMs) {
@@ -144,6 +161,9 @@ export function createMarketTopMoversService({
           ),
           null,
         );
+      }
+      if (cache !== null) {
+        emitRotationSampleEntered(cache, next);
       }
       cache = next;
       return remember(toResponse(current, next, 'ready', readyMessage, limit), null);
@@ -220,7 +240,7 @@ export function createMarketTopMoversService({
     if (inflight !== null) return withTimeout(inflight, refreshTimeoutMs);
     const nextRefresh = (async () => {
       // Keep gainers/losers sequential so one TOP100 refresh cannot burst the
-      // active provider, whether it is Toss primary or KIS legacy fallback.
+      // active provider, whether it is Toss primary or explicit KIS legacy helper.
       const rankingDiagnostics = emptyRankingDiagnostics();
       const gainers = await fetchRanking({
         direction: 'gainers',
@@ -439,10 +459,11 @@ export function createMarketTopMoversService({
     const cooldownActive = cooldownUntilMs > currentMs;
     const response = lastResponse;
     const cacheAgeMs = cache !== null ? Math.max(0, currentMs - cache.fetchedAt.getTime()) : null;
+    const lastFetchedAt = cache?.fetchedAt.toISOString() ?? response?.fetchedAt ?? null;
     return {
       status: inflight !== null ? 'refreshing' : (response?.status ?? 'idle'),
       source: response?.source ?? (sourceKind === 'toss-overview-ranking' ? 'toss-overview-ranking' : 'kis-ranking-auto'),
-      lastFetchedAt: cache?.fetchedAt.toISOString() ?? response?.fetchedAt ?? null,
+      lastFetchedAt,
       lastGeneratedAt: response?.generatedAt ?? null,
       cacheAgeMs,
       cacheTtlMs: ttlMs,
@@ -462,6 +483,7 @@ export function createMarketTopMoversService({
       stopReason: response?.stopReason ?? null,
       rankingDiagnostics: response?.rankingDiagnostics ?? emptyRankingDiagnostics(),
       rankingRateLimited: response?.rankingRateLimited ?? false,
+      rotationCandidates: buildRotationCandidates(response, lastFetchedAt, cacheAgeMs, staleAfterMs),
     };
   }
 
@@ -474,7 +496,53 @@ export function createMarketTopMoversService({
     return response;
   }
 
+  function emitRotationSampleEntered(previous: CacheEntry, next: CacheEntry): void {
+    if (onRotationSampleEntered === undefined) return;
+
+    const previousKeys = new Set(
+      rotationCandidatesForEntry(previous, staleAfterMs)
+        .map((candidate) => rotationCandidateKey(candidate)),
+    );
+    for (const candidate of rotationCandidatesForEntry(next, staleAfterMs)) {
+      if (previousKeys.has(rotationCandidateKey(candidate))) continue;
+      try {
+        onRotationSampleEntered({
+          candidate,
+          previousFetchedAt: previous.fetchedAt.toISOString(),
+          fetchedAt: next.fetchedAt.toISOString(),
+        });
+      } catch {
+        // Agent-event publication must not break the market ranking surface.
+      }
+    }
+  }
+
   return { getTopMovers, snapshot };
+}
+
+function rotationCandidatesForEntry(
+  entry: CacheEntry,
+  ttlMs: number,
+): MarketTopMoverRotationCandidate[] {
+  const lastSeenAt = entry.fetchedAt.toISOString();
+  return [
+    ...rotationCandidatesForDirection(
+      entry.gainers,
+      'gainers',
+      lastSeenAt,
+      ttlMs,
+    ),
+    ...rotationCandidatesForDirection(
+      entry.losers,
+      'losers',
+      lastSeenAt,
+      ttlMs,
+    ),
+  ];
+}
+
+function rotationCandidateKey(candidate: MarketTopMoverRotationCandidate): string {
+  return `${candidate.direction}:${candidate.ticker}`;
 }
 
 function buildCoverage(
@@ -496,6 +564,45 @@ function buildCoverage(
   };
 }
 
+function buildRotationCandidates(
+  response: MarketTopMoversResponse | null,
+  lastFetchedAt: string | null,
+  cacheAgeMs: number | null,
+  staleAfterMs: number,
+): MarketTopMoverRotationCandidate[] {
+  if (response === null || lastFetchedAt === null || cacheAgeMs === null) return [];
+  const ttlMs = Math.max(0, staleAfterMs - cacheAgeMs);
+  if (ttlMs <= 0) return [];
+  return [
+    ...rotationCandidatesForDirection(response.gainers, 'gainers', lastFetchedAt, ttlMs),
+    ...rotationCandidatesForDirection(response.losers, 'losers', lastFetchedAt, ttlMs),
+  ];
+}
+
+function rotationCandidatesForDirection(
+  rows: readonly MarketTopMoverItem[],
+  direction: MarketTopMoverDirection,
+  lastSeenAt: string,
+  ttlMs: number,
+): MarketTopMoverRotationCandidate[] {
+  return rows
+    .slice(0, ROTATION_SAMPLE_PER_DIRECTION)
+    .map((row) => {
+      const ticker = normalizeKrTicker(row.ticker);
+      if (ticker === null) return null;
+      return {
+        ticker,
+        direction,
+        rank: row.rank,
+        reason: `TOP100 ${direction === 'gainers' ? '상승' : '하락'} #${row.rank}`,
+        score: Math.max(0, 1 - Math.max(0, row.rank - 1) * 0.01),
+        ttlMs,
+        lastSeenAt,
+      };
+    })
+    .filter((candidate): candidate is MarketTopMoverRotationCandidate => candidate !== null);
+}
+
 function shouldRetainPreviousCache(
   previous: CacheEntry,
   next: CacheEntry,
@@ -510,6 +617,12 @@ function shouldRetainPreviousCache(
 
 function coverageScore(coverage: MarketTopMoversResponse['coverage']): number {
   return coverage.gainersCount + coverage.losersCount;
+}
+
+function normalizeKrTicker(value: string): string | null {
+  const trimmed = value.trim().toUpperCase();
+  const ticker = trimmed.startsWith('A') ? trimmed.slice(1) : trimmed;
+  return /^\d{6}$/.test(ticker) ? ticker : null;
 }
 
 function emptyCoverage(
@@ -574,36 +687,6 @@ function partialReasonForStopReason(
     case null:
       return 'under_requested_limit';
   }
-}
-
-function isFetchableSourcePhase(sourcePhase: MarketTopMoversSourcePhase): boolean {
-  return sourcePhase === 'premarket'
-    || sourcePhase === 'regular'
-    || sourcePhase === 'after_hours';
-}
-
-function resolveSourcePhase(current: Date): MarketTopMoversSourcePhase {
-  const minutes = minutesInKst(current);
-  if (minutes >= PREMARKET_START_MINUTES && minutes < OPENING_FREEZE_START_MINUTES) {
-    return 'premarket';
-  }
-  if (minutes >= OPENING_FREEZE_START_MINUTES && minutes < REGULAR_START_MINUTES) {
-    return 'opening_freeze';
-  }
-  if (minutes >= REGULAR_START_MINUTES && minutes < AFTER_HOURS_START_MINUTES) {
-    return 'regular';
-  }
-  if (minutes >= AFTER_HOURS_START_MINUTES && minutes < INTEGRATED_CLOSE_MINUTES) {
-    return 'after_hours';
-  }
-  return 'stale_snapshot';
-}
-
-function minutesInKst(current: Date): number {
-  const parts = KST_TIME_FORMATTER.formatToParts(current);
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
-  return hour * 60 + minute;
 }
 
 function sourceForPhase(
@@ -681,6 +764,16 @@ function marketUniverseForKind(
   return sourceKind === 'toss-overview-ranking' ? 'toss-web-ranking' : 'kis-full-market-ranking';
 }
 
+function isFetchableSourcePhaseForKind(
+  sourcePhase: MarketTopMoversSourcePhase,
+  sourceKind: MarketTopMoversSourceKind,
+): boolean {
+  if (sourceKind === 'toss-overview-ranking') {
+    return sourcePhase !== 'unsupported';
+  }
+  return isFetchableMarketTopMoversSourcePhase(sourcePhase);
+}
+
 function partialMessageForKind(
   sourceKind: MarketTopMoversSourceKind,
   coverage: MarketTopMoversResponse['coverage'],
@@ -694,6 +787,13 @@ function providerLabelForKind(sourceKind: MarketTopMoversSourceKind): string {
   return sourceKind === 'toss-overview-ranking' ? '토스 웹 랭킹' : 'KIS';
 }
 
+function formatRefreshInterval(ms: number): string {
+  if (ms < 1_000) {
+    return `${Number((ms / 1_000).toFixed(1))}초`;
+  }
+  return `${Math.max(1, Math.round(ms / 1_000))}초`;
+}
+
 function rateLimitErrorCodeForKind(
   sourceKind: MarketTopMoversSourceKind,
 ): MarketTopMoversServiceSnapshot['lastErrorCode'] {
@@ -705,7 +805,7 @@ function rateLimitErrorCodeForKind(
 function unavailableMessageForKind(sourceKind: MarketTopMoversSourceKind): string {
   return sourceKind === 'toss-overview-ranking'
     ? '토스 웹 랭킹을 가져오지 못했습니다.'
-    : 'KIS credentials 등록 후 TOP100 랭킹을 표시합니다.';
+    : 'legacy KIS TOP100 helper는 명시적으로 켠 경우에만 사용할 수 있습니다.';
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

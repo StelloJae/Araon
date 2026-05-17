@@ -1,5 +1,13 @@
 import type { FastifyPluginOptions, FastifyInstance } from 'fastify';
-import type { TossRealtimeRankingMarket, TossRealtimeRankingResponse } from '@shared/types.js';
+import type {
+  MarketTopMoversMarket,
+  TossRealtimeRankingMarket,
+  TossRealtimeRankingResponse,
+} from '@shared/types.js';
+import {
+  krTickerFromTossProductCode,
+  normalizeTossProductCode,
+} from '@shared/product-identity.js';
 import type { MarketQuoteBatchResult } from '../market/market-data-provider.js';
 import type { MarketSummaryService } from '../market/market-summary-service.js';
 import type { MarketTopMoversService } from '../market/market-top-movers-service.js';
@@ -27,12 +35,17 @@ export interface TossSearchService {
   }>;
 }
 
+export interface TossFastQuoteSelectionService {
+  setCurrentTickers(tickers: readonly string[]): void;
+}
+
 export interface MarketRoutesOptions extends FastifyPluginOptions {
   service: MarketSummaryService;
   topMoversService?: MarketTopMoversService;
   tossRealtimeRankingService?: TossRealtimeRankingService;
   tossQuoteService?: TossQuoteService;
   tossSearchService?: TossSearchService;
+  tossFastQuoteSelectionService?: TossFastQuoteSelectionService;
 }
 
 export async function marketRoutes(
@@ -54,8 +67,11 @@ export async function marketRoutes(
         },
       });
     }
-    const query = request.query as { limit?: string };
-    const input = query.limit === undefined ? {} : { limit: Number(query.limit) };
+    const query = request.query as { limit?: string; market?: string };
+    const input = {
+      ...(query.limit === undefined ? {} : { limit: Number(query.limit) }),
+      market: parseTopMoversMarket(query.market),
+    };
     const data = await opts.topMoversService.getTopMovers(input);
     return reply.send({ success: true, data });
   });
@@ -104,6 +120,21 @@ export async function marketRoutes(
     return reply.send({ success: true, data });
   });
 
+  app.post('/market/toss/fast-quote/current', async (request, reply) => {
+    if (opts.tossFastQuoteSelectionService === undefined) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: 'TOSS_FAST_QUOTE_SELECTION_UNAVAILABLE',
+          message: 'Toss fast quote selection service is not configured.',
+        },
+      });
+    }
+    const tickers = parseCurrentTickers(request.body);
+    opts.tossFastQuoteSelectionService.setCurrentTickers(tickers);
+    return reply.send({ success: true, data: { tickers } });
+  });
+
   app.get('/market/toss/search', async (request, reply) => {
     if (opts.tossSearchService === undefined) {
       return reply.status(503).send({
@@ -138,6 +169,10 @@ function parseTossMarket(value: string | undefined): TossRealtimeRankingMarket {
   return 'kr';
 }
 
+function parseTopMoversMarket(value: string | undefined): MarketTopMoversMarket {
+  return value === 'us' ? 'us' : 'kr';
+}
+
 function parseTickers(value: string | undefined): string[] {
   if (value === undefined) return [];
   const out: string[] = [];
@@ -149,4 +184,26 @@ function parseTickers(value: string | undefined): string[] {
     out.push(ticker);
   }
   return out.slice(0, 200);
+}
+
+function parseCurrentTickers(body: unknown): string[] {
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !Array.isArray((body as { tickers?: unknown }).tickers)
+  ) {
+    return [];
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of (body as { tickers: unknown[] }).tickers) {
+    if (typeof raw !== 'string') continue;
+    const productCode = normalizeTossProductCode(raw);
+    if (productCode === null) continue;
+    const ticker = krTickerFromTossProductCode(productCode);
+    if (ticker === null || seen.has(ticker)) continue;
+    seen.add(ticker);
+    out.push(ticker);
+  }
+  return out.slice(0, 60);
 }

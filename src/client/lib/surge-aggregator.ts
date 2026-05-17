@@ -76,6 +76,7 @@ export function aggregateSurgeView(
   if (isMarketLive(marketStatus)) {
     for (const e of feed) {
       if (now - e.ts >= SURGE_TOTAL_MS) continue;
+      if ((e.momentumPct ?? e.surgePct) < threshold) continue;
       if (
         filter === 'live' &&
         e.source === 'realtime-momentum' &&

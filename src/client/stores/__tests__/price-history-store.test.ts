@@ -122,6 +122,33 @@ describe('usePriceHistoryStore', () => {
     ]);
   });
 
+  it('does not let REST fallback replace a Toss fast quote point in the same bucket', async () => {
+    const mod = await import('../price-history-store');
+    const s = mod.usePriceHistoryStore.getState();
+
+    s.appendPoint('005930', {
+      price: 100_900,
+      changePct: 8.4,
+      ts: 1_000,
+      source: 'toss-fast-quote',
+    });
+    s.appendPoint('005930', {
+      price: 100_300,
+      changePct: 7.8,
+      ts: 2_000,
+      source: 'rest',
+    });
+
+    expect(mod.usePriceHistoryStore.getState().byTicker['005930']).toEqual([
+      {
+        price: 100_900,
+        changePct: 8.4,
+        ts: 1_000,
+        source: 'toss-fast-quote',
+      },
+    ]);
+  });
+
   it('suppresses nearby REST fallback after live ticks are flowing', async () => {
     const mod = await import('../price-history-store');
     const s = mod.usePriceHistoryStore.getState();
