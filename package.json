@@ -2,7 +2,7 @@
   "name": "@stellojae/araon",
   "version": "1.1.4",
   "private": false,
-  "description": "A localhost-first Korean stock watchlist dashboard with KIS OpenAPI realtime support.",
+  "description": "A localhost-first Toss-centered Korean stock terminal with optional KIS realtime rail.",
   "license": "Apache-2.0",
   "author": "Araon contributors",
   "repository": {
@@ -15,9 +15,11 @@
   "homepage": "https://github.com/StelloJae/Araon#readme",
   "keywords": [
     "korean-stocks",
+    "toss-invest",
     "kis-openapi",
     "watchlist",
     "realtime",
+    "agent-events",
     "nxt"
   ],
   "type": "module",
@@ -29,10 +31,6 @@
     "dist/client/**/*",
     "dist/cli/**/*",
     "src/server/db/migrations/**/*",
-    "scripts/capture-araon-live-assets.mjs",
-    "scripts/live-capture-tools.mjs",
-    "scripts/install-araon-live-capture-launchd.mjs",
-    "docs/assets/**/*",
     "docs/guides/**/*",
     "docs/release-notes/v1.1.0.md",
     "docs/release-notes/v1.1.1.md",

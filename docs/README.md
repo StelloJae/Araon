@@ -27,6 +27,7 @@ Runbooks are for maintainers and operators.
 - [Data Retention](runbooks/data-retention.md)
 - [Local Backup and Restore](runbooks/local-backup-restore.md)
 - [Long-Run Soak](runbooks/long-run-soak.md)
+- [Toss Login Acceptance](runbooks/toss-login-acceptance.md)
 - [KIS Realtime Rollout](runbooks/nxt-ws-rollout.md)
 
 ## Guides

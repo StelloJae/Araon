@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { createAraonServer } from '../src/server/app.js';
+import { createAraonServer } from '../../../src/server/app.js';
 import {
   evaluateSoakSamples,
   type SoakHttpSample,
-} from '../src/server/soak/soak-evaluator.js';
+} from '../../../src/server/soak/soak-evaluator.js';
 
 const { values } = parseArgs({
   options: {
