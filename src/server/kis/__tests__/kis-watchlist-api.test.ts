@@ -156,6 +156,42 @@ describe('fetchWatchlistGroups', () => {
     await expect(fetchWatchlistGroups(deps)).rejects.toThrow(/endpoint unreachable/);
   });
 
+  it('redacts sensitive KIS details from unavailable diagnostics', async () => {
+    const rawAccount = '12345678-01';
+    const rawAppKey = 'raw-app-key';
+    const rawApprovalKey = 'raw-approval-key';
+    const restError = new KisRestError(
+      `KIS HTTP 500 accountNo=${rawAccount} appKey=${rawAppKey} approval_key=${rawApprovalKey}`,
+      500,
+      '1',
+      'EGW99999',
+      {
+        accountNo: rawAccount,
+        appKey: rawAppKey,
+        approval_key: rawApprovalKey,
+      },
+    );
+    const deps = makeDeps(restError);
+
+    try {
+      await fetchWatchlistGroups(deps);
+      throw new Error('expected fetchWatchlistGroups to fail');
+    } catch (err: unknown) {
+      expect(err).toBeInstanceOf(KisWatchlistUnavailableError);
+      const unavailable = err as KisWatchlistUnavailableError;
+      expect(unavailable.message).toBe('KIS watchlist endpoint unreachable or returned an error');
+      expect(unavailable.diagnostic).toMatchObject({
+        status: 500,
+        rtCd: '1',
+        msgCd: 'EGW99999',
+      });
+      const diagnostic = JSON.stringify(unavailable.diagnostic);
+      expect(diagnostic).not.toContain(rawAccount);
+      expect(diagnostic).not.toContain(rawAppKey);
+      expect(diagnostic).not.toContain(rawApprovalKey);
+    }
+  });
+
   it('payload with missing required fields → KisWatchlistUnavailableError with parse detail', async () => {
     // `output` entries have items missing 종목코드 entirely
     const badPayload = {
@@ -215,10 +251,20 @@ describe('POST /import/kis-watchlist', () => {
     const resp = await app.inject({ method: 'POST', url: '/import/kis-watchlist' });
 
     expect(resp.statusCode).toBe(200);
-    const body = JSON.parse(resp.body) as { imported: number; skipped: number; groups: string[] };
+    const body = JSON.parse(resp.body) as {
+      imported: number;
+      skipped: number;
+      groups: string[];
+      source: string;
+      role: string;
+      primaryWatchlistProvider: string;
+    };
     expect(body.imported).toBe(2);
     expect(body.skipped).toBe(1);
     expect(body.groups).toEqual(['테스트그룹']);
+    expect(body.source).toBe('kis-legacy-watchlist-import');
+    expect(body.role).toBe('optional_migration_helper');
+    expect(body.primaryWatchlistProvider).toBe('toss-watchlist');
   });
 
   it('mocked KIS failure → returns 502 with kis-watchlist-unavailable error', async () => {
@@ -243,5 +289,35 @@ describe('POST /import/kis-watchlist', () => {
     const body = JSON.parse(resp.body) as { error: string; hint: string };
     expect(body.error).toBe('kis-watchlist-unavailable');
     expect(body.hint).toContain('관심종목');
+  });
+
+  it('mocked KIS failure → does not return raw sensitive diagnostics', async () => {
+    const rawAccount = '12345678-01';
+    const rawAppKey = 'raw-app-key';
+    const rawApprovalKey = 'raw-approval-key';
+    const restError = new KisRestError(
+      `KIS HTTP 500 accountNo=${rawAccount} appKey=${rawAppKey} approval_key=${rawApprovalKey}`,
+      500,
+      '1',
+      'EGW99999',
+      {
+        accountNo: rawAccount,
+        appKey: rawAppKey,
+        approval_key: rawApprovalKey,
+      },
+    );
+
+    registerRoutes(app, {
+      stockRepo: makeStockRepo(),
+      runtimeRef: makeStartedRef(makeDeps(restError)),
+    });
+
+    const resp = await app.inject({ method: 'POST', url: '/import/kis-watchlist' });
+
+    expect(resp.statusCode).toBe(502);
+    expect(resp.body).not.toContain(rawAccount);
+    expect(resp.body).not.toContain(rawAppKey);
+    expect(resp.body).not.toContain(rawApprovalKey);
+    expect(resp.body).toContain('[redacted]');
   });
 });

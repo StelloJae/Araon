@@ -13,33 +13,33 @@ import { dirname, resolve } from 'node:path';
 
 import Database from 'better-sqlite3';
 
-import type { Favorite, Price } from '../src/shared/types.js';
-import { DB_PATH } from '../src/shared/constants.js';
-import { createFileCredentialStore } from '../src/server/credential-store.js';
+import type { Favorite, Price } from '../../../src/shared/types.js';
+import { DB_PATH } from '../../../src/shared/constants.js';
+import { createFileCredentialStore } from '../../../src/server/credential-store.js';
 import {
   createApprovalIssuer,
   type ApprovalRequest,
-} from '../src/server/kis/kis-approval.js';
-import { createKisRestClient } from '../src/server/kis/kis-rest-client.js';
+} from '../../../src/server/kis/kis-approval.js';
+import { createKisRestClient } from '../../../src/server/kis/kis-rest-client.js';
 import {
   parseKisTickFrame,
   type KisRealtimeTick,
-} from '../src/server/kis/kis-tick-parser.js';
+} from '../../../src/server/kis/kis-tick-parser.js';
 import {
   createKisWsClient,
   type KisWsClient,
   type WsConnectionState,
   type WsMessageHandler,
   type WsSubscription,
-} from '../src/server/kis/kis-ws-client.js';
-import { PriceStore } from '../src/server/price/price-store.js';
+} from '../../../src/server/kis/kis-ws-client.js';
+import { PriceStore } from '../../../src/server/price/price-store.js';
 import {
   createRealtimeBridge,
   type ParsedWsFrame,
   type RealtimeTick,
   type WsTickParser,
-} from '../src/server/realtime/realtime-bridge.js';
-import { computeTiers } from '../src/server/realtime/tier-manager.js';
+} from '../../../src/server/realtime/realtime-bridge.js';
+import { computeTiers } from '../../../src/server/realtime/tier-manager.js';
 
 const TR_ID = 'H0UNCNT0';
 const FALLBACK_TICKER = '005930';

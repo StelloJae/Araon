@@ -67,6 +67,8 @@ export interface KisRuntimeStaticDeps {
   stockRepo: StockRepository;
   favoriteRepo: FavoriteRepository;
   shouldSkipKisPolling?: (stock: Stock) => boolean;
+  shouldStartKisPollingScheduler?: () => boolean;
+  onRealtimePriceApplied?: (price: Price) => void;
 }
 
 export interface KisRuntimeRef {
@@ -163,6 +165,12 @@ export function createKisRuntimeRef(
   }
 
   return { get: () => state, start, stop, reset };
+}
+
+export function shouldStartLegacyKisPollingScheduler(
+  deps: Pick<KisRuntimeStaticDeps, 'shouldStartKisPollingScheduler'>,
+): boolean {
+  return deps.shouldStartKisPollingScheduler?.() === true;
 }
 
 // === defaultActuallyStart =====================================================
@@ -624,9 +632,10 @@ export async function defaultActuallyStart(
         ? null
         : 'apply_disabled';
     },
-    onPriceApplied: (_price, stats) => {
+    onPriceApplied: (price, stats) => {
       const limitReason = currentSessionLimitReason(stats);
       if (limitReason !== null) disableSessionForLimit(limitReason);
+      deps.onRealtimePriceApplied?.(price);
     },
   });
   bridgeForSessionCleanup = bridge;
@@ -751,7 +760,11 @@ export async function defaultActuallyStart(
     outboundLimiter.setClassPolicyOverride?.('polling', null);
   }
 
-  pollingScheduler.start();
+  if (shouldStartLegacyKisPollingScheduler(deps)) {
+    pollingScheduler.start();
+  } else {
+    log.info('legacy KIS polling scheduler disabled by default');
+  }
   const stopSnapshotTimer = deps.snapshotStore.startPeriodicSave(deps.priceStore);
   marketHoursScheduler.start();
   const governorAimdTimer = setInterval(syncGovernorAimdRuntime, 60_000);
