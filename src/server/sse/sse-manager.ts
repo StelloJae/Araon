@@ -12,10 +12,24 @@
  */
 
 import { createChildLogger } from '@shared/logger.js';
-import type { Price, MarketStatus, PriceUpdateEvent, SnapshotEvent, HeartbeatEvent, ServerErrorEvent } from '@shared/types.js';
+import type {
+  AgentEventNotificationEvent,
+  HeartbeatEvent,
+  MarketStatus,
+  Price,
+  PriceUpdateEvent,
+  ServerErrorEvent,
+  SnapshotEvent,
+  TossSseRefreshResultEvent,
+  TossSseRefreshResultPayload,
+  TossUserNotificationEvent,
+  TossUserNotificationPayload,
+} from '@shared/types.js';
 import type { PriceStore } from '../price/price-store.js';
 import { serializeEvent, nextSequenceId } from './sse-serializer.js';
 import { SSE_HEARTBEAT_INTERVAL_MS, SSE_THROTTLE_MS } from '@shared/constants.js';
+import type { AgentEvent } from '../agent/agent-event-queue.js';
+import { agentEventToPublicPayload } from '../agent/agent-event-public-payload.js';
 
 const log = createChildLogger('sse-manager');
 
@@ -45,6 +59,12 @@ export interface SseManagerHandle {
   closeAll(): Promise<void>;
   /** Push a `ServerErrorEvent` to every connected client. */
   broadcastError(code: string, message: string, retryable: boolean): void;
+  /** Push a sanitized agent event notification to every connected client. */
+  broadcastAgentEvent(event: AgentEvent): number;
+  /** Push a sanitized Toss SSE-triggered REST refresh outcome to every client. */
+  broadcastTossRefreshResult(result: TossSseRefreshResultPayload): void;
+  /** Push sanitized Toss user-notification presence to every connected client. */
+  broadcastTossUserNotification(notification: TossUserNotificationPayload): number;
   /** Number of currently attached clients (for metrics / tests). */
   getClientCount(): number;
 }
@@ -219,6 +239,56 @@ export function createSseManager(deps: SseManagerDeps): SseManagerHandle {
   }
 
   // ------------------------------------------------------------------
+  // broadcastAgentEvent
+  // ------------------------------------------------------------------
+
+  function broadcastAgentEvent(event: AgentEvent): number {
+    const ev: AgentEventNotificationEvent = {
+      type: 'agent-event',
+      id: nextSequenceId(),
+      event: agentEventToPublicPayload(event),
+    };
+    const frame = serializeEvent(ev);
+    for (const client of clients.values()) {
+      client.write(frame);
+    }
+    return clients.size;
+  }
+
+  // ------------------------------------------------------------------
+  // broadcastTossRefreshResult
+  // ------------------------------------------------------------------
+
+  function broadcastTossRefreshResult(result: TossSseRefreshResultPayload): void {
+    const ev: TossSseRefreshResultEvent = {
+      type: 'toss-refresh-result',
+      id: nextSequenceId(),
+      result,
+    };
+    const frame = serializeEvent(ev);
+    for (const client of clients.values()) {
+      client.write(frame);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // broadcastTossUserNotification
+  // ------------------------------------------------------------------
+
+  function broadcastTossUserNotification(notification: TossUserNotificationPayload): number {
+    const ev: TossUserNotificationEvent = {
+      type: 'toss-user-notification',
+      id: nextSequenceId(),
+      notification,
+    };
+    const frame = serializeEvent(ev);
+    for (const client of clients.values()) {
+      client.write(frame);
+    }
+    return clients.size;
+  }
+
+  // ------------------------------------------------------------------
   // getClientCount
   // ------------------------------------------------------------------
 
@@ -226,5 +296,13 @@ export function createSseManager(deps: SseManagerDeps): SseManagerHandle {
     return clients.size;
   }
 
-  return { attachClient, closeAll, broadcastError, getClientCount };
+  return {
+    attachClient,
+    closeAll,
+    broadcastError,
+    broadcastAgentEvent,
+    broadcastTossRefreshResult,
+    broadcastTossUserNotification,
+    getClientCount,
+  };
 }

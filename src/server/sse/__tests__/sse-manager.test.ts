@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PriceStore } from '../../price/price-store.js';
 import { createSseManager } from '../sse-manager.js';
-import type { SSEEvent, SnapshotEvent, PriceUpdateEvent, HeartbeatEvent, ServerErrorEvent, Price, MarketStatus } from '@shared/types.js';
+import type { SSEEvent, SnapshotEvent, PriceUpdateEvent, HeartbeatEvent, ServerErrorEvent, Price, MarketStatus, AgentEventNotificationEvent, TossSseRefreshResultEvent, TossUserNotificationEvent } from '@shared/types.js';
 import type { SseManager } from '../../lifecycle/graceful-shutdown.js';
 import { SSE_HEARTBEAT_INTERVAL_MS, SSE_THROTTLE_MS } from '@shared/constants.js';
 
@@ -299,6 +299,160 @@ describe('SseManager', () => {
 
       detach1();
       detach2();
+      return manager.closeAll();
+    });
+  });
+
+  describe('agent event fanout', () => {
+    it('broadcasts sanitized agent-event frames to connected clients', () => {
+      const manager = buildManager();
+      const frames: string[] = [];
+      const detach = manager.attachClient((f) => frames.push(f), () => {});
+
+      manager.broadcastAgentEvent({
+        id: 'agent-event-1',
+        type: 'news_detected',
+        ticker: '005930',
+        productCode: 'A005930',
+        krTicker: '005930',
+        market: null,
+        displayName: null,
+        source: 'naver-news',
+        publishedAt: '2026-05-11T06:00:00.000Z',
+        firstSeenAt: '2026-05-11T06:00:20.000Z',
+        freshnessMs: 20_000,
+        freshness: 'near_realtime',
+        relevance: 0.8,
+        confidence: 0.9,
+        reason: 'title matched Samsung Electronics',
+        dedupeKey: 'naver-news:005930:raw-provider-id',
+        payloadRef: 'stock-news:42',
+        rawPayloadRedacted: true,
+        relatedIds: {
+          watchlistId: null,
+          holdingId: null,
+          orderIntentId: null,
+          approvalId: null,
+        },
+        skipReason: null,
+        createdAt: '2026-05-11T06:00:20.000Z',
+      });
+
+      const agentFrames = frames.filter((f) => parseFrame(f).type === 'agent-event');
+      expect(agentFrames).toHaveLength(1);
+      expect(agentFrames[0]).toContain('event: agent-event');
+      expect(agentFrames[0]).not.toContain('dedupeKey');
+      expect(agentFrames[0]).not.toContain('raw-provider-id');
+
+      const ev = parseFrame(agentFrames[0]) as AgentEventNotificationEvent;
+      expect(ev.event).toEqual({
+        id: 'agent-event-1',
+        type: 'news_detected',
+        ticker: '005930',
+        product: {
+          productCode: 'A005930',
+          krTicker: '005930',
+          market: null,
+          displayName: null,
+        },
+        source: 'naver-news',
+        publishedAt: '2026-05-11T06:00:00.000Z',
+        firstSeenAt: '2026-05-11T06:00:20.000Z',
+        freshnessMs: 20_000,
+        freshness: 'near_realtime',
+        relevance: 0.8,
+        confidence: 0.9,
+        reason: 'title matched Samsung Electronics',
+        payloadRef: 'stock-news:42',
+        rawPayloadRedacted: true,
+        relatedIds: {
+          watchlistId: null,
+          holdingId: null,
+          orderIntentId: null,
+          approvalId: null,
+        },
+        skipReason: null,
+        createdAt: '2026-05-11T06:00:20.000Z',
+      });
+
+      detach();
+      return manager.closeAll();
+    });
+  });
+
+  describe('Toss refresh result fanout', () => {
+    it('broadcasts sanitized toss-refresh-result frames to connected clients', () => {
+      const manager = buildManager();
+      const frames: string[] = [];
+      const detach = manager.attachClient((f) => frames.push(f), () => {});
+
+      manager.broadcastTossRefreshResult({
+        id: 'refresh-result-1',
+        resource: 'portfolio-positions',
+        ticker: '005930',
+        sourceType: 'share-holdings',
+        receivedAt: '2026-05-11T06:00:01.000Z',
+        result: 'failed',
+        reason: 'Toss SSE share-holdings thin notification',
+        recordedAt: '2026-05-11T06:00:03.000Z',
+        error: 'SESSION=[redacted] accountNo=[redacted]',
+      });
+
+      const refreshFrames = frames.filter((f) => parseFrame(f).type === 'toss-refresh-result');
+      expect(refreshFrames).toHaveLength(1);
+      expect(refreshFrames[0]).toContain('event: toss-refresh-result');
+      expect(refreshFrames[0]).not.toContain('[test-session-token]');
+      expect(refreshFrames[0]).not.toContain('12345678');
+
+      const ev = parseFrame(refreshFrames[0]) as TossSseRefreshResultEvent;
+      expect(ev.result).toEqual({
+        id: 'refresh-result-1',
+        resource: 'portfolio-positions',
+        ticker: '005930',
+        sourceType: 'share-holdings',
+        receivedAt: '2026-05-11T06:00:01.000Z',
+        result: 'failed',
+        reason: 'Toss SSE share-holdings thin notification',
+        recordedAt: '2026-05-11T06:00:03.000Z',
+        error: 'SESSION=[redacted] accountNo=[redacted]',
+      });
+
+      detach();
+      return manager.closeAll();
+    });
+  });
+
+  describe('Toss user notification fanout', () => {
+    it('broadcasts sanitized toss-user-notification frames without raw web-push payload', () => {
+      const manager = buildManager();
+      const frames: string[] = [];
+      const detach = manager.attachClient((f) => frames.push(f), () => {});
+
+      const clientCount = manager.broadcastTossUserNotification({
+        id: 'toss-web-push:005930:2026-05-11T06:00:02.000Z',
+        ticker: '005930',
+        receivedAt: '2026-05-11T06:00:02.000Z',
+        sourceType: 'web-push',
+        reason: 'Toss SSE web-push notification received',
+      });
+
+      const notificationFrames = frames.filter((f) => parseFrame(f).type === 'toss-user-notification');
+      expect(clientCount).toBe(1);
+      expect(notificationFrames).toHaveLength(1);
+      expect(notificationFrames[0]).toContain('event: toss-user-notification');
+      expect(notificationFrames[0]).not.toContain(`raw-${'content'}-id`);
+      expect(notificationFrames[0]).not.toContain('SESSION');
+
+      const ev = parseFrame(notificationFrames[0]) as TossUserNotificationEvent;
+      expect(ev.notification).toEqual({
+        id: 'toss-web-push:005930:2026-05-11T06:00:02.000Z',
+        ticker: '005930',
+        receivedAt: '2026-05-11T06:00:02.000Z',
+        sourceType: 'web-push',
+        reason: 'Toss SSE web-push notification received',
+      });
+
+      detach();
       return manager.closeAll();
     });
   });

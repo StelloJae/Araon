@@ -74,6 +74,7 @@ export interface RealtimeSessionGate {
       'parsedTickCount' | 'appliedTickCount' | 'sessionLimitIgnoredCount'
     >;
   }): RealtimeSessionState;
+  replaceTickers(tickers: readonly string[]): RealtimeSessionState;
   disable(reason?: Exclude<SessionEndReason, null>): RealtimeSessionState;
   includesTicker(ticker: string): boolean;
 }
@@ -296,6 +297,13 @@ export function createRealtimeSessionGate(
         sessionStartAppliedTickCount: input.stats?.appliedTickCount ?? 0,
         sessionStartLimitIgnoredCount: input.stats?.sessionLimitIgnoredCount ?? 0,
         sessionEndReason: null,
+      };
+      return cloneSessionState(state);
+    },
+    replaceTickers(tickers): RealtimeSessionState {
+      state = {
+        ...state,
+        sessionTickers: [...tickers],
       };
       return cloneSessionState(state);
     },

@@ -136,7 +136,12 @@ export type Tier = 'realtime' | 'polling';
  */
 export type MarketStatus = 'pre-open' | 'open' | 'closed' | 'snapshot';
 
-export type PriceSource = 'rest' | 'ws-krx' | 'ws-integrated' | 'ws-nxt';
+export type PriceSource =
+  | 'rest'
+  | 'ws-krx'
+  | 'ws-integrated'
+  | 'ws-nxt'
+  | 'toss-fast-quote';
 
 export type MarketTapeIndicatorId = 'kospi' | 'kosdaq' | 'usdkrw' | 'wti';
 
@@ -157,6 +162,7 @@ export interface MarketTapeSummary {
 }
 
 export type MarketTopMoverDirection = 'gainers' | 'losers';
+export type MarketTopMoversMarket = 'kr' | 'us';
 
 export interface MarketTopMoverItem {
   rank: number;
@@ -651,6 +657,135 @@ export interface ServerErrorEvent {
   retryable: boolean;
 }
 
+export type AgentEventNotificationType =
+  | 'news_detected'
+  | 'disclosure_detected'
+  | 'toss_signal_detected'
+  | 'market_movement_detected'
+  | 'watchlist_changed'
+  | 'position_changed'
+  | 'order_intent_created'
+  | 'order_intent_skipped'
+  | 'approval_requested'
+  | 'approval_granted'
+  | 'approval_denied'
+  | 'execution_locked';
+
+export type AgentEventFreshness =
+  | 'unknown'
+  | 'near_realtime'
+  | 'recent'
+  | 'stale';
+
+export type AgentEventProductMarket =
+  | 'KOSPI'
+  | 'KOSDAQ'
+  | 'US'
+  | 'TOSS_ONLY'
+  | 'UNKNOWN';
+
+export interface AgentEventProductIdentityPayload {
+  productCode: string | null;
+  krTicker: string | null;
+  market: AgentEventProductMarket | null;
+  displayName: string | null;
+}
+
+export interface AgentEventRelatedIdsPayload {
+  watchlistId: string | null;
+  holdingId: string | null;
+  orderIntentId: string | null;
+  approvalId: string | null;
+}
+
+export interface AgentEventNotificationPayload {
+  id: string;
+  type: AgentEventNotificationType;
+  ticker: string;
+  product: AgentEventProductIdentityPayload;
+  source: string;
+  publishedAt: string | null;
+  firstSeenAt: string;
+  freshnessMs: number | null;
+  freshness: AgentEventFreshness;
+  relevance: number | null;
+  confidence: number;
+  reason: string;
+  payloadRef: string | null;
+  rawPayloadRedacted: true;
+  relatedIds: AgentEventRelatedIdsPayload;
+  skipReason: string | null;
+  createdAt: string;
+}
+
+/**
+ * Agent-facing signal pushed to the browser after server-side dedupe.
+ * Provider dedupe keys and raw payloads are intentionally omitted.
+ */
+export interface AgentEventNotificationEvent {
+  type: 'agent-event';
+  id: number;
+  event: AgentEventNotificationPayload;
+}
+
+export type TossSseRefreshResource =
+  | 'quote'
+  | 'pending-orders'
+  | 'completed-orders'
+  | 'account-summary'
+  | 'portfolio-positions'
+  | 'user-notifications'
+  | 'preferences'
+  | 'icons';
+
+export type TossSseRefreshRecordedResult =
+  | 'refreshed'
+  | 'ignored'
+  | 'throttled'
+  | 'in_flight'
+  | 'failed';
+
+export interface TossSseRefreshResultPayload {
+  id: string;
+  resource: TossSseRefreshResource;
+  ticker: string | null;
+  sourceType: string;
+  receivedAt: string;
+  result: TossSseRefreshRecordedResult;
+  reason: string;
+  recordedAt: string;
+  error: string | null;
+}
+
+/**
+ * Sanitized Toss SSE -> REST refresh outcome pushed for operator UI refresh.
+ * Raw SSE keys, Toss session material, account identifiers, and provider
+ * responses are intentionally omitted.
+ */
+export interface TossSseRefreshResultEvent {
+  type: 'toss-refresh-result';
+  id: number;
+  result: TossSseRefreshResultPayload;
+}
+
+export interface TossUserNotificationPayload {
+  id: string;
+  ticker: string | null;
+  receivedAt: string;
+  sourceType: 'web-push';
+  reason: string;
+}
+
+/**
+ * Sanitized Toss user notification presence pushed to the browser.
+ * Raw web-push title/message/content identifiers are intentionally omitted.
+ */
+export interface TossUserNotificationEvent {
+  type: 'toss-user-notification';
+  id: number;
+  notification: TossUserNotificationPayload;
+}
+
 /**
  * Discriminated union over every event the server may emit on `/events`.
  * Narrow on `type` at the call site to get exhaustive handling.
@@ -659,4 +794,7 @@ export type SSEEvent =
   | PriceUpdateEvent
   | SnapshotEvent
   | HeartbeatEvent
-  | ServerErrorEvent;
+  | ServerErrorEvent
+  | AgentEventNotificationEvent
+  | TossSseRefreshResultEvent
+  | TossUserNotificationEvent;

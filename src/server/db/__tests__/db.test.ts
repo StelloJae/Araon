@@ -94,6 +94,12 @@ describe('migrateUp', () => {
       'stock_news_items',
       'stock_observation_plans',
       'stock_disclosure_items',
+      'toss_sse_refresh_results',
+      'agent_events',
+      'agent_event_alert_deliveries',
+      'agent_order_intent_audit_entries',
+      'agent_order_intent_approval_challenges',
+      'agent_order_intents',
       'stock_signal_events',
       'stock_notes',
       'stock_tags',
@@ -106,7 +112,7 @@ describe('migrateUp', () => {
   it('records the migration version in schema_version', () => {
     migrateUp(db);
     const row = db.prepare<[], { version: number }>('SELECT MAX(version) AS version FROM schema_version').get();
-    expect(row?.version).toBe(13);
+    expect(row?.version).toBe(19);
   });
 
   it('master_stocks has B1a classification columns after migrate', () => {
