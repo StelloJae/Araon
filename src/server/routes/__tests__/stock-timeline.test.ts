@@ -10,9 +10,11 @@ import {
   StockSignalEventRepository,
   MasterStockRepository,
 } from '../../db/repositories.js';
+import { createAgentEventQueue } from '../../agent/agent-event-queue.js';
 import { createStockService } from '../../services/stock-service.js';
 import { stockRoutes } from '../stocks.js';
 import type { PriceCandle } from '@shared/types.js';
+import type { AgentEventQueue } from '../../agent/agent-event-queue.js';
 
 function openMemoryDb(): Database.Database {
   const db = new Database(':memory:');
@@ -27,12 +29,16 @@ function buildApp(db: Database.Database) {
   const masterRepo = new MasterStockRepository(db);
   const signalEventRepo = new StockSignalEventRepository(db);
   const candleRepo = new PriceCandleRepository(db);
+  let nextAgentEventId = 1;
+  const agentEventQueue = createAgentEventQueue({
+    idFactory: () => `evt-${nextAgentEventId++}`,
+  });
   const service = createStockService({ stockRepo, sectorRepo, masterRepo });
   stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
 
   const app = Fastify({ logger: false });
-  app.register(stockRoutes, { service, signalEventRepo, candleRepo });
-  return { app, signalEventRepo, candleRepo };
+  app.register(stockRoutes, { service, signalEventRepo, candleRepo, agentEventQueue });
+  return { app, signalEventRepo, candleRepo, agentEventQueue };
 }
 
 function candle(bucketAt: string, overrides: Partial<PriceCandle> = {}): PriceCandle {
@@ -60,10 +66,11 @@ describe('stock signal timeline routes', () => {
   let app: ReturnType<typeof buildApp>['app'];
   let signalEventRepo: StockSignalEventRepository;
   let candleRepo: PriceCandleRepository;
+  let agentEventQueue: AgentEventQueue;
 
   beforeEach(() => {
     db = openMemoryDb();
-    ({ app, signalEventRepo, candleRepo } = buildApp(db));
+    ({ app, signalEventRepo, candleRepo, agentEventQueue } = buildApp(db));
   });
 
   afterEach(async () => {
@@ -102,6 +109,53 @@ describe('stock signal timeline routes', () => {
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(201);
     expect(second.json().data.id).toBe(first.json().data.id);
+  });
+
+  it('enqueues realtime momentum signals as sanitized market movement events once', async () => {
+    const payload = {
+      name: '삼성전자',
+      signalType: 'overheat',
+      source: 'realtime-momentum',
+      signalPrice: 70_000,
+      signalAt: '2026-05-06T01:00:00.000Z',
+      baselinePrice: 67_000,
+      baselineAt: '2026-05-06T00:59:30.000Z',
+      momentumPct: 4.48,
+      momentumWindow: '30s',
+      dailyChangePct: 5.1,
+      volume: 123_000,
+      volumeSurgeRatio: 2.4,
+      volumeBaselineStatus: 'ready',
+    };
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/signals',
+      payload,
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/stocks/005930/signals',
+      payload,
+    });
+
+    expect(first.statusCode).toBe(201);
+    expect(agentEventQueue.snapshot()).toEqual([
+      expect.objectContaining({
+        type: 'market_movement_detected',
+        ticker: '005930',
+        source: 'realtime-momentum',
+        publishedAt: '2026-05-06T01:00:00.000Z',
+        relevance: 1,
+        confidence: 0.9,
+        payloadRef: `stock-signal:${first.json().data.id}`,
+      }),
+    ]);
+    expect(agentEventQueue.snapshot()[0]?.reason).toContain('overheat');
+    expect(agentEventQueue.snapshot()[0]?.reason).toContain('30s');
+    expect(agentEventQueue.snapshot()[0]?.reason).toContain('4.48%');
+    expect(JSON.stringify(agentEventQueue.snapshot())).not.toContain('signalPrice');
+    expect(JSON.stringify(agentEventQueue.snapshot())).not.toContain('baselinePrice');
   });
 
   it('does not expose the removed observation timeline route', async () => {

@@ -46,6 +46,7 @@ import type {
   PriceHistoryApiItem,
   StockDisclosureItem,
   StockDisclosurePage,
+  StockNewsItem,
   StockSignalEvent,
 } from '@shared/types.js';
 import type {
@@ -56,6 +57,8 @@ import type { TodayMinuteBackfillService } from '../chart/today-minute-backfill-
 import type { HistoricalMinuteBackfillService } from '../chart/historical-minute-backfill-service.js';
 import type { StockNewsFeedService } from '../news/news-feed-service.js';
 import type { DartDisclosureService } from '../disclosures/dart-disclosure-service.js';
+import { disclosureIdentityKeys } from '../disclosures/disclosure-identity.js';
+import type { AgentEventQueue } from '../agent/agent-event-queue.js';
 import {
   PRICE_HISTORY_POINT_BUCKET_MS,
   PRICE_HISTORY_RETENTION_HOURS,
@@ -83,6 +86,7 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   newsFeedService?: StockNewsFeedService;
   disclosureRepo?: StockDisclosureRepository;
   dartDisclosureService?: DartDisclosureService;
+  agentEventQueue?: AgentEventQueue;
   refreshQuote?: (ticker: string) => Promise<Price>;
   now?: () => Date;
 }
@@ -260,6 +264,7 @@ export async function stockRoutes(
       volumeBaselineStatus: parsed.data.volumeBaselineStatus,
       now: (opts.now ?? (() => new Date()))(),
     });
+    enqueueSignalAgentEvent(opts.agentEventQueue, event);
     return reply.status(201).send({ success: true, data: event });
   });
 
@@ -315,7 +320,9 @@ export async function stockRoutes(
       && !existing.some((item) => item.source === 'dart' && item.kind === 'filing')
     ) {
       try {
-        await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+        const items = await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+        const existingDisclosureKeys = new Set(existing.flatMap((item) => disclosureIdentityKeys(item)));
+        enqueueDisclosureAgentEvents(opts.agentEventQueue, items, existingDisclosureKeys);
       } catch (err: unknown) {
         log.warn(
           { ticker, err: err instanceof Error ? err.message : String(err) },
@@ -367,9 +374,10 @@ export async function stockRoutes(
           now: (opts.now ?? (() => new Date()))(),
         };
         if (stockName !== undefined) refreshInput.name = stockName;
-        await opts.newsFeedService.refresh({
+        const items = await opts.newsFeedService.refresh({
           ...refreshInput,
         });
+        enqueueNewsAgentEvents(opts.agentEventQueue, items);
         return reply.send({
           success: true,
           data: opts.newsFeedService.page(ticker, { limit: 5, offset: 0 }),
@@ -405,8 +413,14 @@ export async function stockRoutes(
       }
       const fetchedAt = (opts.now ?? (() => new Date()))();
       try {
+        const existingDisclosureKeys = new Set(
+          opts.disclosureRepo
+            .listByTicker(ticker, 100)
+            .flatMap((item) => disclosureIdentityKeys(item)),
+        );
         if (opts.dartDisclosureService?.isConfigured() === true) {
-          await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+          const items = await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+          enqueueDisclosureAgentEvents(opts.agentEventQueue, items, existingDisclosureKeys);
         }
         opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt.toISOString()));
         return reply.send({
@@ -1314,6 +1328,7 @@ function isKnownCandleSource(
   return (
     source === null ||
     source === 'rest' ||
+    source === 'toss-fast-quote' ||
     source === 'ws-krx' ||
     source === 'ws-integrated' ||
     source === 'ws-nxt' ||
@@ -1328,13 +1343,7 @@ function isKnownCandleSource(
 }
 
 function isSuspiciousRealtimeMinuteCandle(candle: PriceCandle): boolean {
-  if (
-    candle.source !== 'ws-krx' &&
-    candle.source !== 'ws-integrated' &&
-    candle.source !== 'ws-nxt'
-  ) {
-    return false;
-  }
+  if (!isRealtimePriceSource(candle.source)) return false;
   if (candle.interval !== '1m') return false;
   if (candle.volume < 0 || candle.close <= 0) return false;
   const tradeValue = candle.volume * candle.close;
@@ -1492,6 +1501,88 @@ function toCandleApiItem(candle: {
     source: candle.source ?? null,
     isPartial: candle.isPartial,
   };
+}
+
+function enqueueNewsAgentEvents(
+  queue: AgentEventQueue | undefined,
+  items: readonly StockNewsItem[],
+): void {
+  if (queue === undefined) return;
+  for (const item of items) {
+    if (item.isNew !== true) continue;
+    queue.enqueue({
+      type: 'news_detected',
+      ticker: item.ticker,
+      source: item.source,
+      publishedAt: item.publishedAt,
+      firstSeenAt: item.fetchedAt,
+      relevance: 0.7,
+      confidence: 0.72,
+      reason: `New stock news detected: ${item.title}`,
+      dedupeKey: `news:${item.source}:${item.id}`,
+      payloadRef: `stock-news:${item.id}`,
+    });
+  }
+}
+
+function enqueueSignalAgentEvent(
+  queue: AgentEventQueue | undefined,
+  event: StockSignalEvent,
+): void {
+  if (queue === undefined) return;
+  queue.enqueue({
+    type: 'market_movement_detected',
+    ticker: event.ticker,
+    source: event.source,
+    publishedAt: event.signalAt,
+    firstSeenAt: event.createdAt,
+    relevance: signalRelevance(event.signalType),
+    confidence: 0.9,
+    reason: `Realtime momentum ${event.signalType} ${event.momentumWindow} ${formatSignedPct(event.momentumPct)}`,
+    dedupeKey: `market-movement:${event.source}:${event.id}`,
+    payloadRef: `stock-signal:${event.id}`,
+  });
+}
+
+function enqueueDisclosureAgentEvents(
+  queue: AgentEventQueue | undefined,
+  items: readonly StockDisclosureItem[],
+  existingKeys: ReadonlySet<string>,
+): void {
+  if (queue === undefined) return;
+  for (const item of items) {
+    if (item.kind !== 'filing' || disclosureIdentityKeys(item).some((key) => existingKeys.has(key))) continue;
+    queue.enqueue({
+      type: 'disclosure_detected',
+      ticker: item.ticker,
+      source: item.source,
+      publishedAt: item.publishedAt,
+      firstSeenAt: item.fetchedAt,
+      relevance: 0.85,
+      confidence: 0.9,
+      reason: `New DART filing detected: ${item.title}`,
+      dedupeKey: `disclosure:${item.source}:${item.id}`,
+      payloadRef: `stock-disclosure:${item.id}`,
+    });
+  }
+}
+
+function signalRelevance(signalType: StockSignalEvent['signalType']): number {
+  switch (signalType) {
+    case 'overheat':
+      return 1;
+    case 'strong_scalp':
+      return 0.85;
+    case 'scalp':
+      return 0.72;
+    case 'trend':
+      return 0.55;
+  }
+}
+
+function formatSignedPct(value: number): string {
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}${value.toFixed(2)}%`;
 }
 
 function buildDisclosureSearchLinks(

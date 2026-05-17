@@ -22,6 +22,10 @@
 
 import type { MasterStockEntry, TossStockSearchItem } from './api-client';
 import type { StockViewModel } from './view-models';
+import {
+  type AraonProductMarket,
+  krTickerFromTossProductCode,
+} from '@shared/product-identity';
 import { getChosung } from './chosung';
 
 export const MAX_SEARCH_RESULTS = 8;
@@ -51,15 +55,45 @@ export function rankStockSearch(
 }
 
 export interface CombinedSearchResult {
-  /** 6-digit ticker. */
+  /** KIS-capable 6-digit ticker, or Toss productCode for Toss-only products. */
   code: string;
+  /** Toss productCode, e.g. A005930 or Toss-only code such as 0011T0. */
+  productCode: string | null;
+  /** 6-digit KRX ticker only when KIS/local catalog can support it. */
+  krTicker: string | null;
+  kisEligible: boolean;
   /** Korean display name. */
   name: string;
-  market: 'KOSPI' | 'KOSDAQ';
+  market: AraonProductMarket;
   /** Live VM if the ticker is in the user's tracked catalog; null otherwise. */
   vm: StockViewModel | null;
   isTracked: boolean;
   origin: 'tracked' | 'master' | 'toss';
+}
+
+export function localSearchIdentity(code: string): Pick<
+  CombinedSearchResult,
+  'productCode' | 'krTicker' | 'kisEligible'
+> {
+  const normalized = code.trim().toUpperCase();
+  const krTicker = /^\d{6}$/.test(normalized) ? normalized : null;
+  return {
+    productCode: krTicker === null ? normalized : `A${krTicker}`,
+    krTicker,
+    kisEligible: krTicker !== null,
+  };
+}
+
+function addSearchAliases(seen: Set<string>, value: string | null | undefined): void {
+  if (value === null || value === undefined) return;
+  const normalized = value.trim().toUpperCase();
+  if (normalized.length === 0) return;
+  seen.add(normalized);
+  if (normalized.startsWith('A') && normalized.length > 1) {
+    seen.add(normalized.slice(1));
+  } else {
+    seen.add(`A${normalized}`);
+  }
 }
 
 /**
@@ -132,8 +166,10 @@ export function rankStockSearchCombined(
 
   const out: CombinedSearchResult[] = [];
   for (const t of trackedHits) {
+    const identity = localSearchIdentity(t.vm.code);
     out.push({
       code: t.vm.code,
+      ...identity,
       name: t.vm.name,
       market: t.vm.market,
       vm: t.vm,
@@ -143,8 +179,10 @@ export function rankStockSearchCombined(
     if (out.length >= limit) return out;
   }
   for (const m of masterHits) {
+    const identity = localSearchIdentity(m.entry.ticker);
     out.push({
       code: m.entry.ticker,
+      ...identity,
       name: m.entry.name,
       market: m.entry.market,
       vm: null,
@@ -162,18 +200,32 @@ export function mergeTossSearchResults(
   limit: number = MAX_SEARCH_RESULTS,
 ): CombinedSearchResult[] {
   const out = localResults.slice(0, limit);
-  const seen = new Set(out.map((item) => item.code));
+  const seen = new Set<string>();
+  for (const item of out) {
+    addSearchAliases(seen, item.code);
+    addSearchAliases(seen, item.productCode);
+    addSearchAliases(seen, item.krTicker);
+  }
   for (const item of tossResults) {
-    if (seen.has(item.ticker)) continue;
+    const krTicker = item.krTicker ?? krTickerFromTossProductCode(item.productCode);
+    const code = krTicker ?? item.ticker ?? item.productCode;
+    const aliases = new Set<string>();
+    addSearchAliases(aliases, code);
+    addSearchAliases(aliases, item.productCode);
+    addSearchAliases(aliases, item.ticker);
+    if ([...aliases].some((alias) => seen.has(alias))) continue;
     out.push({
-      code: item.ticker,
+      code,
+      productCode: item.productCode,
+      krTicker,
+      kisEligible: item.kisEligible && krTicker !== null,
       name: item.name,
       market: item.market,
       vm: null,
       isTracked: false,
       origin: 'toss',
     });
-    seen.add(item.ticker);
+    for (const alias of aliases) seen.add(alias);
     if (out.length >= limit) break;
   }
   return out;

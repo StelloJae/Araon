@@ -3,13 +3,12 @@
  *
  * Behavior:
  *   - ⌘K / Ctrl+K / `/` (when no input focused) focuses the box.
- *   - Typing filters tracked catalog, local master KRX universe, and Toss
+ *   - Typing filters cached catalog, local master KRX universe, and Toss
  *     public search when the local catalog is incomplete.
- *   - Tracked-row hits show a "추적 중" badge and open the detail modal
- *     directly. Master-only hits show a "전체 종목" badge and a `+ 추가`
- *     button — clicking either pushes the ticker into the tracked catalog
- *     (`POST /stocks/from-master` or `/stocks/from-toss-search`) and then opens
- *     the detail modal.
+ *   - Cached hits show a "최근 본 종목" badge and open the detail modal
+ *     directly. KIS-eligible master/Toss hits show an add action and are
+ *     promoted into the tracked catalog. Toss-only products stay visible as
+ *     `Toss 전용` / `지원 대기` until Araon can support their quote/chart path.
  *   - Empty query + open shows the most recent picks (localStorage).
  *   - First focus calls `useMasterStore.ensureLoaded()` so the master list
  *     is available even when `requestIdleCallback` preload was skipped.
@@ -20,14 +19,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   addStockFromMaster,
   addStockFromTossSearch,
+  ApiError,
   searchTossStocks,
-  type ApiError,
   type TossStockSearchItem,
 } from '../lib/api-client';
 import { fmtPct, fmtPrice, krColor } from '../lib/format';
 import { CloseIcon, SearchIcon } from '../lib/icons';
 import {
   MAX_SEARCH_RESULTS,
+  localSearchIdentity,
   mergeTossSearchResults,
   rankStockSearchCombined,
   type CombinedSearchResult,
@@ -36,6 +36,7 @@ import { syncTrackedCatalogAfterMasterAdd } from '../lib/tracked-catalog-sync';
 import type { StockViewModel } from '../lib/view-models';
 import { useMasterStore } from '../stores/master-store';
 import { useStocksStore } from '../stores/stocks-store';
+import { krTickerFromTossProductCode } from '@shared/product-identity';
 
 const RECENT_KEY = 'araon-recent-searches';
 const MAX_RECENT = 8;
@@ -69,6 +70,21 @@ interface GlobalSearchProps {
   onPickStock: (stock: StockViewModel) => void;
   /** Called after a master-only hit is promoted into the tracked catalog. */
   onPickMasterTicker?: (ticker: string) => void;
+}
+
+function searchSourceLabel(item: CombinedSearchResult): string {
+  if (item.isTracked && item.vm !== null) return '최근 본 종목';
+  if (!isSearchResultKisEligible(item)) return 'Toss 전용';
+  if (item.origin === 'toss') return 'Toss 검색';
+  return '전체 종목';
+}
+
+function isSearchResultKisEligible(item: CombinedSearchResult): boolean {
+  return item.kisEligible && registrationTickerFor(item) !== null;
+}
+
+function registrationTickerFor(item: CombinedSearchResult): string | null {
+  return item.krTicker ?? krTickerFromTossProductCode(item.productCode ?? item.code);
 }
 
 export function GlobalSearch({
@@ -182,19 +198,23 @@ export function GlobalSearch({
     for (const code of recent) {
       const tracked = trackedByCode.get(code);
       if (tracked !== undefined) {
-          out.push({
-            code: tracked.code,
-            name: tracked.name,
-            market: tracked.market,
-            vm: tracked,
-            isTracked: true,
-            origin: 'tracked',
-          });
+        const identity = localSearchIdentity(tracked.code);
+        out.push({
+          code: tracked.code,
+          ...identity,
+          name: tracked.name,
+          market: tracked.market,
+          vm: tracked,
+          isTracked: true,
+          origin: 'tracked',
+        });
       } else {
         const master = masterByCode.get(code);
         if (master !== undefined) {
+          const identity = localSearchIdentity(master.ticker);
           out.push({
             code: master.ticker,
+            ...identity,
             name: master.name,
             market: master.market,
             vm: null,
@@ -229,25 +249,29 @@ export function GlobalSearch({
       return;
     }
 
+    const registrationTicker = registrationTickerFor(item);
+    if (registrationTicker === null) {
+      setAddError(null);
+      return;
+    }
+
     // Master-only: promote into tracked catalog first, then open detail.
     setPendingAdd(item.code);
     try {
       if (item.origin === 'toss') {
-        await addStockFromTossSearch(item.code);
+        await addStockFromTossSearch(registrationTicker);
       } else {
-        await addStockFromMaster(item.code);
+        await addStockFromMaster(registrationTicker);
       }
       await syncTrackedCatalogAfterMasterAdd({ setCatalog, setThemes });
       setQuery('');
       setOpen(false);
       setActiveIdx(0);
       inputRef.current?.blur();
-      onPickMasterTicker?.(item.code);
+      onPickMasterTicker?.(registrationTicker);
     } catch (err) {
       const apiErr = err as ApiError | Error;
-      setAddError(
-        'message' in apiErr ? `${apiErr.message}` : '추가 실패',
-      );
+      setAddError(formatAddError(apiErr));
     } finally {
       setPendingAdd(null);
     }
@@ -433,6 +457,16 @@ export function GlobalSearch({
   );
 }
 
+function formatAddError(error: ApiError | Error): string {
+  if (error instanceof ApiError) {
+    if (error.status === 400) return '아직 Araon 등록 대상이 아니에요';
+    if (error.status === 404) return '지원 종목을 찾지 못했어요';
+    if (error.status === 502) return 'Toss 검색 확인 실패';
+    if (error.status === 503) return '검색 provider 준비 중';
+  }
+  return '종목 추가 실패';
+}
+
 interface SearchRowProps {
   item: CombinedSearchResult;
   active: boolean;
@@ -443,9 +477,12 @@ interface SearchRowProps {
 
 function SearchRow({ item, active, pending, onPick, onHover }: SearchRowProps) {
   const tracked = item.isTracked && item.vm !== null;
+  const sourceLabel = searchSourceLabel(item);
+  const supported = tracked || isSearchResultKisEligible(item);
+  const interactive = !pending && supported;
   return (
     <div
-      onClick={pending ? undefined : onPick}
+      onClick={pending || !supported ? undefined : onPick}
       onMouseEnter={onHover}
       style={{
         padding: '9px 12px',
@@ -453,7 +490,7 @@ function SearchRow({ item, active, pending, onPick, onHover }: SearchRowProps) {
         gridTemplateColumns: '1fr auto auto auto',
         gap: 10,
         alignItems: 'center',
-        cursor: pending ? 'wait' : 'pointer',
+        cursor: pending ? 'wait' : supported ? 'pointer' : 'not-allowed',
         background: active ? 'var(--bg-tint)' : 'transparent',
         transition: 'background 80ms ease',
         opacity: pending ? 0.7 : 1,
@@ -515,7 +552,7 @@ function SearchRow({ item, active, pending, onPick, onHover }: SearchRowProps) {
           whiteSpace: 'nowrap',
         }}
       >
-        {tracked ? '추적 중' : '전체 종목'}
+        {sourceLabel}
       </span>
       {tracked && item.vm !== null ? (
         <>
@@ -548,12 +585,12 @@ function SearchRow({ item, active, pending, onPick, onHover }: SearchRowProps) {
             style={{
               fontSize: 11,
               fontWeight: 700,
-              color: 'var(--accent)',
+              color: interactive ? 'var(--accent)' : 'var(--text-muted)',
               textAlign: 'right',
               minWidth: 48,
             }}
           >
-            {pending ? '추가 중…' : '+ 추가'}
+            {pending ? '추가 중…' : supported ? '+ 추가' : '지원 대기'}
           </span>
         </>
       )}

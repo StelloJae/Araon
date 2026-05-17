@@ -547,9 +547,8 @@ function isTerminal(state: TossLoginJobState): boolean {
   return state === 'succeeded' || state === 'failed' || state === 'cancelled';
 }
 
-function safeErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return 'Toss login capture failed';
+function safeErrorMessage(_err: unknown): string {
+  return 'TOSS_LOGIN_CAPTURE_FAILED';
 }
 
 function throwIfAborted(signal: AbortSignal): void {

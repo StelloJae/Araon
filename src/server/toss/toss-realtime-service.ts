@@ -3,7 +3,17 @@ import {
   TossSseReconnectSignal,
   type TossSseEvent,
 } from './toss-sse-client.js';
+import type { TossUserNotificationPayload } from '@shared/types.js';
+import {
+  normalizeAgentEventTicker,
+  type AgentEventQueue,
+} from '../agent/agent-event-queue.js';
 import type { TossSessionStore } from './toss-session-store.js';
+import {
+  normalizeTossSseRefreshTicker,
+  routeTossSseRefreshHints,
+  type TossSseRefreshHint,
+} from './toss-sse-refresh-router.js';
 
 export type TossRealtimeState =
   | 'idle'
@@ -20,15 +30,24 @@ export interface TossRealtimeStatus {
   readonly stoppedAt: string | null;
   readonly eventCount: number;
   readonly priceRefreshEventCount: number;
+  readonly userNotificationEventCount: number;
   readonly priceRefreshDispatchCount: number;
   readonly priceRefreshDispatchFailureCount: number;
+  readonly refreshHintCount: number;
+  readonly refreshHintDispatchCount: number;
+  readonly refreshHintDispatchFailureCount: number;
+  readonly refreshHints: ReadonlyArray<{ readonly resource: string; readonly count: number }>;
   readonly eventTypes: ReadonlyArray<{ readonly type: string; readonly count: number }>;
   readonly reconnectCount: number;
   readonly lastEventType: string | null;
   readonly lastStockCode: string | null;
   readonly lastEventAt: string | null;
   readonly lastPriceRefreshAt: string | null;
+  readonly lastUserNotificationAt: string | null;
   readonly lastPriceRefreshDispatchAt: string | null;
+  readonly lastRefreshHintAt: string | null;
+  readonly lastRefreshHintResource: string | null;
+  readonly lastRefreshHintTicker: string | null;
   readonly lastError: string | null;
   readonly thinNotificationOnly: boolean;
 }
@@ -43,6 +62,9 @@ interface TossRealtimeServiceOptions {
   readonly sessionStore: TossSessionStore;
   readonly createClient?: (session: NonNullable<Awaited<ReturnType<TossSessionStore['load']>>>) => TossSseClient;
   readonly onPriceRefresh?: (event: TossRealtimePriceRefreshEvent) => Promise<void> | void;
+  readonly onRefreshHint?: (hint: TossSseRefreshHint) => Promise<void> | void;
+  readonly onUserNotification?: (notification: TossUserNotificationPayload) => Promise<void> | void;
+  readonly agentEventQueue?: AgentEventQueue;
   readonly retryBaseMs?: number;
   readonly retryMaxMs?: number;
 }
@@ -65,10 +87,14 @@ class DefaultTossRealtimeService implements TossRealtimeService {
   private readonly sessionStore: TossSessionStore;
   private readonly createClient: NonNullable<TossRealtimeServiceOptions['createClient']>;
   private readonly onPriceRefresh: TossRealtimeServiceOptions['onPriceRefresh'];
+  private readonly onRefreshHint: TossRealtimeServiceOptions['onRefreshHint'];
+  private readonly onUserNotification: TossRealtimeServiceOptions['onUserNotification'];
+  private readonly agentEventQueue: TossRealtimeServiceOptions['agentEventQueue'];
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
   private statusSnapshot: TossRealtimeStatus = idleStatus();
   private readonly eventTypeCounts = new Map<string, number>();
+  private readonly refreshHintCounts = new Map<string, number>();
   private activeController: AbortController | null = null;
   private activeJob: Promise<void> | null = null;
 
@@ -76,6 +102,9 @@ class DefaultTossRealtimeService implements TossRealtimeService {
     this.sessionStore = options.sessionStore;
     this.createClient = options.createClient ?? ((session) => new TossSseClient(session));
     this.onPriceRefresh = options.onPriceRefresh;
+    this.onRefreshHint = options.onRefreshHint;
+    this.onUserNotification = options.onUserNotification;
+    this.agentEventQueue = options.agentEventQueue;
     this.retryBaseMs = options.retryBaseMs ?? DEFAULT_RETRY_BASE_MS;
     this.retryMaxMs = options.retryMaxMs ?? DEFAULT_RETRY_MAX_MS;
   }
@@ -88,7 +117,7 @@ class DefaultTossRealtimeService implements TossRealtimeService {
     if (session === null) {
       this.setStatus({
         state: 'failed',
-        lastError: 'No active Toss session',
+        lastError: 'TOSS_SESSION_REQUIRED',
         stoppedAt: new Date().toISOString(),
       });
       return this.status();
@@ -106,7 +135,7 @@ class DefaultTossRealtimeService implements TossRealtimeService {
         if (controller.signal.aborted) return;
         this.setStatus({
           state: 'failed',
-          lastError: safeErrorMessage(err),
+          lastError: 'TOSS_REALTIME_STREAM_FAILED',
           stoppedAt: new Date().toISOString(),
         });
       })
@@ -158,7 +187,7 @@ class DefaultTossRealtimeService implements TossRealtimeService {
         this.setStatus({
           state: 'reconnecting',
           reconnectCount: this.statusSnapshot.reconnectCount + 1,
-          lastError: safeErrorMessage(err),
+          lastError: 'TOSS_REALTIME_STREAM_FAILED',
         });
       }
       await sleep(backoffMs, controller.signal).catch(() => {});
@@ -172,23 +201,76 @@ class DefaultTossRealtimeService implements TossRealtimeService {
     const priceRefreshEventCount = type === 'price-refresh'
       ? this.statusSnapshot.priceRefreshEventCount + 1
       : this.statusSnapshot.priceRefreshEventCount;
+    const userNotificationEventCount = type === 'web-push'
+      ? this.statusSnapshot.userNotificationEventCount + 1
+      : this.statusSnapshot.userNotificationEventCount;
     this.setStatus({
       eventCount: this.statusSnapshot.eventCount + 1,
       priceRefreshEventCount,
+      userNotificationEventCount,
       eventTypes: eventTypeSnapshot(this.eventTypeCounts),
       lastEventType: type,
-      lastStockCode: event.stockCode,
+      lastStockCode: normalizeTossSseRefreshTicker(event.stockCode),
       lastEventAt: event.receivedAt,
       lastPriceRefreshAt: type === 'price-refresh'
         ? event.receivedAt
         : this.statusSnapshot.lastPriceRefreshAt,
+      lastUserNotificationAt: type === 'web-push'
+        ? event.receivedAt
+        : this.statusSnapshot.lastUserNotificationAt,
       lastError: null,
     });
+    this.routeRefreshHints(event);
+    if (type === 'web-push') {
+      void this.dispatchUserNotification(event);
+    }
     if (type === 'price-refresh' && event.stockCode !== null) {
+      this.enqueueMarketMovementAgentEvent(event);
       void this.dispatchPriceRefresh({
         stockCode: event.stockCode,
         receivedAt: event.receivedAt,
       });
+    }
+  }
+
+  private routeRefreshHints(event: TossSseEvent): void {
+    const hints = routeTossSseRefreshHints(event);
+    for (const hint of hints) {
+      this.refreshHintCounts.set(
+        hint.resource,
+        (this.refreshHintCounts.get(hint.resource) ?? 0) + 1,
+      );
+      this.setStatus({
+        refreshHintCount: this.statusSnapshot.refreshHintCount + 1,
+        refreshHints: resourceCountSnapshot(this.refreshHintCounts),
+        lastRefreshHintAt: hint.receivedAt,
+        lastRefreshHintResource: hint.resource,
+        lastRefreshHintTicker: hint.ticker,
+      });
+      if (this.onRefreshHint !== undefined) {
+        void this.dispatchRefreshHint(hint);
+      }
+    }
+  }
+
+  private enqueueMarketMovementAgentEvent(event: TossSseEvent): void {
+    if (this.agentEventQueue === undefined || event.stockCode === null) return;
+    try {
+      const ticker = normalizeAgentEventTicker(event.stockCode);
+      this.agentEventQueue.enqueue({
+        type: 'market_movement_detected',
+        ticker,
+        source: 'toss-sse',
+        publishedAt: null,
+        firstSeenAt: event.receivedAt,
+        relevance: 0.6,
+        confidence: 0.65,
+        reason: 'Toss SSE price-refresh thin notification',
+        dedupeKey: `toss-sse:price-refresh:${ticker}:${event.receivedAt}`,
+        payloadRef: null,
+      });
+    } catch {
+      this.setStatus({ lastError: 'TOSS_AGENT_EVENT_ENQUEUE_FAILED' });
     }
   }
 
@@ -199,11 +281,41 @@ class DefaultTossRealtimeService implements TossRealtimeService {
     });
     try {
       await this.onPriceRefresh?.(event);
-    } catch (err: unknown) {
+    } catch {
       this.setStatus({
         priceRefreshDispatchFailureCount: this.statusSnapshot.priceRefreshDispatchFailureCount + 1,
-        lastError: safeErrorMessage(err),
+        lastError: 'TOSS_PRICE_REFRESH_DISPATCH_FAILED',
       });
+    }
+  }
+
+  private async dispatchRefreshHint(hint: TossSseRefreshHint): Promise<void> {
+    this.setStatus({
+      refreshHintDispatchCount: this.statusSnapshot.refreshHintDispatchCount + 1,
+    });
+    try {
+      await this.onRefreshHint?.(hint);
+    } catch {
+      this.setStatus({
+        refreshHintDispatchFailureCount: this.statusSnapshot.refreshHintDispatchFailureCount + 1,
+        lastError: 'TOSS_REFRESH_HINT_DISPATCH_FAILED',
+      });
+    }
+  }
+
+  private async dispatchUserNotification(event: TossSseEvent): Promise<void> {
+    const ticker = normalizeTossSseRefreshTicker(event.stockCode);
+    const notification: TossUserNotificationPayload = {
+      id: `toss-web-push:${ticker ?? 'unknown'}:${event.receivedAt}`,
+      ticker,
+      receivedAt: event.receivedAt,
+      sourceType: 'web-push',
+      reason: 'Toss SSE web-push notification received',
+    };
+    try {
+      await this.onUserNotification?.(notification);
+    } catch {
+      this.setStatus({ lastError: 'TOSS_USER_NOTIFICATION_DISPATCH_FAILED' });
     }
   }
 
@@ -224,15 +336,24 @@ function idleStatus(): TossRealtimeStatus {
     stoppedAt: null,
     eventCount: 0,
     priceRefreshEventCount: 0,
+    userNotificationEventCount: 0,
     priceRefreshDispatchCount: 0,
     priceRefreshDispatchFailureCount: 0,
+    refreshHintCount: 0,
+    refreshHintDispatchCount: 0,
+    refreshHintDispatchFailureCount: 0,
+    refreshHints: [],
     eventTypes: [],
     reconnectCount: 0,
     lastEventType: null,
     lastStockCode: null,
     lastEventAt: null,
     lastPriceRefreshAt: null,
+    lastUserNotificationAt: null,
     lastPriceRefreshDispatchAt: null,
+    lastRefreshHintAt: null,
+    lastRefreshHintResource: null,
+    lastRefreshHintTicker: null,
     lastError: null,
     thinNotificationOnly: true,
   };
@@ -256,9 +377,15 @@ function eventTypeSnapshot(
     .map(([type, count]) => ({ type, count }));
 }
 
-function safeErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return 'Toss realtime stream failed';
+function resourceCountSnapshot(
+  counts: ReadonlyMap<string, number>,
+): ReadonlyArray<{ readonly resource: string; readonly count: number }> {
+  return [...counts.entries()]
+    .sort(([leftResource, leftCount], [rightResource, rightCount]) => {
+      if (rightCount !== leftCount) return rightCount - leftCount;
+      return leftResource.localeCompare(rightResource);
+    })
+    .map(([resource, count]) => ({ resource, count }));
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

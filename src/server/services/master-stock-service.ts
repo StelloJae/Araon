@@ -3,10 +3,9 @@
  * by client-side search.
  *
  * Lifecycle:
- *   - On boot, the orchestrator calls `maybeRefreshOnBoot()`. The call
- *     returns immediately; if the cache is stale (>24h) or empty, a
- *     background refresh starts and the existing DB rows continue to be
- *     served.
+ *   - `maybeRefreshOnBoot()` is now a legacy maintenance hook. The Toss-first
+ *     composition root does not call it unless KIS master auto refresh is
+ *     explicitly enabled; manual `POST /master/refresh` remains available.
  *   - `refresh()` is also called from `POST /master/refresh`. A single
  *     in-flight refresh promise is reused — concurrent callers share the
  *     same Promise, so `POST /master/refresh` clicked twice never doubles

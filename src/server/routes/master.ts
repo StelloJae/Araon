@@ -8,9 +8,10 @@
  *                              tracked catalog (`stocks` table). Polling
  *                              picks it up on the next cycle automatically.
  *
- * No auth gating beyond what the rest of the local-only server already
- * enforces. `POST /master/refresh` is idempotent — concurrent calls share
- * one in-flight Promise via `MasterStockService`.
+ * `GET /master/list` and local promotion routes are cache-only. `POST
+ * /master/refresh` is credential-gated so a clean first run does not contact
+ * KIS before credentials exist; concurrent refreshes share one in-flight
+ * Promise via `MasterStockService`.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -24,6 +25,10 @@ import type {
   MasterStockRepository,
   StockRepository,
 } from '../db/repositories.js';
+import {
+  krTickerFromTossProductCode,
+  normalizeTossProductCode,
+} from '@shared/product-identity.js';
 
 const log = createChildLogger('routes/master');
 
@@ -38,7 +43,15 @@ interface MasterRoutesOptions {
 }
 
 const fromMasterBodySchema = z.object({
-  ticker: z.string().regex(/^\d{6}$/, 'ticker must be exactly 6 digits'),
+  ticker: z.string()
+    .trim()
+    .toUpperCase()
+    .regex(/^A?\d{6}$/, 'ticker must be a 6-digit KRX ticker or A-prefixed Toss product code')
+    .transform((ticker) => ticker.replace(/^A/, '')),
+});
+
+const fromTossSearchBodySchema = z.object({
+  ticker: z.string().trim(),
 });
 
 export async function masterRoutes(
@@ -59,7 +72,7 @@ export async function masterRoutes(
         success: false,
         error: {
           code: 'MASTER_REFRESH_REQUIRES_CREDENTIALS',
-          message: 'KIS credentials are required before refreshing public master files',
+          message: 'Legacy KIS master refresh is optional and requires KIS credentials',
         },
       });
     }
@@ -125,13 +138,33 @@ export async function masterRoutes(
         },
       });
     }
-    const parsed = fromMasterBodySchema.safeParse(request.body);
+    const parsed = fromTossSearchBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply
         .code(400)
         .send({ success: false, error: parsed.error.issues });
     }
-    const { ticker } = parsed.data;
+    const productCode = normalizeTossProductCode(parsed.data.ticker);
+    if (productCode === null) {
+      return reply.code(400).send({
+        success: false,
+        error: {
+          code: 'INVALID_TOSS_PRODUCT_CODE',
+          message: 'Toss product code is required.',
+        },
+      });
+    }
+    const ticker = krTickerFromTossProductCode(productCode);
+    if (ticker === null) {
+      return reply.code(409).send({
+        success: false,
+        error: {
+          code: 'TOSS_ONLY_PRODUCT_NOT_TRACKABLE',
+          message: 'This Toss product is not yet supported by the local Araon catalog.',
+          productCode,
+        },
+      });
+    }
 
     const existing = stockRepo.findByTicker(ticker);
     if (existing !== null) {
@@ -162,16 +195,30 @@ export async function masterRoutes(
         },
       });
     }
+    const market = stock.market === 'KOSPI' || stock.market === 'KOSDAQ'
+      ? stock.market
+      : null;
+    const stockTicker = stock.krTicker ?? stock.ticker;
+    if (!stock.kisEligible || stock.krTicker === null || market === null) {
+      return reply.code(409).send({
+        success: false,
+        error: {
+          code: 'TOSS_ONLY_PRODUCT_NOT_TRACKABLE',
+          message: 'This Toss product is not yet supported by the local Araon catalog.',
+          productCode: stock.productCode,
+        },
+      });
+    }
 
     await stockRepo.bulkUpsert([
-      { ticker: stock.ticker, name: stock.name, market: stock.market },
+      { ticker: stockTicker, name: stock.name, market },
     ]);
     log.info({ ticker, name: stock.name }, 'promoted Toss search ticker to tracked catalog');
 
     return reply.code(201).send({
       success: true,
       data: {
-        stock: { ticker: stock.ticker, name: stock.name, market: stock.market },
+        stock: { ticker: stockTicker, name: stock.name, market },
         created: true,
         source: 'toss-public-search',
       },

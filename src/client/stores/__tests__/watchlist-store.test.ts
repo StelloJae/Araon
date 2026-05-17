@@ -32,3 +32,87 @@ describe('useWatchlistStore.removeFavorite', () => {
     expect(useWatchlistStore.getState().favorites).toBe(before);
   });
 });
+
+describe('useWatchlistStore.setWatchlistItems', () => {
+  it('preserves normalized sync metadata by UI code', async () => {
+    const { useWatchlistStore } = await import('../watchlist-store');
+
+    useWatchlistStore.getState().setWatchlistItems([
+      {
+        productCode: 'A005930',
+        krTicker: '005930',
+        symbol: '005930',
+        name: '삼성전자',
+        market: 'KOSPI',
+        currency: 'KRW',
+        source: 'toss',
+        syncState: 'toss_synced',
+        kisEligible: true,
+        tossEligible: true,
+        chartEligible: true,
+        quoteEligible: true,
+        realtimeTrackingState: 'tracked',
+        addedAt: null,
+        groupName: '기본',
+        base: null,
+        last: null,
+      },
+      {
+        productCode: 'A0011T0',
+        krTicker: null,
+        symbol: '0011T0',
+        name: '채비',
+        market: 'TOSS_ONLY',
+        currency: 'KRW',
+        source: 'toss',
+        syncState: 'sync_unavailable',
+        kisEligible: false,
+        tossEligible: true,
+        chartEligible: false,
+        quoteEligible: false,
+        realtimeTrackingState: 'not_eligible',
+        addedAt: null,
+        groupName: '기본',
+        base: null,
+        last: null,
+      },
+    ]);
+
+    const state = useWatchlistStore.getState();
+    expect(state.favorites.has('005930')).toBe(true);
+    expect(state.favorites.has('0011T0')).toBe(true);
+    expect(state.itemsByCode['005930']?.syncState).toBe('toss_synced');
+    expect(state.itemsByCode['0011T0']?.kisEligible).toBe(false);
+  });
+
+  it('clears normalized metadata when legacy favorites are seeded', async () => {
+    const { useWatchlistStore } = await import('../watchlist-store');
+    useWatchlistStore.getState().setWatchlistItems([
+      {
+        productCode: 'A005930',
+        krTicker: '005930',
+        symbol: '005930',
+        name: '삼성전자',
+        market: 'KOSPI',
+        currency: 'KRW',
+        source: 'toss',
+        syncState: 'toss_synced',
+        kisEligible: true,
+        tossEligible: true,
+        chartEligible: true,
+        quoteEligible: true,
+        realtimeTrackingState: 'tracked',
+        addedAt: null,
+        groupName: null,
+        base: null,
+        last: null,
+      },
+    ]);
+
+    useWatchlistStore.getState().setFavorites(['000660']);
+
+    const state = useWatchlistStore.getState();
+    expect(state.favorites.has('000660')).toBe(true);
+    expect(state.itemsByCode).toEqual({});
+  });
+});

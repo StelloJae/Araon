@@ -153,6 +153,106 @@ describe('stock news feed service', () => {
     expect(items[0]).toMatchObject({ id: 'news-0', title: '다시 본 뉴스', isNew: false });
   });
 
+  it('treats Naver article URL variants as the same cached news item', async () => {
+    const upsertMany = vi.fn((items) =>
+      items.map((item: any, index: number) => ({ id: `news-${index}`, ...item })),
+    );
+    const listByTicker = vi.fn(() => [
+      {
+        id: 'cached-0',
+        ticker: '005930',
+        source: 'naver-finance' as const,
+        title: '기존 뉴스',
+        url: 'https://n.news.naver.com/mnews/article/092/0002421682',
+        description: null,
+        publishedAt: null,
+        fetchedAt: '2026-05-05T09:00:00.000Z',
+      },
+    ]);
+    const service = createStockNewsFeedService({
+      repo: {
+        upsertMany,
+        listByTicker,
+        countByTicker: vi.fn(() => 1),
+        recordFetchStatus: vi.fn(),
+        getFetchStatus: vi.fn(() => null),
+      },
+      fetchHtml: vi.fn(async () => ''),
+      searchNews: vi.fn(async () => [
+        {
+          title: '삼성전자 검색 뉴스',
+          url: 'https://news.naver.com/main/read.naver?mode=LSD&mid=sec&oid=092&aid=0002421682&sid1=101',
+          description: '검색 API가 제공한 기사 패시지',
+          publishedAt: '2026-05-06T08:30:00.000Z',
+        },
+      ]),
+    });
+
+    const items = await service.refresh({
+      ticker: '005930',
+      name: '삼성전자',
+      now: new Date('2026-05-06T09:00:00.000Z'),
+    });
+
+    expect(upsertMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        source: 'naver-search',
+        url: 'https://n.news.naver.com/mnews/article/092/0002421682',
+      }),
+    ]);
+    expect(items[0]).toMatchObject({
+      title: '삼성전자 검색 뉴스',
+      isNew: false,
+    });
+  });
+
+  it('treats same-day normalized title variants as the same cached news cluster', async () => {
+    const upsertMany = vi.fn((items) =>
+      items.map((item: any, index: number) => ({ id: `news-${index}`, ...item })),
+    );
+    const listByTicker = vi.fn(() => [
+      {
+        id: 'cached-0',
+        ticker: '005930',
+        source: 'naver-finance' as const,
+        title: '[특징주] 삼성전자, AI 반도체 수혜 기대감',
+        url: 'https://news.example.com/cached-article',
+        description: null,
+        publishedAt: '2026-05-06T08:30:00.000Z',
+        fetchedAt: '2026-05-06T08:31:00.000Z',
+      },
+    ]);
+    const service = createStockNewsFeedService({
+      repo: {
+        upsertMany,
+        listByTicker,
+        countByTicker: vi.fn(() => 1),
+        recordFetchStatus: vi.fn(),
+        getFetchStatus: vi.fn(() => null),
+      },
+      fetchHtml: vi.fn(async () => ''),
+      searchNews: vi.fn(async () => [
+        {
+          title: '삼성전자 AI반도체 수혜 기대감',
+          url: 'https://news.example.com/search-variant',
+          description: '검색 API가 제공한 기사 패시지',
+          publishedAt: '2026-05-06T08:32:00.000Z',
+        },
+      ]),
+    });
+
+    const items = await service.refresh({
+      ticker: '005930',
+      name: '삼성전자',
+      now: new Date('2026-05-06T09:00:00.000Z'),
+    });
+
+    expect(items[0]).toMatchObject({
+      title: '삼성전자 AI반도체 수혜 기대감',
+      isNew: false,
+    });
+  });
+
   it('adds Naver Search API news when credentials are configured', async () => {
     const upsertMany = vi.fn((items) =>
       items.map((item: any, index: number) => ({ id: `news-${index}`, ...item })),
@@ -190,6 +290,49 @@ describe('stock news feed service', () => {
         description: '검색 API가 제공한 기사 패시지',
         url: 'https://news.example.com/article',
         publishedAt: '2026-05-06T08:30:00.000Z',
+      }),
+    ]);
+  });
+
+  it('ignores Naver Search results that do not mention the requested ticker or stock name', async () => {
+    const upsertMany = vi.fn((items) =>
+      items.map((item: any, index: number) => ({ id: `news-${index}`, ...item })),
+    );
+    const service = createStockNewsFeedService({
+      repo: {
+        upsertMany,
+        listByTicker: vi.fn(() => []),
+        countByTicker: vi.fn(() => 0),
+        recordFetchStatus: vi.fn(),
+        getFetchStatus: vi.fn(() => null),
+      },
+      fetchHtml: vi.fn(async () => ''),
+      searchNews: vi.fn(async () => [
+        {
+          title: '다른 종목 실적 개선 소식',
+          url: 'https://news.example.com/other-stock',
+          description: '요청 종목과 관계없는 기사 패시지',
+          publishedAt: '2026-05-06T08:30:00.000Z',
+        },
+        {
+          title: '삼성전자 검색 뉴스',
+          url: 'https://news.example.com/samsung',
+          description: null,
+          publishedAt: '2026-05-06T08:31:00.000Z',
+        },
+      ]),
+    });
+
+    await service.refresh({
+      ticker: '005930',
+      name: '삼성전자',
+      now: new Date('2026-05-06T09:00:00.000Z'),
+    });
+
+    expect(upsertMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        title: '삼성전자 검색 뉴스',
+        url: 'https://news.example.com/samsung',
       }),
     ]);
   });
@@ -242,7 +385,7 @@ describe('stock news feed service', () => {
       fetchHtml: vi.fn(async () => ''),
       searchNews: vi.fn(async () =>
         Array.from({ length: 25 }, (_, index) => ({
-          title: `검색 뉴스 ${index}`,
+          title: `삼성전자 검색 뉴스 ${index}`,
           url: `https://news.example.com/article-${index}`,
           description: null,
           publishedAt: '2026-05-06T08:30:00.000Z',

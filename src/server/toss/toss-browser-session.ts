@@ -44,6 +44,14 @@ export interface TossBrowserSessionAssessment {
   readonly expiresAt: string | null;
 }
 
+export interface TossCookieInstallParam {
+  readonly name: string;
+  readonly value: string;
+  readonly domain: '.tossinvest.com';
+  readonly path: '/';
+  readonly secure: true;
+}
+
 export function assessTossBrowserSession(
   state: TossBrowserState,
   now: Date = new Date(),
@@ -92,6 +100,20 @@ export function tossSessionFromBrowserState(
     serverExpiresAt: null,
     persistent: assessment.persistent,
   };
+}
+
+export function tossCookieInstallParams(
+  cookies: Readonly<Record<string, string>>,
+): TossCookieInstallParam[] {
+  return Object.entries(cookies)
+    .filter(([name, value]) => truthyString(name) && truthyString(value))
+    .map(([name, value]) => ({
+      name,
+      value,
+      domain: '.tossinvest.com' as const,
+      path: '/' as const,
+      secure: true as const,
+    }));
 }
 
 function tossCookieRecord(

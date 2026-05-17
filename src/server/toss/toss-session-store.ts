@@ -40,6 +40,7 @@ export interface TossSessionSummary {
   retrievedAt: string | null;
   expiresAt: string | null;
   serverExpiresAt: string | null;
+  effectiveExpiresAt: string | null;
   expiresInMs: number | null;
 }
 
@@ -155,11 +156,13 @@ export function summarizeTossSession(
       retrievedAt: null,
       expiresAt: null,
       serverExpiresAt: null,
+      effectiveExpiresAt: null,
       expiresInMs: null,
     };
   }
-  const expiresAtMs = earliestExpiryMs(session);
-  const expiresInMs = expiresAtMs === null ? null : expiresAtMs - now.getTime();
+  const effectiveExpiry = earliestExpiry(session);
+  const expiresInMs =
+    effectiveExpiry.expiresAtMs === null ? null : effectiveExpiry.expiresAtMs - now.getTime();
   const state = classifySessionState(session, expiresInMs);
   return {
     configured: true,
@@ -172,16 +175,25 @@ export function summarizeTossSession(
     retrievedAt: session.retrievedAt,
     expiresAt: session.expiresAt,
     serverExpiresAt: session.serverExpiresAt,
+    effectiveExpiresAt: effectiveExpiry.expiresAt,
     expiresInMs,
   };
 }
 
-function earliestExpiryMs(session: TossSession): number | null {
+function earliestExpiry(session: TossSession): {
+  expiresAt: string | null;
+  expiresAtMs: number | null;
+} {
   const values = [session.expiresAt, session.serverExpiresAt]
-    .map((value) => value === null ? null : Date.parse(value))
-    .filter((value): value is number => value !== null && Number.isFinite(value));
-  if (values.length === 0) return null;
-  return Math.min(...values);
+    .map((value) => {
+      if (value === null) return null;
+      const expiresAtMs = Date.parse(value);
+      if (!Number.isFinite(expiresAtMs)) return null;
+      return { expiresAt: value, expiresAtMs };
+    })
+    .filter((value): value is { expiresAt: string; expiresAtMs: number } => value !== null)
+    .sort((a, b) => a.expiresAtMs - b.expiresAtMs);
+  return values[0] ?? { expiresAt: null, expiresAtMs: null };
 }
 
 function classifySessionState(

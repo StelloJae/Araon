@@ -5,6 +5,11 @@ import type {
   TossRealtimeRankingResponse,
   TossRealtimeRankingTimestampStatus,
 } from '@shared/types.js';
+import {
+  type AraonProductMarket,
+  createAraonProductIdentity,
+  krTickerFromTossProductCode,
+} from '@shared/product-identity.js';
 
 const DEFAULT_INFO_BASE_URL = 'https://wts-info-api.tossinvest.com';
 const DEFAULT_REFRESH_INTERVAL_MS = 15_000;
@@ -44,8 +49,13 @@ export interface TossStockByTickerOptions {
 export interface TossStockSearchItem {
   ticker: string;
   productCode: string;
+  krTicker: string | null;
   name: string;
-  market: 'KOSPI' | 'KOSDAQ';
+  market: AraonProductMarket;
+  tossEligible: boolean;
+  kisEligible: boolean;
+  chartEligible: boolean;
+  quoteEligible: boolean;
   matchType: string | null;
   source: 'toss-public-search';
 }
@@ -228,8 +238,9 @@ export async function fetchTossStockSearch({
   for (const row of searchRows) {
     if (row.productCode === null) continue;
     const info = infoMap.get(row.productCode);
-    if (info === undefined) continue;
-    const item = mapStockInfoToSearchItem(info, row.matchType);
+    const item = info !== undefined
+      ? mapStockInfoToSearchItem(info, row.matchType)
+      : mapTossOnlySearchItem(row);
     if (item === null) continue;
     out.push(item);
     if (out.length >= safeLimit) break;
@@ -301,10 +312,11 @@ async function fetchStockInfoMap(
 
 function parseSearchRows(rawRows: unknown): Array<{
   productCode: string | null;
+  name: string | null;
   matchType: string | null;
 }> {
   if (!Array.isArray(rawRows)) return [];
-  const out: Array<{ productCode: string | null; matchType: string | null }> = [];
+  const out: Array<{ productCode: string | null; name: string | null; matchType: string | null }> = [];
   const seen = new Set<string>();
   for (const raw of rawRows) {
     if (typeof raw !== 'object' || raw === null) continue;
@@ -314,6 +326,7 @@ function parseSearchRows(rawRows: unknown): Array<{
     seen.add(productCode);
     out.push({
       productCode,
+      name: readString(row.stockName),
       matchType: readString(row.matchType),
     });
   }
@@ -340,9 +353,44 @@ function mapStockInfoToSearchItem(
   return {
     ticker,
     productCode,
+    krTicker: ticker,
     name,
     market,
+    tossEligible: true,
+    kisEligible: true,
+    chartEligible: true,
+    quoteEligible: true,
     matchType,
+    source: 'toss-public-search',
+  };
+}
+
+function mapTossOnlySearchItem(row: {
+  productCode: string | null;
+  name: string | null;
+  matchType: string | null;
+}): TossStockSearchItem | null {
+  if (row.productCode === null || row.name === null) return null;
+  if (krTickerFromTossProductCode(row.productCode) !== null) return null;
+  const identity = createAraonProductIdentity({
+    productCode: row.productCode,
+    symbol: row.productCode,
+    name: row.name,
+    market: row.productCode.startsWith('US') ? 'US' : 'TOSS_ONLY',
+    source: 'toss',
+  });
+  if (identity === null) return null;
+  return {
+    ticker: identity.symbol,
+    productCode: identity.productCode,
+    krTicker: identity.krTicker,
+    name: identity.name,
+    market: identity.market,
+    tossEligible: identity.tossEligible,
+    kisEligible: identity.kisEligible,
+    chartEligible: identity.chartEligible,
+    quoteEligible: identity.quoteEligible,
+    matchType: row.matchType,
     source: 'toss-public-search',
   };
 }

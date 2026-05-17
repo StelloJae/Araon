@@ -198,7 +198,7 @@ describe('toss public client', () => {
     expect(result.message).toContain('토스 공개 인기 랭킹');
   });
 
-  it('searches Toss stocks and keeps only Korean stocks with known markets', async () => {
+  it('searches Toss stocks and marks Toss-only products as unsupported for KIS-backed local registration', async () => {
     const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/v2/search/stocks')) {
@@ -209,7 +209,7 @@ describe('toss public client', () => {
             stocks: [
               { stockCode: 'A005930', stockName: '삼성전자', matchType: 'EXACT' },
               { stockCode: 'A028260', stockName: '삼성물산', matchType: 'AFFILIATE' },
-              { stockCode: 'US123456789', stockName: 'Samsung US', matchType: 'UNKNOWN' },
+              { stockCode: '0011T0', stockName: '채비', matchType: 'UNKNOWN' },
             ],
           },
         });
@@ -244,17 +244,40 @@ describe('toss public client', () => {
       {
         ticker: '005930',
         productCode: 'A005930',
+        krTicker: '005930',
         name: '삼성전자',
         market: 'KOSPI',
+        tossEligible: true,
+        kisEligible: true,
+        chartEligible: true,
+        quoteEligible: true,
         matchType: 'EXACT',
         source: 'toss-public-search',
       },
       {
         ticker: '028260',
         productCode: 'A028260',
+        krTicker: '028260',
         name: '삼성물산',
         market: 'KOSPI',
+        tossEligible: true,
+        kisEligible: true,
+        chartEligible: true,
+        quoteEligible: true,
         matchType: 'AFFILIATE',
+        source: 'toss-public-search',
+      },
+      {
+        ticker: '0011T0',
+        productCode: '0011T0',
+        krTicker: null,
+        name: '채비',
+        market: 'TOSS_ONLY',
+        tossEligible: true,
+        kisEligible: false,
+        chartEligible: false,
+        quoteEligible: true,
+        matchType: 'UNKNOWN',
         source: 'toss-public-search',
       },
     ]);
@@ -283,8 +306,13 @@ describe('toss public client', () => {
     expect(row).toEqual({
       ticker: '000660',
       productCode: 'A000660',
+      krTicker: '000660',
       name: 'SK하이닉스',
       market: 'KOSPI',
+      tossEligible: true,
+      kisEligible: true,
+      chartEligible: true,
+      quoteEligible: true,
       matchType: null,
       source: 'toss-public-search',
     });

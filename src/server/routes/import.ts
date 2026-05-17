@@ -6,7 +6,14 @@
  *     Calls the KIS '관심종목 그룹조회' endpoint, diffs against existing stocks,
  *     and inserts only new tickers.
  *
- *     Response 200: { imported: number; skipped: number; groups: string[] }
+ *     Response 200: {
+ *       imported: number;
+ *       skipped: number;
+ *       groups: string[];
+ *       source: 'kis-legacy-watchlist-import';
+ *       role: 'optional_migration_helper';
+ *       primaryWatchlistProvider: 'toss-watchlist';
+ *     }
  *     Response 503: { success: false, error: { code: 'KIS_RUNTIME_NOT_READY', runtime: string } }
  *       when the KIS runtime has not been started yet.
  *     Response 502: { error: 'kis-watchlist-unavailable'; hint: string }
@@ -51,21 +58,15 @@ export function registerRoutes(
     } catch (err: unknown) {
       if (err instanceof KisWatchlistUnavailableError) {
         log.warn(
-          { err: err.message, cause: (err as { cause?: unknown }).cause },
+          { detail: err.message, diagnostic: err.diagnostic },
           'KIS watchlist unavailable — returning 502',
         );
-        // Surface the KIS-side detail to the client so the user can act on it
-        // (e.g. wrong TR_ID, no groups registered, paper-only restriction).
-        const causeMsg =
-          (err as { cause?: { message?: unknown } }).cause &&
-          typeof (err as { cause?: { message?: unknown } }).cause?.message === 'string'
-            ? ((err as { cause?: { message?: unknown } }).cause as { message: string }).message
-            : null;
         return reply.status(502).send({
           error: 'kis-watchlist-unavailable',
           hint: 'KIS HTS/MTS에 관심종목 그룹이 등록되어 있는지 확인하세요.',
           detail: err.message,
-          cause: causeMsg,
+          cause: err.diagnostic?.message ?? null,
+          diagnostic: err.diagnostic,
         });
       }
       throw err;
@@ -90,7 +91,7 @@ export function registerRoutes(
     const groupNames = groups.map((g) => g.groupName);
 
     log.info(
-      { imported: newStocks.length, skipped, groups: groupNames },
+      { imported: newStocks.length, skipped, groupCount: groupNames.length },
       'KIS watchlist import complete',
     );
 
@@ -98,6 +99,9 @@ export function registerRoutes(
       imported: newStocks.length,
       skipped,
       groups: groupNames,
+      source: 'kis-legacy-watchlist-import',
+      role: 'optional_migration_helper',
+      primaryWatchlistProvider: 'toss-watchlist',
     });
   });
 }

@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { tossAuthRoutes } from '../toss-auth.js';
 import type { TossLoginService, TossLoginStatus } from '../../toss/toss-cdp-login-service.js';
+import type {
+  TossSessionExtensionResult,
+  TossSessionExtensionService,
+} from '../../toss/toss-session-extension-service.js';
 import type { TossSessionStore, TossSessionSummary } from '../../toss/toss-session-store.js';
 
 function loggedOutStatus(): TossSessionSummary {
@@ -17,6 +21,7 @@ function loggedOutStatus(): TossSessionSummary {
     retrievedAt: null,
     expiresAt: null,
     serverExpiresAt: null,
+    effectiveExpiresAt: null,
     expiresInMs: null,
   };
 }
@@ -63,6 +68,27 @@ function makeLoginService(): TossLoginService {
       updatedAt: '2026-05-11T06:00:01.000Z',
       finishedAt: '2026-05-11T06:00:01.000Z',
       message: 'Toss login capture cancelled',
+    })),
+  };
+}
+
+function extensionResult(): TossSessionExtensionResult {
+  return {
+    state: 'succeeded',
+    requestedAt: '2026-05-11T06:00:00.000Z',
+    finishedAt: '2026-05-11T06:00:04.000Z',
+    serverExpiresAt: '2026-05-17T22:03:00.000Z',
+    approvalState: 'COMPLETED',
+  };
+}
+
+function makeExtensionService(): TossSessionExtensionService {
+  return {
+    extend: vi.fn(async () => extensionResult()),
+    refreshServerExpiry: vi.fn(async () => ({
+      state: 'succeeded',
+      checkedAt: '2026-05-11T06:00:00.000Z',
+      serverExpiresAt: '2026-05-17T22:03:00.000Z',
     })),
   };
 }
@@ -139,7 +165,7 @@ describe('toss auth routes', () => {
       success: true,
       data: { state: 'cancelled' },
     });
-    expect(JSON.stringify(start.json())).not.toContain('session-value');
+    expect(JSON.stringify(start.json())).not.toContain('[test-session]');
   });
 
   it('runs the login-success callback once when QR capture succeeds', async () => {
@@ -183,6 +209,50 @@ describe('toss auth routes', () => {
     expect(onSessionCleared).toHaveBeenCalledTimes(1);
   });
 
+  it('extends the Toss session through a sanitized phone-approval route', async () => {
+    const store = makeStore();
+    const extensionService = makeExtensionService();
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, { sessionStore: store, extensionService });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/toss/auth/session/extend',
+      payload: { timeoutMs: 60_000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(extensionService.extend).toHaveBeenCalledWith({ timeoutMs: 60_000 });
+    expect(res.json()).toEqual({ success: true, data: extensionResult() });
+    expect(JSON.stringify(res.json())).not.toContain('extension-doc-id');
+    expect(JSON.stringify(res.json())).not.toContain('[test-session]');
+  });
+
+  it('rejects session extension when unavailable or body is invalid', async () => {
+    const store = makeStore();
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, { sessionStore: store });
+
+    const unavailable = await app.inject({
+      method: 'POST',
+      url: '/toss/auth/session/extend',
+      payload: {},
+    });
+    expect(unavailable.statusCode).toBe(503);
+
+    const appWithExtension = Fastify({ logger: false });
+    await appWithExtension.register(tossAuthRoutes, {
+      sessionStore: store,
+      extensionService: makeExtensionService(),
+    });
+    const invalid = await appWithExtension.inject({
+      method: 'POST',
+      url: '/toss/auth/session/extend',
+      payload: { timeoutMs: 1 },
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
+
   it('rejects login start when the service is unavailable or body is invalid', async () => {
     const store = makeStore();
     const app = Fastify({ logger: false });
@@ -204,5 +274,107 @@ describe('toss auth routes', () => {
       payload: { timeoutMs: 1 },
     });
     expect(invalid.statusCode).toBe(400);
+  });
+
+  it('does not expose raw Toss session values when auth status fails', async () => {
+    const store = makeStore();
+    store.status = vi.fn(async () => {
+      throw new Error('SESSION=[test-session] UTK=[test-utk] accountRef=account-ref');
+    });
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, { sessionStore: store });
+
+    const res = await app.inject({ method: 'GET', url: '/toss/auth/status' });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({
+      success: false,
+      error: {
+        code: 'TOSS_AUTH_REQUEST_FAILED',
+        message: 'Toss auth request failed',
+      },
+    });
+    expect(res.body).not.toContain('[test-session]');
+    expect(res.body).not.toContain('account-ref');
+  });
+
+  it('does not expose raw Toss session values when session extension fails', async () => {
+    const store = makeStore();
+    const extensionService = makeExtensionService();
+    extensionService.extend = vi.fn(async () => {
+      throw new Error('extension-doc-id failed for SESSION=[test-session]');
+    });
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, { sessionStore: store, extensionService });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/toss/auth/session/extend',
+      payload: { timeoutMs: 60_000 },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({
+      success: false,
+      error: {
+        code: 'TOSS_AUTH_REQUEST_FAILED',
+        message: 'Toss auth request failed',
+      },
+    });
+    expect(res.body).not.toContain('extension-doc-id');
+    expect(res.body).not.toContain('[test-session]');
+  });
+
+  it('does not expose raw Toss session values when login start fails', async () => {
+    const store = makeStore();
+    const loginService = makeLoginService();
+    loginService.start = vi.fn(async () => {
+      throw new Error('CDP failed near browserSessionId=[test-browser-session]');
+    });
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, { sessionStore: store, loginService });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/toss/auth/login/start',
+      payload: { timeoutMs: 60_000 },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({
+      success: false,
+      error: {
+        code: 'TOSS_AUTH_REQUEST_FAILED',
+        message: 'Toss auth request failed',
+      },
+    });
+    expect(res.body).not.toContain('browser-[test-session]');
+  });
+
+  it('does not expose raw Toss login failure messages in status payloads', async () => {
+    const store = makeStore();
+    const loginService = makeLoginService();
+    loginService.status = vi.fn(() => ({
+      ...loginStatus(),
+      state: 'failed',
+      updatedAt: '2026-05-11T06:00:05.000Z',
+      finishedAt: '2026-05-11T06:00:05.000Z',
+      message: 'Chrome failed near SESSION=[test-session] browserSessionId=[test-browser-session]',
+    }));
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, { sessionStore: store, loginService });
+
+    const res = await app.inject({ method: 'GET', url: '/toss/auth/login/status' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      success: true,
+      data: {
+        state: 'failed',
+        message: 'TOSS_LOGIN_CAPTURE_FAILED',
+      },
+    });
+    expect(res.body).not.toContain('[test-session]');
+    expect(res.body).not.toContain('browser-[test-session]');
   });
 });

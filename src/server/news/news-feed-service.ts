@@ -67,11 +67,8 @@ export function createStockNewsFeedService(
     const parsedItems: ParsedStockNewsItem[] = [];
     const errors: unknown[] = [];
     try {
-      const existingUrls = new Set(
-        options.repo.listByTicker(input.ticker, 100).flatMap((item) => [
-          item.url,
-          normalizeMaybeNaverFinanceNewsUrl(item.url),
-        ]),
+      const existingIdentityKeys = new Set(
+        options.repo.listByTicker(input.ticker, 100).flatMap((item) => newsIdentityKeys(item)),
       );
       try {
         const html = await fetchHtml(url);
@@ -84,15 +81,17 @@ export function createStockNewsFeedService(
           const name = input.name?.trim() || input.ticker;
           const searchItems = await options.searchNews({ ticker: input.ticker, name, now: input.now });
           parsedItems.push(
-            ...searchItems.map((item) => ({
-              ticker: input.ticker,
-              source: 'naver-search' as const,
-              title: item.title,
-              url: item.url,
-              description: item.description,
-              publishedAt: item.publishedAt,
-              fetchedAt,
-            })),
+            ...searchItems
+              .filter((item) => isRelevantSearchNewsResult(item, input.ticker, name))
+              .map((item) => ({
+                ticker: input.ticker,
+                source: 'naver-search' as const,
+                title: item.title,
+                url: normalizeNewsUrl(item.url),
+                description: item.description,
+                publishedAt: item.publishedAt,
+                fetchedAt,
+              })),
           );
         } catch (err: unknown) {
           errors.push(err);
@@ -111,7 +110,7 @@ export function createStockNewsFeedService(
       if (parsedItems.length === 0) return options.repo.listByTicker(input.ticker);
       return options.repo.upsertMany(dedupeNewsItems(parsedItems)).map((item) => ({
         ...item,
-        isNew: !existingUrls.has(item.url),
+        isNew: !newsIdentityKeys(item).some((key) => existingIdentityKeys.has(key)),
       }));
     } catch (err: unknown) {
       options.repo.recordFetchStatus({
@@ -200,21 +199,9 @@ function parseNaverFinanceAnchor(
 }
 
 function normalizeNaverFinanceNewsUrl(href: string): string {
-  const url = new URL(
+  return normalizeNewsUrl(
     href.startsWith('http') ? href : `https://finance.naver.com${href.startsWith('/') ? '' : '/'}${href}`,
   );
-  const officeId = url.searchParams.get('office_id') ?? url.searchParams.get('officeId');
-  const articleId = url.searchParams.get('article_id') ?? url.searchParams.get('articleId');
-  if (officeId !== null && articleId !== null) {
-    return `https://n.news.naver.com/mnews/article/${officeId}/${articleId}`;
-  }
-  return url.toString();
-}
-
-function normalizeMaybeNaverFinanceNewsUrl(href: string): string {
-  return href.includes('/item/news_read.') || href.includes('/item/newsRead.')
-    ? normalizeNaverFinanceNewsUrl(href)
-    : href;
 }
 
 function parseNaverFinanceDate(value: string): string | null {
@@ -273,11 +260,108 @@ function dedupeNewsItems(items: ParsedStockNewsItem[]): ParsedStockNewsItem[] {
   const seen = new Set<string>();
   const result: ParsedStockNewsItem[] = [];
   for (const item of items) {
-    if (seen.has(item.url)) continue;
-    seen.add(item.url);
-    result.push(item);
+    const normalized = { ...item, url: normalizeNewsUrl(item.url) };
+    const keys = newsIdentityKeys(normalized);
+    if (keys.some((key) => seen.has(key))) continue;
+    for (const key of keys) seen.add(key);
+    result.push(normalized);
   }
   return result.slice(0, 120);
+}
+
+function newsIdentityKeys(
+  item: Pick<StockNewsItem, 'ticker' | 'title' | 'url' | 'publishedAt' | 'fetchedAt'>,
+): string[] {
+  const keys = [`url:${normalizeNewsUrl(item.url)}`];
+  const clusterKey = newsTitleClusterKey(item);
+  if (clusterKey !== null) keys.push(`cluster:${clusterKey}`);
+  return keys;
+}
+
+function newsTitleClusterKey(
+  item: Pick<StockNewsItem, 'ticker' | 'title' | 'publishedAt' | 'fetchedAt'>,
+): string | null {
+  const title = normalizeNewsClusterTitle(item.title);
+  const day = newsDateBucket(item.publishedAt ?? item.fetchedAt);
+  if (title.length < 8 || day === null) return null;
+  return `${item.ticker}:${day}:${title}`;
+}
+
+function normalizeNewsClusterTitle(value: string): string {
+  return cleanText(value)
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/^\s*[\[({【][^\])}】]{1,12}[\])}】]\s*/g, '')
+    .replace(/[\s"'“”‘’·.,!?:;…~\-_/\\|()[\]{}<>《》〈〉「」『』【】]+/g, '');
+}
+
+function newsDateBucket(value: string | null): string | null {
+  if (value === null) return null;
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function isRelevantSearchNewsResult(
+  item: StockSearchNewsResult,
+  ticker: string,
+  name: string,
+): boolean {
+  const haystack = normalizeSearchMatchText(`${item.title} ${item.description ?? ''}`);
+  const tickerToken = normalizeSearchMatchText(ticker);
+  const nameToken = normalizeSearchMatchText(name);
+  return (tickerToken.length > 0 && haystack.includes(tickerToken))
+    || (nameToken.length > 1 && haystack.includes(nameToken));
+}
+
+function normalizeSearchMatchText(value: string): string {
+  return cleanText(value)
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s"'“”‘’·.,!?:;…~\-_/\\|()[\]{}<>《》〈〉「」『』【】]+/g, '');
+}
+
+function normalizeNewsUrl(value: string): string {
+  const raw = value.trim();
+  if (raw.length === 0) return raw;
+  try {
+    const url = new URL(raw);
+    const officeId = url.searchParams.get('office_id')
+      ?? url.searchParams.get('officeId')
+      ?? url.searchParams.get('oid');
+    const articleId = url.searchParams.get('article_id')
+      ?? url.searchParams.get('articleId')
+      ?? url.searchParams.get('aid');
+    if (officeId !== null && articleId !== null && isNaverNewsHost(url.hostname)) {
+      return canonicalNaverArticleUrl(officeId, articleId);
+    }
+
+    const pathMatch = url.pathname.match(/\/(?:mnews\/)?article\/([^/]+)\/([^/]+)/);
+    if (pathMatch !== null && isNaverNewsHost(url.hostname)) {
+      const [, pathOfficeId, pathArticleId] = pathMatch;
+      if (pathOfficeId !== undefined && pathArticleId !== undefined) {
+        return canonicalNaverArticleUrl(pathOfficeId, pathArticleId);
+      }
+    }
+
+    url.hash = '';
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(utm_|fbclid$|gclid$|wbraid$|gbraid$)/i.test(key)) {
+        url.searchParams.delete(key);
+      }
+    }
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
+
+function isNaverNewsHost(hostname: string): boolean {
+  return hostname === 'news.naver.com' || hostname === 'n.news.naver.com' || hostname === 'finance.naver.com';
+}
+
+function canonicalNaverArticleUrl(officeId: string, articleId: string): string {
+  return `https://n.news.naver.com/mnews/article/${encodeURIComponent(officeId)}/${encodeURIComponent(articleId)}`;
 }
 
 export function createNaverSearchNewsProvider(
