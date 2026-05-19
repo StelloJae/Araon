@@ -35,6 +35,38 @@ export function isKisEligibleProductCode(input: string): boolean {
   return krTickerFromTossProductCode(input) !== null;
 }
 
+export function quoteKeyForIdentity(identity: AraonProductIdentity): string {
+  return identity.krTicker ?? identity.productCode;
+}
+
+export function sparklineKeyForIdentity(identity: AraonProductIdentity): string {
+  return quoteKeyForIdentity(identity);
+}
+
+export function krTossChartProductCodeForIdentity(
+  identity: AraonProductIdentity,
+): string | null {
+  if (identity.krTicker === null || !identity.chartEligible) return null;
+  return normalizeTossProductCode(identity.krTicker);
+}
+
+export function quoteAliasesForIdentity(identity: AraonProductIdentity): string[] {
+  const aliases = [
+    quoteKeyForIdentity(identity),
+    identity.productCode,
+    identity.symbol,
+  ];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const alias of aliases) {
+    const normalized = alias.trim();
+    if (normalized.length === 0 || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
 export function createAraonProductIdentity(input: {
   productCode: string;
   symbol?: string | null;

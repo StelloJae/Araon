@@ -33,6 +33,16 @@ const persistentSession = {
   expiresInMs: 604_800_000,
 };
 
+const sessionScopedSession = {
+  ...persistentSession,
+  state: 'session_scoped' as const,
+  persistent: false,
+  expiresAt: null,
+  serverExpiresAt: null,
+  effectiveExpiresAt: null,
+  expiresInMs: null,
+};
+
 function loginStatus(overrides: Partial<TossLoginStatus> = {}): TossLoginStatus {
   return {
     state: 'idle',
@@ -126,7 +136,7 @@ describe('toss login capture smoke', () => {
         .fn()
         .mockReturnValueOnce(loginStatus({
           state: 'waiting_for_persistent',
-          message: 'QR login completed; waiting for persistent device confirmation',
+          message: 'QR login completed; verifying Toss session',
           persistent: false,
           cookieCount: 4,
           localStorageKeyCount: 1,
@@ -169,6 +179,68 @@ describe('toss login capture smoke', () => {
     expect(report.sessionAfter).toMatchObject({ configured: true, state: 'persistent' });
     expect(loginService.start).toHaveBeenCalledWith({ timeoutMs: 60_000 });
     expect(sleep).toHaveBeenCalledWith(1000);
+    expect(JSON.stringify(report)).not.toContain('SESSION');
+    expect(JSON.stringify(report)).not.toContain('UTK');
+  });
+
+  it('accepts a session-scoped QR capture as a usable Toss login', async () => {
+    const sleep = vi.fn(async () => undefined);
+    const loginService = {
+      start: vi.fn(async () => loginStatus({
+        state: 'waiting_for_qr',
+        message: 'Waiting for Toss QR login',
+        startedAt: '2026-05-12T01:00:00.000Z',
+      })),
+      status: vi
+        .fn()
+        .mockReturnValueOnce(loginStatus({
+          state: 'waiting_for_persistent',
+          message: 'QR login completed; verifying Toss session',
+          persistent: false,
+          cookieCount: 5,
+          localStorageKeyCount: 2,
+          sessionStorageKeyCount: 1,
+          expiresAt: null,
+        }))
+        .mockReturnValueOnce(loginStatus({
+          state: 'succeeded',
+          message: 'Toss session captured',
+          persistent: false,
+          cookieCount: 5,
+          localStorageKeyCount: 2,
+          sessionStorageKeyCount: 1,
+          expiresAt: null,
+          finishedAt: '2026-05-12T01:00:04.000Z',
+        })),
+      cancel: vi.fn(),
+    };
+
+    const report = await runTossLoginCaptureSmoke({
+      sessionStatus: vi
+        .fn()
+        .mockResolvedValueOnce(loggedOutSession)
+        .mockResolvedValueOnce(sessionScopedSession),
+      loginService,
+      timeoutMs: 60_000,
+      pollIntervalMs: 1000,
+      sleep,
+      now: () => new Date('2026-05-12T01:00:00.000Z'),
+    });
+
+    expect(report.outcome).toBe('succeeded');
+    expect(report.login).toMatchObject({
+      state: 'succeeded',
+      persistent: false,
+      cookieCount: 5,
+      localStorageKeyCount: 2,
+      sessionStorageKeyCount: 1,
+      errorCode: null,
+    });
+    expect(report.sessionAfter).toMatchObject({
+      configured: true,
+      state: 'session_scoped',
+      persistent: false,
+    });
     expect(JSON.stringify(report)).not.toContain('SESSION');
     expect(JSON.stringify(report)).not.toContain('UTK');
   });

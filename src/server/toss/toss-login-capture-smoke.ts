@@ -270,9 +270,12 @@ const SAFE_LOGIN_MESSAGES = new Set([
   'Toss login browser is starting',
   'Toss login capture cancelled',
   'QR login completed; waiting for persistent device confirmation',
+  'QR login completed; verifying Toss session',
   'Waiting for Toss QR login',
+  'Toss session captured',
   'Toss persistent session captured',
   'Timed out before a persistent Toss session was captured',
+  'Timed out before a Toss session was captured',
   'TOSS_LOGIN_CAPTURE_FAILED',
   'TOSS_LOGIN_CAPTURE_SMOKE_FAILED',
 ]);

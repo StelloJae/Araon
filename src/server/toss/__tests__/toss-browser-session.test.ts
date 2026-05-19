@@ -52,7 +52,7 @@ describe('Toss browser session capture', () => {
   });
 
   it('keeps session-scoped login distinct from persistent login', () => {
-    const assessment = assessTossBrowserSession(browserState({
+    const sessionScopedState = browserState({
       cookies: [
         { name: 'SESSION', value: '[test-session]', domain: '.tossinvest.com', expires: -1 },
         { name: 'XSRF-TOKEN', value: 'xsrf-value', domain: '.tossinvest.com' },
@@ -61,11 +61,26 @@ describe('Toss browser session capture', () => {
         { name: 'FTK', value: 'ftk-value', domain: '.tossinvest.com' },
         { name: 'browserSessionId', value: 'browser-[test-session]', domain: '.tossinvest.com' },
       ],
-    }));
+    });
+    const assessment = assessTossBrowserSession(sessionScopedState);
 
     expect(assessment.initialAuthDone).toBe(true);
     expect(assessment.persistent).toBe(false);
     expect(assessment.expiresAt).toBeNull();
+
+    const session = tossSessionFromBrowserState(
+      sessionScopedState,
+      new Date('2026-05-11T06:00:00.000Z'),
+    );
+
+    expect(session).toMatchObject({
+      provider: 'toss',
+      persistent: false,
+      retrievedAt: '2026-05-11T06:00:00.000Z',
+      expiresAt: null,
+    });
+    expect(session.cookies.SESSION).toBe('[test-session]');
+    expect(JSON.stringify(assessment)).not.toContain('[test-session]');
   });
 
   it('converts only authenticated Toss state into the encrypted-session shape', () => {

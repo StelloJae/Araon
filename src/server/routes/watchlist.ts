@@ -16,6 +16,11 @@ const watchlistMutationBodySchema = z.object({
   currency: z.enum(['KRW', 'USD', 'UNKNOWN']).nullable().optional(),
 });
 
+const watchlistReconcileBodySchema = z.object({
+  dryRun: z.boolean().optional().default(true),
+  maxMutations: z.number().int().min(1).max(10).optional().default(5),
+});
+
 export async function watchlistRoutes(
   app: FastifyInstance,
   opts: WatchlistRoutesOptions,
@@ -59,6 +64,32 @@ export async function watchlistRoutes(
         error: {
           code: 'WATCHLIST_ADD_FAILED',
           message: 'Watchlist add failed',
+        },
+      });
+    }
+  });
+
+  app.post('/watchlist/reconcile', async (request, reply) => {
+    const parsed = watchlistReconcileBodySchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'WATCHLIST_RECONCILE_INVALID',
+          message: 'Watchlist reconcile request is invalid',
+        },
+      });
+    }
+
+    try {
+      const result = await opts.service.reconcileHoldingsWithTossWatchlist(parsed.data);
+      return reply.send({ success: true, data: result });
+    } catch {
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'WATCHLIST_RECONCILE_FAILED',
+          message: 'Watchlist reconcile failed',
         },
       });
     }

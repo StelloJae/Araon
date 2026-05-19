@@ -36,6 +36,7 @@ describe('watchlist routes', () => {
       })),
       addItem: vi.fn(),
       removeItem: vi.fn(),
+      reconcileHoldingsWithTossWatchlist: vi.fn(),
     };
     const app = Fastify({ logger: false });
     await app.register(watchlistRoutes, { service });
@@ -59,6 +60,7 @@ describe('watchlist routes', () => {
       }),
       addItem: vi.fn(),
       removeItem: vi.fn(),
+      reconcileHoldingsWithTossWatchlist: vi.fn(),
     };
     const app = Fastify({ logger: false });
     await app.register(watchlistRoutes, { service });
@@ -105,6 +107,7 @@ describe('watchlist routes', () => {
         },
       })),
       removeItem: vi.fn(),
+      reconcileHoldingsWithTossWatchlist: vi.fn(),
     };
     const app = Fastify({ logger: false });
     await app.register(watchlistRoutes, { service });
@@ -165,6 +168,7 @@ describe('watchlist routes', () => {
         },
       })),
       removeItem: vi.fn(),
+      reconcileHoldingsWithTossWatchlist: vi.fn(),
     };
     const app = Fastify({ logger: false });
     await app.register(watchlistRoutes, { service });
@@ -202,6 +206,7 @@ describe('watchlist routes', () => {
         reason: 'local_fallback',
         item: null,
       })),
+      reconcileHoldingsWithTossWatchlist: vi.fn(),
     };
     const app = Fastify({ logger: false });
     await app.register(watchlistRoutes, { service });
@@ -213,5 +218,60 @@ describe('watchlist routes', () => {
 
     expect(res.statusCode).toBe(200);
     expect(service.removeItem).toHaveBeenCalledWith({ productCode: 'A005930' });
+  });
+
+  it('runs a bounded watchlist reconcile request without leaking raw values', async () => {
+    const service: AraonWatchlistService = {
+      getWatchlist: vi.fn(),
+      addItem: vi.fn(),
+      removeItem: vi.fn(),
+      reconcileHoldingsWithTossWatchlist: vi.fn(async () => ({
+        provider: 'araon-watchlist',
+        fetchedAt: '2026-05-18T00:00:00.000Z',
+        dryRun: false,
+        status: 'applied',
+        counts: {
+          addCandidates: 1,
+          removeCandidates: 0,
+          attempted: 1,
+          added: 1,
+          removed: 0,
+          unchanged: 0,
+          failed: 0,
+          skipped: 0,
+        },
+        addCandidates: [{
+          productCode: 'A005930',
+          krTicker: '005930',
+          name: '삼성전자',
+          reason: 'holding_missing_in_toss_watchlist',
+        }],
+        removeCandidates: [],
+        mutations: [{
+          productCode: 'A005930',
+          krTicker: '005930',
+          name: '삼성전자',
+          action: 'add',
+          status: 'succeeded',
+          reason: 'toss_mutation_succeeded',
+        }],
+      })),
+    };
+    const app = Fastify({ logger: false });
+    await app.register(watchlistRoutes, { service });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/watchlist/reconcile',
+      payload: { dryRun: false, maxMutations: 2 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(service.reconcileHoldingsWithTossWatchlist).toHaveBeenCalledWith({
+      dryRun: false,
+      maxMutations: 2,
+    });
+    expect(res.body).not.toContain('SESSION');
+    expect(res.body).not.toContain('accountNo');
   });
 });

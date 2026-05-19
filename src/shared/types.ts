@@ -669,7 +669,9 @@ export type AgentEventNotificationType =
   | 'approval_requested'
   | 'approval_granted'
   | 'approval_denied'
-  | 'execution_locked';
+  | 'execution_locked'
+  | 'risk_check_completed'
+  | 'preview_created';
 
 export type AgentEventFreshness =
   | 'unknown'
@@ -698,6 +700,20 @@ export interface AgentEventRelatedIdsPayload {
   approvalId: string | null;
 }
 
+export type AgentEventDecision = 'buy' | 'sell' | 'observe' | 'ignore';
+
+export interface AgentEventDecisionSupportPayload {
+  decision: AgentEventDecision;
+  policyVersion: string;
+  score: number;
+  strategyLabel: string;
+  riskLabel: string;
+  evaluationLabels: string[];
+  readinessLabels: string[];
+  explanationLabels: string[];
+  liveExecutionLocked: true;
+}
+
 export interface AgentEventNotificationPayload {
   id: string;
   type: AgentEventNotificationType;
@@ -716,6 +732,7 @@ export interface AgentEventNotificationPayload {
   relatedIds: AgentEventRelatedIdsPayload;
   skipReason: string | null;
   createdAt: string;
+  decisionSupport?: AgentEventDecisionSupportPayload;
 }
 
 /**

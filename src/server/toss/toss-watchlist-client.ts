@@ -1,4 +1,8 @@
 import type { TossSession, TossSessionStore } from './toss-session-store.js';
+import {
+  resolveTossProductIconUrl,
+  type TossProductIconCache,
+} from './toss-product-icon.js';
 
 export interface TossWatchlistItem {
   readonly ref: string;
@@ -7,6 +11,7 @@ export interface TossWatchlistItem {
   readonly productCode: string;
   readonly symbol: string;
   readonly name: string;
+  readonly iconUrl?: string | null;
   readonly currency: string;
   readonly base: number;
   readonly last: number;
@@ -42,11 +47,18 @@ export interface TossWatchlistClient {
   ): Promise<TossWatchlistMutationResult>;
 }
 
+export interface TossWatchlistSnapshotStore {
+  save(payload: TossWatchlistPayload): void;
+  snapshot(): TossWatchlistPayload | null;
+  clear(): void;
+}
+
 export interface TossWatchlistClientOptions {
   readonly sessionStore: TossSessionStore;
   readonly fetchImpl?: typeof fetch;
   readonly apiBaseUrl?: string;
   readonly certBaseUrl?: string;
+  readonly iconCache?: TossProductIconCache;
   readonly now?: () => Date;
 }
 
@@ -61,6 +73,7 @@ export function createTossWatchlistClient(
   const fetchImpl = options.fetchImpl ?? fetch;
   const apiBaseUrl = trimTrailingSlash(options.apiBaseUrl ?? DEFAULT_API_BASE_URL);
   const certBaseUrl = trimTrailingSlash(options.certBaseUrl ?? DEFAULT_CERT_BASE_URL);
+  const iconCache = options.iconCache;
   const now = options.now ?? (() => new Date());
 
   async function loadSession(): Promise<TossSession> {
@@ -78,11 +91,12 @@ export function createTossWatchlistClient(
       session,
       accountKey,
     });
-    let groups = mapWatchlistGroupsSafe(data);
+    let groups = mapWatchlistGroupsSafe(data, iconCache);
     if (groups.length === 0) {
       groups = await listWatchlistFromNewWatchlistsEndpoint({
         certBaseUrl,
         fetchImpl,
+        iconCache,
         session,
       });
     }
@@ -161,9 +175,7 @@ export function createTossWatchlistClient(
       session,
       includeItemInfo: true,
     });
-    let target = groups.find((group) =>
-      group.items.some((candidate) => candidate.code === input.productCode),
-    );
+    let target = findRemovableMutationGroup(groups, input.productCode);
 
     if (target === undefined) {
       groups = await listMutationGroupsFromWatchlistsEndpoint({
@@ -171,9 +183,7 @@ export function createTossWatchlistClient(
         fetchImpl,
         session,
       });
-      target = groups.find((group) =>
-        group.items.some((candidate) => candidate.code === input.productCode),
-      );
+      target = findRemovableMutationGroup(groups, input.productCode);
     }
 
     if (target === undefined) {
@@ -204,9 +214,59 @@ export function createTossWatchlistClient(
   return { listWatchlist, addProductToWatchlist, removeProductFromWatchlist };
 }
 
+export function createTossWatchlistSnapshotStore(): TossWatchlistSnapshotStore {
+  let latest: TossWatchlistPayload | null = null;
+  return {
+    save(payload) {
+      latest = payload;
+    },
+    snapshot() {
+      return latest;
+    },
+    clear() {
+      latest = null;
+    },
+  };
+}
+
+export function createCachingTossWatchlistClient(
+  client: TossWatchlistClient,
+  snapshotStore: TossWatchlistSnapshotStore,
+): TossWatchlistClient {
+  const cachedClient: TossWatchlistClient = {
+    async listWatchlist() {
+      const payload = await client.listWatchlist();
+      snapshotStore.save(payload);
+      return payload;
+    },
+  };
+  if (client.addProductToWatchlist !== undefined) {
+    cachedClient.addProductToWatchlist = async (input) => {
+      const result = await client.addProductToWatchlist?.(input);
+      if (result === undefined) {
+        throw new Error('Toss watchlist add is unavailable');
+      }
+      snapshotStore.clear();
+      return result;
+    };
+  }
+  if (client.removeProductFromWatchlist !== undefined) {
+    cachedClient.removeProductFromWatchlist = async (input) => {
+      const result = await client.removeProductFromWatchlist?.(input);
+      if (result === undefined) {
+        throw new Error('Toss watchlist remove is unavailable');
+      }
+      snapshotStore.clear();
+      return result;
+    };
+  }
+  return cachedClient;
+}
+
 async function listWatchlistFromNewWatchlistsEndpoint(input: {
   certBaseUrl: string;
   fetchImpl: typeof fetch;
+  iconCache: TossProductIconCache | undefined;
   session: TossSession;
 }): Promise<TossWatchlistGroup[]> {
   const data = await requestCertJson({
@@ -217,10 +277,13 @@ async function listWatchlistFromNewWatchlistsEndpoint(input: {
     path: '/api/v1/new-watchlists',
     query: { includeItemInfo: true },
   });
-  return mapWatchlistsFallback(data);
+  return mapWatchlistsFallback(data, input.iconCache);
 }
 
-function mapWatchlistsFallback(data: unknown): TossWatchlistGroup[] {
+function mapWatchlistsFallback(
+  data: unknown,
+  iconCache: TossProductIconCache | undefined,
+): TossWatchlistGroup[] {
   const result = readRoot(data);
   let itemIndex = 0;
   return readArray(result, 'watchlists')
@@ -241,6 +304,11 @@ function mapWatchlistsFallback(data: unknown): TossWatchlistGroup[] {
             ? item as Record<string, unknown>
             : {};
           const productCode = readString(itemRecord, 'code') ?? '';
+          const iconUrl = resolveTossProductIconUrl({
+            record: itemRecord,
+            productCode,
+            cache: iconCache,
+          });
           itemIndex += 1;
           return {
             ref: `watchlist-item-${itemIndex}`,
@@ -249,6 +317,7 @@ function mapWatchlistsFallback(data: unknown): TossWatchlistGroup[] {
             productCode,
             symbol: productCode,
             name: readString(itemRecord, 'name') ?? '',
+            ...(iconUrl !== null ? { iconUrl } : {}),
             currency: inferCurrency(productCode),
             base: 0,
             last: 0,
@@ -277,7 +346,10 @@ interface TossMutationGroup {
   readonly items: readonly { readonly code: string }[];
 }
 
-function mapWatchlistGroups(data: unknown): TossWatchlistGroup[] {
+function mapWatchlistGroups(
+  data: unknown,
+  iconCache: TossProductIconCache | undefined,
+): TossWatchlistGroup[] {
   const result = readRecord(data, 'result');
   const sections = readArray(result, 'sections')
     .map((section) => typeof section === 'object' && section !== null
@@ -309,6 +381,7 @@ function mapWatchlistGroups(data: unknown): TossWatchlistGroup[] {
           groupRef,
           groupName,
           itemIndex,
+          iconCache,
         );
       }),
     };
@@ -328,9 +401,12 @@ function getWatchlistGroups(section: Record<string, unknown>): unknown[] {
   return readArray(payload, 'groups');
 }
 
-function mapWatchlistGroupsSafe(data: unknown): TossWatchlistGroup[] {
+function mapWatchlistGroupsSafe(
+  data: unknown,
+  iconCache: TossProductIconCache | undefined,
+): TossWatchlistGroup[] {
   try {
-    return mapWatchlistGroups(data);
+    return mapWatchlistGroups(data, iconCache);
   } catch (error) {
     if (error instanceof Error && error.message === 'Toss watchlist section not found') {
       return [];
@@ -344,9 +420,16 @@ function mapWatchlistItem(
   groupRef: string,
   groupName: string,
   index: number,
+  iconCache: TossProductIconCache | undefined,
 ): TossWatchlistItem {
   const prices = readRecord(item, 'prices');
   const productCode = readString(item, 'stockCode') ?? readString(prices, 'code') ?? '';
+  const iconUrl = resolveTossProductIconUrl({
+    record: item,
+    productCode,
+    symbol: readString(item, 'stockSymbol'),
+    cache: iconCache,
+  });
   return {
     ref: `watchlist-item-${index}`,
     groupRef,
@@ -354,6 +437,7 @@ function mapWatchlistItem(
     productCode,
     symbol: productCode,
     name: readString(item, 'stockName') ?? '',
+    ...(iconUrl !== null ? { iconUrl } : {}),
     currency: readString(prices, 'currency') ?? '',
     base: readNumber(prices, 'base') ?? 0,
     last: readNumber(prices, 'close') ?? 0,
@@ -507,6 +591,16 @@ function readStringOrNumber(value: Record<string, unknown>, key: string): string
 
 function watchlistRequestItem(productCode: string): { code: string; itemType: 'STOCK' } {
   return { code: productCode, itemType: 'STOCK' };
+}
+
+function findRemovableMutationGroup(
+  groups: readonly TossMutationGroup[],
+  productCode: string,
+): TossMutationGroup | undefined {
+  return groups.find((group) =>
+    !isRecentGroup(group) &&
+    group.items.some((candidate) => candidate.code === productCode),
+  );
 }
 
 function isRecentGroup(group: TossMutationGroup): boolean {

@@ -7,6 +7,7 @@ import {
   type TossPortfolioClient,
   type TossPortfolioPositionsPayload,
 } from '../toss-portfolio-client.js';
+import { createTossProductIconCache } from '../toss-product-icon.js';
 import type { TossSession, TossSessionStore } from '../toss-session-store.js';
 
 function session(): TossSession {
@@ -81,6 +82,7 @@ describe('Toss portfolio client', () => {
                       stockCode: '005930',
                       stockSymbol: null,
                       stockName: '삼성전자',
+                      logoImageUrl: 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png',
                       quantity: 3,
                       currentPrice: { krw: 70000 },
                       purchasePrice: { krw: 65000 },
@@ -120,9 +122,11 @@ describe('Toss portfolio client', () => {
       },
       });
     });
+    const iconCache = createTossProductIconCache();
     const client = createTossPortfolioClient({
       sessionStore: makeStore(session()),
       fetchImpl,
+      iconCache,
       apiBaseUrl: 'https://example-api.test',
       certBaseUrl: 'https://example.test',
       now: () => new Date('2026-05-11T06:30:00.000Z'),
@@ -138,6 +142,7 @@ describe('Toss portfolio client', () => {
           productCode: '005930',
           symbol: '005930',
           name: '삼성전자',
+          iconUrl: 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png',
           marketType: 'KR',
           marketCode: 'KRX',
           quantity: 3,
@@ -180,6 +185,7 @@ describe('Toss portfolio client', () => {
         },
       ],
     });
+    expect(iconCache.get('A005930')).toBe('https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png');
     expect(JSON.stringify(result)).not.toContain('fixture-ledger-ref');
     expect(JSON.stringify(result)).not.toContain('raw-primary-account-key');
   });

@@ -1,9 +1,14 @@
 import type { TossSession, TossSessionStore } from './toss-session-store.js';
+import {
+  resolveTossProductIconUrl,
+  type TossProductIconCache,
+} from './toss-product-icon.js';
 
 export interface TossPortfolioPosition {
   readonly productCode: string;
   readonly symbol: string;
   readonly name: string;
+  readonly iconUrl?: string | null;
   readonly marketType: string;
   readonly marketCode: string;
   readonly quantity: number;
@@ -44,6 +49,7 @@ export interface TossPortfolioClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly apiBaseUrl?: string;
   readonly certBaseUrl?: string;
+  readonly iconCache?: TossProductIconCache;
   readonly now?: () => Date;
 }
 
@@ -63,6 +69,7 @@ export function createTossPortfolioClient(
   const fetchImpl = options.fetchImpl ?? fetch;
   const apiBaseUrl = trimTrailingSlash(options.apiBaseUrl ?? DEFAULT_API_BASE_URL);
   const certBaseUrl = trimTrailingSlash(options.certBaseUrl ?? DEFAULT_CERT_BASE_URL);
+  const iconCache = options.iconCache;
   const now = options.now ?? (() => new Date());
 
   async function listPositions(): Promise<TossPortfolioPositionsPayload> {
@@ -80,7 +87,7 @@ export function createTossPortfolioClient(
     return {
       provider: 'toss',
       fetchedAt: now().toISOString(),
-      positions: mapPositions(data),
+      positions: mapPositions(data, iconCache),
     };
   }
 
@@ -115,7 +122,10 @@ export function createCachingTossPortfolioClient(
   };
 }
 
-function mapPositions(data: unknown): TossPortfolioPosition[] {
+function mapPositions(
+  data: unknown,
+  iconCache: TossProductIconCache | undefined,
+): TossPortfolioPosition[] {
   const result = readRecord(data, 'result');
   const sections = readArray(result, 'sections');
   const overview = sections
@@ -139,6 +149,7 @@ function mapPositions(data: unknown): TossPortfolioPosition[] {
           ? item as Record<string, unknown>
           : {},
         marketType,
+        iconCache,
       ),
     );
   });
@@ -147,6 +158,7 @@ function mapPositions(data: unknown): TossPortfolioPosition[] {
 function mapPositionItem(
   item: Record<string, unknown>,
   marketType: string,
+  iconCache: TossProductIconCache | undefined,
 ): TossPortfolioPosition {
   const stockCode = readString(item, 'stockCode') ?? '';
   const stockSymbol = readString(item, 'stockSymbol');
@@ -157,11 +169,18 @@ function mapPositionItem(
   const profitLossRate = readMoney(item, 'profitLossRate');
   const dailyProfitLossAmount = readMoney(item, 'dailyProfitLossAmount');
   const dailyProfitLossRate = readMoney(item, 'dailyProfitLossRate');
+  const iconUrl = resolveTossProductIconUrl({
+    record: item,
+    productCode: stockCode,
+    symbol: stockSymbol,
+    cache: iconCache,
+  });
 
   return {
     productCode: stockCode,
     symbol: stockSymbol ?? stockCode,
     name: readString(item, 'stockName') ?? '',
+    ...(iconUrl !== null ? { iconUrl } : {}),
     marketType,
     marketCode: readString(item, 'marketCode') ?? '',
     quantity: readNumber(item, 'quantity') ?? 0,

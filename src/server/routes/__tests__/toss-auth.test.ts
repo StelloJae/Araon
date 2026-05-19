@@ -197,6 +197,46 @@ describe('toss auth routes', () => {
     expect(onLoginSucceeded).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts sanitized session-scoped Toss login success payloads', async () => {
+    const store = makeStore();
+    const onLoginSucceeded = vi.fn(async () => undefined);
+    const loginService = makeLoginService();
+    loginService.status = vi.fn(() => ({
+      ...loginStatus(),
+      state: 'succeeded',
+      updatedAt: '2026-05-11T06:00:05.000Z',
+      finishedAt: '2026-05-11T06:00:05.000Z',
+      message: 'Toss session captured',
+      persistent: false,
+      cookieCount: 5,
+      localStorageKeyCount: 2,
+      sessionStorageKeyCount: 1,
+      expiresAt: null,
+    }));
+    const app = Fastify({ logger: false });
+    await app.register(tossAuthRoutes, {
+      sessionStore: store,
+      loginService,
+      onLoginSucceeded,
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/toss/auth/login/status' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      success: true,
+      data: {
+        state: 'succeeded',
+        message: 'Toss session captured',
+        persistent: false,
+        cookieCount: 5,
+      },
+    });
+    expect(onLoginSucceeded).toHaveBeenCalledTimes(1);
+    expect(res.body).not.toContain('SESSION');
+    expect(res.body).not.toContain('UTK');
+  });
+
   it('runs the session-clear callback after deleting Toss session state', async () => {
     const store = makeStore();
     const onSessionCleared = vi.fn(async () => undefined);

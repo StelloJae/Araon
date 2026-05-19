@@ -175,7 +175,7 @@ class TossCdpLoginService implements TossLoginService {
         this.setStatus({
           state: assessment.initialAuthDone ? 'waiting_for_persistent' : 'waiting_for_qr',
           message: assessment.initialAuthDone
-            ? 'QR login completed; waiting for persistent device confirmation'
+            ? 'QR login completed; verifying Toss session'
             : 'Waiting for Toss QR login',
           persistent: assessment.persistent,
           cookieCount: assessment.cookieCount,
@@ -186,21 +186,23 @@ class TossCdpLoginService implements TossLoginService {
           missingLocalStorageKeyCount: assessment.missingLocalStorageKeys.length,
         });
 
-        if (assessment.initialAuthDone && assessment.persistent) {
+        if (assessment.initialAuthDone) {
           await sleep(1200, signal);
           const finalState = await captureBrowserState(this.cdp);
           await this.sessionStore.save(tossSessionFromBrowserState(finalState));
           const finalAssessment = assessTossBrowserSession(finalState);
           this.setStatus({
             state: 'succeeded',
-            message: 'Toss persistent session captured',
-            persistent: true,
+            message: finalAssessment.persistent
+              ? 'Toss persistent session captured'
+              : 'Toss session captured',
+            persistent: finalAssessment.persistent,
             cookieCount: finalAssessment.cookieCount,
             localStorageKeyCount: finalAssessment.localStorageKeyCount,
             sessionStorageKeyCount: finalAssessment.sessionStorageKeyCount,
             expiresAt: finalAssessment.expiresAt,
-            missingCookieCount: 0,
-            missingLocalStorageKeyCount: 0,
+            missingCookieCount: finalAssessment.missingCookies.length,
+            missingLocalStorageKeyCount: finalAssessment.missingLocalStorageKeys.length,
             finishedAt: new Date().toISOString(),
           });
           return;
@@ -211,7 +213,7 @@ class TossCdpLoginService implements TossLoginService {
 
       this.setStatus({
         state: 'failed',
-        message: 'Timed out before a persistent Toss session was captured',
+        message: 'Timed out before a Toss session was captured',
         finishedAt: new Date().toISOString(),
       });
     } finally {

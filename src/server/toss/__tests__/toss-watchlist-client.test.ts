@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTossWatchlistClient } from '../toss-watchlist-client.js';
+import { createTossProductIconCache } from '../toss-product-icon.js';
 import type { TossSession, TossSessionStore } from '../toss-session-store.js';
 
 function session(): TossSession {
@@ -92,6 +93,7 @@ describe('Toss watchlist client', () => {
                         assetType: 'STOCK',
                         stockCode: 'A005930',
                         stockName: '삼성전자',
+                        logoImageUrl: 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png',
                         prices: {
                           code: 'A005930',
                           base: 70000,
@@ -144,6 +146,7 @@ describe('Toss watchlist client', () => {
               productCode: 'A005930',
               symbol: 'A005930',
               name: '삼성전자',
+              iconUrl: 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png',
               currency: 'KRW',
               base: 70000,
               last: 71000,
@@ -170,6 +173,7 @@ describe('Toss watchlist client', () => {
           productCode: 'A005930',
           symbol: 'A005930',
           name: '삼성전자',
+          iconUrl: 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png',
           currency: 'KRW',
           base: 70000,
           last: 71000,
@@ -327,7 +331,71 @@ describe('Toss watchlist client', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it('removes from user-made watchlist instead of recent watch history', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url) === 'https://cert.example.test/api/v1/new-watchlists/groups/simple?includeItemInfo=true') {
+        expect(init?.method).toBe('GET');
+        return jsonResponse({
+          watchlists: [
+            {
+              id: 1001,
+              name: '최근 본',
+              type: 'RECENT_WATCH',
+              items: [{ code: 'A035420' }],
+            },
+          ],
+        });
+      }
+
+      if (String(url) === 'https://cert.example.test/api/v1/new-watchlists?includeItemInfo=true') {
+        expect(init?.method).toBe('GET');
+        return jsonResponse({
+          watchlists: [
+            {
+              id: 1001,
+              name: '최근 본',
+              type: 'RECENT_WATCH',
+              items: [{ code: 'A035420', itemType: 'STOCK' }],
+            },
+            {
+              id: 2002,
+              name: '기본',
+              type: 'USER_MADE',
+              items: [{ code: 'A035420', itemType: 'STOCK' }],
+            },
+          ],
+        });
+      }
+
+      expect(String(url)).toBe('https://cert.example.test/api/v1/new-watchlists/items/remove');
+      expect(init?.method).toBe('POST');
+      expect(init?.body).toBe(JSON.stringify({
+        watchlistId: 2002,
+        items: [{ code: 'A035420', itemType: 'STOCK' }],
+      }));
+      return jsonResponse({ ok: true });
+    });
+    const client = createTossWatchlistClient({
+      sessionStore: makeStore(session()),
+      fetchImpl,
+      certBaseUrl: 'https://cert.example.test',
+      now: () => new Date('2026-05-17T13:00:00.000Z'),
+    });
+
+    const result = await client.removeProductFromWatchlist?.({ productCode: 'A035420' });
+
+    expect(result).toEqual({
+      provider: 'toss',
+      productCode: 'A035420',
+      mutatedAt: '2026-05-17T13:00:00.000Z',
+      action: 'removed',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
   it('maps watchlist groups when section type changed and groups are on section root', async () => {
+    const iconCache = createTossProductIconCache();
+    iconCache.set('005930', 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png');
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       if (String(url) === 'https://api.example.test/api/v1/account/list') {
         return jsonResponse({
@@ -377,6 +445,7 @@ describe('Toss watchlist client', () => {
     const client = createTossWatchlistClient({
       sessionStore: makeStore(session()),
       fetchImpl,
+      iconCache,
       apiBaseUrl: 'https://api.example.test',
       certBaseUrl: 'https://cert.example.test',
       now: () => new Date('2026-05-11T06:45:00.000Z'),
@@ -399,6 +468,7 @@ describe('Toss watchlist client', () => {
               productCode: 'A005930',
               symbol: 'A005930',
               name: '삼성전자',
+              iconUrl: 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png',
               currency: 'KRW',
               base: 70000,
               last: 71000,
@@ -414,6 +484,7 @@ describe('Toss watchlist client', () => {
           productCode: 'A005930',
           symbol: 'A005930',
           name: '삼성전자',
+          iconUrl: 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png',
           currency: 'KRW',
           base: 70000,
           last: 71000,
