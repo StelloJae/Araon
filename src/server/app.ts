@@ -19,6 +19,7 @@ import {
   MasterStockRepository,
   MasterStockMetaRepository,
   CandleCoverageRepository,
+  WatchlistSyncProvenanceRepository,
 } from './db/repositories.js';
 import { createSettingsStore } from './settings-store.js';
 import { createFileCredentialStore } from './credential-store.js';
@@ -147,7 +148,12 @@ import {
   createTossNewsClient,
 } from './toss/toss-news-client.js';
 import { createTossTransactionsClient } from './toss/toss-transactions-client.js';
-import { createTossWatchlistClient } from './toss/toss-watchlist-client.js';
+import {
+  createCachingTossWatchlistClient,
+  createTossWatchlistClient,
+  createTossWatchlistSnapshotStore,
+} from './toss/toss-watchlist-client.js';
+import { createTossProductIconCache } from './toss/toss-product-icon.js';
 import { createAraonWatchlistService } from './watchlist/araon-watchlist-service.js';
 import { createTelegramPhoneNotifier } from './notifications/phone-notifier.js';
 import { launcherRoutes, type LauncherRoutesOptions } from './routes/launcher.js';
@@ -259,6 +265,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   });
   const sectorRepo = new SectorRepository(db);
   const favoriteRepo = new FavoriteRepository(db);
+  const watchlistProvenanceRepo = new WatchlistSyncProvenanceRepository(db);
   const masterRepo = new MasterStockRepository(db);
   const masterMetaRepo = new MasterStockMetaRepository(db);
   let tossQuotePollingService: TossQuotePollingService | null = null;
@@ -515,18 +522,26 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   const tossAccountClient = createTossAccountClient({ sessionStore: tossSessionStore });
   const tossAccountSummaryClient = createTossAccountSummaryClient({ sessionStore: tossSessionStore });
   const tossOrdersClient = createTossOrdersClient({ sessionStore: tossSessionStore });
+  const tossProductIconCache = createTossProductIconCache();
   const tossPortfolioSnapshotStore = createTossPortfolioSnapshotStore();
   const tossPortfolioClient = createCachingTossPortfolioClient(
-    createTossPortfolioClient({ sessionStore: tossSessionStore }),
+    createTossPortfolioClient({ sessionStore: tossSessionStore, iconCache: tossProductIconCache }),
     tossPortfolioSnapshotStore,
   );
   const tossTransactionsClient = createTossTransactionsClient({ sessionStore: tossSessionStore });
-  const tossWatchlistClient = createTossWatchlistClient({ sessionStore: tossSessionStore });
+  const tossWatchlistSnapshotStore = createTossWatchlistSnapshotStore();
+  const tossWatchlistClient = createCachingTossWatchlistClient(
+    createTossWatchlistClient({ sessionStore: tossSessionStore, iconCache: tossProductIconCache }),
+    tossWatchlistSnapshotStore,
+  );
   const enableTossWatchlistMutation = process.env['ARAON_ENABLE_TOSS_WATCHLIST_MUTATION'] === '1';
   const araonWatchlistService = createAraonWatchlistService({
     watchlistClient: tossWatchlistClient,
     favoriteRepo,
     stockRepo,
+    portfolioPositions: tossPortfolioSnapshotStore,
+    priceStore,
+    watchlistProvenanceRepo,
     enableTossWatchlistMutation,
   });
   const tossNewsClient = createTossNewsClient({ sessionStore: tossSessionStore });
@@ -596,6 +611,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
   };
   const orderIntentService = createOrderIntentService({
     store: createSqliteOrderIntentStore(db),
+    agentEventQueue,
   });
   const tossRealtimeQuoteRefresh = createTossRealtimeQuoteRefreshHandler({
     provider: tossPublicMarketDataProvider,
@@ -606,6 +622,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     ordersClient: tossOrdersClient,
     accountSummaryClient: tossAccountSummaryClient,
     portfolioClient: tossPortfolioClient,
+    productIconCache: tossProductIconCache,
   });
   const tossSseRefreshResultStore = createTossSseRefreshResultStore({ db });
   const tossRealtimeRefreshHandlers = createTossRealtimeRefreshHandlers({
@@ -713,6 +730,8 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
         now,
         currentTickers: tossFastQuoteCurrentTickers,
         favorites: favoriteRepo.findAll(),
+        watchlistSnapshot: tossWatchlistSnapshotStore.snapshot(),
+        portfolioSnapshot: tossPortfolioSnapshotStore.snapshot(),
         agentEvents: agentEventQueue.snapshot(30),
         orderIntentPreviews: orderIntentService.snapshotPreviews(30),
         topMovers: cachedKrTopMoversForFastQuote,
@@ -726,6 +745,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     orderIntentService,
     agentEventQueue,
     portfolioPositions: tossPortfolioSnapshotStore,
+    watchlistSnapshot: tossWatchlistSnapshotStore,
     marketTopMoversService,
     kisWsSlotState,
   });
@@ -818,6 +838,16 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     todayMinuteBackfillService,
     historicalMinuteBackfillService,
     refreshQuote: refreshForegroundQuote,
+    fetchSparklineSeedCandles: async ({ ticker, window, now }) => {
+      const seedCursor = new Date(window.to);
+      return fetchTossMinuteCandles({
+        ticker,
+        dateYmd: kstYmd(seedCursor),
+        toHms: kstHms(seedCursor),
+        source: 'toss-time-today',
+        now: () => now,
+      });
+    },
   });
   await app.register(themeRoutes, { stockRepo });
   await app.register(settingsRoutes, { settingsStore });
@@ -857,7 +887,9 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
       await startTossRealtimeIfSessionReady('login-succeeded');
     },
     onSessionCleared: async () => {
+      tossProductIconCache.clear();
       tossPortfolioSnapshotStore.clear();
+      tossWatchlistSnapshotStore.clear();
       kisWsSlotState.clear();
       await tossRealtimeService.stop().catch(() => undefined);
     },
@@ -883,6 +915,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     orderIntentService,
     agentEventQueue,
     portfolioPositions: tossPortfolioSnapshotStore,
+    watchlistSnapshot: tossWatchlistSnapshotStore,
     marketTopMoversService,
     kisWsSlotState,
   });
@@ -909,6 +942,7 @@ export async function createAraonServer(options: AraonServerOptions = {}): Promi
     orderIntentService,
     agentEventQueue,
     portfolioPositions: tossPortfolioSnapshotStore,
+    watchlistSnapshot: tossWatchlistSnapshotStore,
     kisWsSlotState,
   });
   await app.register(launcherRoutes, options.launcher ?? {});
@@ -1024,6 +1058,15 @@ function kstYmd(date: Date): string {
     shifted.getUTCFullYear(),
     String(shifted.getUTCMonth() + 1).padStart(2, '0'),
     String(shifted.getUTCDate()).padStart(2, '0'),
+  ].join('');
+}
+
+function kstHms(date: Date): string {
+  const shifted = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return [
+    String(shifted.getUTCHours()).padStart(2, '0'),
+    String(shifted.getUTCMinutes()).padStart(2, '0'),
+    String(shifted.getUTCSeconds()).padStart(2, '0'),
   ].join('');
 }
 

@@ -373,6 +373,30 @@ describe('SseManager', () => {
         },
         skipReason: null,
         createdAt: '2026-05-11T06:00:20.000Z',
+        decisionSupport: {
+          decision: 'buy',
+          policyVersion: 'araon-agent-decision-v1',
+          score: 90,
+          strategyLabel: '정보 관찰',
+          riskLabel: '모의만 · 실거래 잠금',
+          evaluationLabels: [
+            '점수 90',
+            '정보 이벤트 후보',
+            '신선도 높음',
+            '신뢰 높음',
+          ],
+          readinessLabels: [
+            '모의 미리보기만 가능',
+            '리스크 확인 필요',
+            '실거래 잠금',
+          ],
+          explanationLabels: [
+            '뉴스·공시·신호 근거',
+            '신뢰 높음',
+            '실거래 전 리스크 확인 필요',
+          ],
+          liveExecutionLocked: true,
+        },
       });
 
       detach();
