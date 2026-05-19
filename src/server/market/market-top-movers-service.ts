@@ -97,6 +97,7 @@ export interface MarketTopMoversServiceSnapshot {
 
 export interface MarketTopMoverRotationCandidate {
   readonly ticker: string;
+  readonly name: string;
   readonly direction: MarketTopMoverDirection;
   readonly rank: number;
   readonly reason: string;
@@ -592,6 +593,7 @@ function rotationCandidatesForDirection(
       if (ticker === null) return null;
       return {
         ticker,
+        name: row.name,
         direction,
         rank: row.rank,
         reason: `TOP100 ${direction === 'gainers' ? '상승' : '하락'} #${row.rank}`,

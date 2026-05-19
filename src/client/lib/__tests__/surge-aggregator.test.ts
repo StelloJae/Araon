@@ -73,6 +73,29 @@ describe('aggregateSurgeView — live filter', () => {
     expect(got[0]?.volume).toBe(1_234_567);
   });
 
+  it('uses catalog display names when live feed carried only a ticker fallback', () => {
+    const feed: SurgeEntry[] = [entry('084670', '084670', 5.5, 1_000)];
+    const stocks = [vm('084670', '동양고속', 5.5)];
+    const got = aggregateSurgeView(feed, stocks, 'live', STATUS_OPEN, 3, NOW, 15);
+    expect(got[0]?.name).toBe('동양고속');
+  });
+
+  it('uses cached TOP100 display names for live entries outside the local catalog', () => {
+    const feed: SurgeEntry[] = [entry('084670', '084670', 5.5, 1_000)];
+    const got = aggregateSurgeView(
+      feed,
+      [],
+      'live',
+      STATUS_OPEN,
+      3,
+      NOW,
+      15,
+      'all',
+      { '084670': '동양고속' },
+    );
+    expect(got[0]?.name).toBe('동양고속');
+  });
+
   it('volume is null when no matching quote exists', () => {
     const feed: SurgeEntry[] = [entry('005930', '삼성전자', 5.5, 1_000)];
     const got = aggregateSurgeView(feed, [], 'live', STATUS_OPEN, 2, NOW, 15);

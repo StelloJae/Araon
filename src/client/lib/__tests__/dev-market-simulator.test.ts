@@ -55,6 +55,7 @@ describe('dev market simulator', () => {
       signalType: 'scalp',
       momentumWindow: '10s',
     });
+    expect(frame.surgeEntries[0]?.momentumPct).toBeGreaterThanOrEqual(3);
   });
 
   it('keeps collecting volume baselines honest without fake multipliers', () => {

@@ -120,11 +120,9 @@ export function StockCandleChart({
   }, [ticker, interval]);
 
   useEffect(() => {
-    const liveItems = mergeLiveQuoteIntoCandleItems([], liveQuote, interval);
-    if (liveItems.length === 0) return;
     setLiveOverlayItems((current) =>
       pruneLiveOverlayItems(
-        mergeCandleItemOverlays(current, liveItems),
+        mergeLiveQuoteIntoCandleItems(current, liveQuote, interval),
         interval,
       ),
     );
@@ -135,7 +133,9 @@ export function StockCandleChart({
     [items, liveOverlayItems],
   );
   const displayItems = useMemo(
-    () => mergeLiveQuoteIntoCandleItems(displayBaseItems, liveQuote, interval),
+    () => hasLiveQuoteApplied(displayBaseItems, liveQuote, interval)
+      ? displayBaseItems
+      : mergeLiveQuoteIntoCandleItems(displayBaseItems, liveQuote, interval),
     [displayBaseItems, liveQuote, interval],
   );
   const displayStatus =
@@ -440,11 +440,15 @@ export function mergeLiveQuoteIntoCandleItems(
       high: Math.max(existing.high, liveQuote.price),
       low: Math.min(existing.low, liveQuote.price),
       close: liveQuote.price,
+      volume: Math.max(existing.volume, liveQuote.volume),
+      sampleCount: existing.sampleCount + 1,
       source: mergeLiveCandleSource(existing.source ?? null, liveQuote.source ?? null),
       isPartial: true,
     };
     return next;
   }
+
+  if (!canAppendLiveQuoteCandle(items, bucketAt)) return next;
 
   next.push({
     time,
@@ -460,6 +464,46 @@ export function mergeLiveQuoteIntoCandleItems(
   });
   next.sort((a, b) => a.time - b.time);
   return next;
+}
+
+function hasLiveQuoteApplied(
+  items: readonly CandleApiItem[],
+  liveQuote: LiveQuoteCandleInput | null | undefined,
+  interval: CandleInterval,
+): boolean {
+  if (liveQuote === null || liveQuote === undefined) return true;
+  if (liveQuote.isSnapshot || dailyInterval(interval)) return true;
+  if (!Number.isFinite(liveQuote.price) || liveQuote.price <= 0) return true;
+  const bucketAt = bucketAtForKstInterval(liveQuote.updatedAt, interval);
+  if (bucketAt === null) return true;
+  const time = Math.trunc(Date.parse(bucketAt) / 1000);
+  if (!Number.isFinite(time)) return true;
+  const existing = items.find((item) => item.time === time);
+  return existing !== undefined && existing.close === liveQuote.price;
+}
+
+function canAppendLiveQuoteCandle(
+  items: readonly CandleApiItem[],
+  bucketAt: string,
+): boolean {
+  if (isKstClosedNightMinute(bucketAt)) return false;
+  if (items.length === 0) return true;
+  const latest = items[items.length - 1];
+  if (latest === undefined) return true;
+  const latestKey = kstDateKey(latest.bucketAt);
+  const liveKey = kstDateKey(bucketAt);
+  return latestKey !== null && latestKey === liveKey;
+}
+
+function kstDateKey(iso: string): string | null {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  const shifted = new Date(ms + KST_OFFSET_MS);
+  return [
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth() + 1,
+    shifted.getUTCDate(),
+  ].join('-');
 }
 
 export function mergeCandleItemOverlays(
@@ -985,6 +1029,7 @@ function LightweightCandleCanvas({
     }
     return map;
   }, [items]);
+  const latestItem = items.length === 0 ? null : items[items.length - 1];
 
   useEffect(() => {
     latestDataRef.current = { candleData, volumeData };
@@ -1199,6 +1244,12 @@ function LightweightCandleCanvas({
       <div
         ref={hostRef}
         data-testid="stock-candle-chart-host"
+        data-candle-count={items.length}
+        data-latest-candle-time={latestItem?.bucketAt ?? ''}
+        data-latest-candle-close={latestItem?.close ?? ''}
+        data-latest-candle-sample-count={latestItem?.sampleCount ?? ''}
+        data-latest-candle-source={latestItem?.source ?? ''}
+        data-latest-candle-partial={latestItem?.isPartial === true ? 'true' : 'false'}
         style={{
           height: fillHeight ? '100%' : height,
           minHeight: fillHeight ? 180 : undefined,

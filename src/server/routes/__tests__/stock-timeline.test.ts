@@ -151,11 +151,44 @@ describe('stock signal timeline routes', () => {
         payloadRef: `stock-signal:${first.json().data.id}`,
       }),
     ]);
-    expect(agentEventQueue.snapshot()[0]?.reason).toContain('overheat');
-    expect(agentEventQueue.snapshot()[0]?.reason).toContain('30s');
+    expect(agentEventQueue.snapshot()[0]?.reason).toContain('과열');
+    expect(agentEventQueue.snapshot()[0]?.reason).toContain('30초');
     expect(agentEventQueue.snapshot()[0]?.reason).toContain('4.48%');
     expect(JSON.stringify(agentEventQueue.snapshot())).not.toContain('signalPrice');
     expect(JSON.stringify(agentEventQueue.snapshot())).not.toContain('baselinePrice');
+  });
+
+  it('records market movement signals for untracked provider-ranked tickers', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/stocks/347700/signals',
+      payload: {
+        name: '피엔케이피부임상연구센타',
+        signalType: 'strong_scalp',
+        source: 'realtime-momentum',
+        signalPrice: 45_300,
+        signalAt: '2026-05-18T00:05:00.000Z',
+        baselinePrice: 43_000,
+        baselineAt: '2026-05-18T00:04:30.000Z',
+        momentumPct: 5.35,
+        momentumWindow: '30s',
+        dailyChangePct: 7.86,
+        volume: null,
+        volumeSurgeRatio: null,
+        volumeBaselineStatus: 'collecting',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json().data.ticker).toBe('347700');
+    expect(signalEventRepo.listByTicker('347700')).toHaveLength(1);
+    expect(agentEventQueue.snapshot()).toEqual([
+      expect.objectContaining({
+        type: 'market_movement_detected',
+        ticker: '347700',
+        source: 'realtime-momentum',
+      }),
+    ]);
   });
 
   it('does not expose the removed observation timeline route', async () => {

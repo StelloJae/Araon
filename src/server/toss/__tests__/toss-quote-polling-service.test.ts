@@ -88,6 +88,50 @@ describe('toss quote polling service', () => {
     expect(snapshot.lastMessage).toBe('partial_quote_batch');
   });
 
+  it('keeps the last completed counts visible while a new quote cycle is in flight', async () => {
+    let resolveSecond: ((value: unknown) => void) | null = null;
+    const provider = {
+      getQuoteBatch: vi
+        .fn()
+        .mockResolvedValueOnce({
+          providerId: 'toss-public' as const,
+          fetchedAt: '2026-05-11T01:00:00.000Z',
+          requestedCount: 2,
+          returnedCount: 2,
+          prices: [price('005930'), price('000660')],
+          missingTickers: [],
+        })
+        .mockImplementationOnce(async () =>
+          new Promise((resolve) => {
+            resolveSecond = resolve;
+          })),
+    };
+    const service = createTossQuotePollingService({
+      provider,
+      stockRepo: { findAll: () => [stock('005930'), stock('000660')] },
+      priceStore: { setPrice: vi.fn() },
+      settings: settingsStore(),
+      now: () => Date.parse('2026-05-11T01:00:00.000Z'),
+    });
+
+    await service.refreshOnce();
+    const second = service.refreshOnce();
+    const inFlight = service.snapshot();
+    resolveSecond?.({
+      providerId: 'toss-public',
+      fetchedAt: '2026-05-11T01:00:00.000Z',
+      requestedCount: 2,
+      returnedCount: 1,
+      prices: [price('005930')],
+      missingTickers: ['000660'],
+    });
+    await second;
+
+    expect(inFlight.tickersInCycle).toBe(2);
+    expect(inFlight.returnedCount).toBe(2);
+    expect(service.snapshot().returnedCount).toBe(1);
+  });
+
   it('stops suppressing KIS polling after repeated Toss quote failures', async () => {
     const service = createTossQuotePollingService({
       provider: {

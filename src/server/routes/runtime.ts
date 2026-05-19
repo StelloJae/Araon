@@ -69,6 +69,7 @@ import {
 import type { AgentEventQueue } from '../agent/agent-event-queue.js';
 import type { OrderIntentService } from '../agent/order-intent-service.js';
 import type { TossPortfolioPositionsPayload } from '../toss/toss-portfolio-client.js';
+import type { TossWatchlistPayload } from '../toss/toss-watchlist-client.js';
 import {
   createDisabledPhoneNotifier,
   type PhoneAlertInput,
@@ -147,6 +148,7 @@ export interface RuntimeRoutesOptions extends FastifyPluginOptions {
   orderIntentService?: Pick<OrderIntentService, 'snapshotPreviews'>;
   agentEventQueue?: Pick<AgentEventQueue, 'snapshot'>;
   portfolioPositions?: { snapshot(): TossPortfolioPositionsPayload | null };
+  watchlistSnapshot?: { snapshot(): TossWatchlistPayload | null };
   kisWsSlotState?: KisWsSlotStateStore;
   now?: () => string;
 }
@@ -1032,6 +1034,7 @@ export async function runtimeRoutes(
           candidates: buildKisWsSlotCandidates({
             favorites,
             portfolioSnapshot: opts.portfolioPositions?.snapshot() ?? null,
+            watchlistSnapshot: opts.watchlistSnapshot?.snapshot() ?? null,
             currentTicker: parsed.data.currentTicker,
             agentEvents: opts.agentEventQueue?.snapshot(40) ?? [],
             orderIntentPreviews: opts.orderIntentService?.snapshotPreviews(40) ?? [],

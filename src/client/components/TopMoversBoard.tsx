@@ -21,6 +21,8 @@ export function TopMoversBoard({
   embedded = false,
 }: TopMoversBoardProps) {
   const fetchedAt = formatFetchedAt(data.fetchedAt);
+  const gainers = sortTopMoverItems(data.gainers, 'up');
+  const losers = sortTopMoverItems(data.losers, 'down');
   const subtitle = [
     data.sourceLabel,
     coverageLabel(data),
@@ -50,7 +52,7 @@ export function TopMoversBoard({
       <TopMoversColumn
         title="상승 TOP100"
         tone="up"
-        items={data.gainers}
+        items={gainers}
         subtitle={subtitle}
         message={data.status === 'ready' ? '' : data.message}
         onOpenTicker={onOpenTicker}
@@ -66,7 +68,7 @@ export function TopMoversBoard({
       <TopMoversColumn
         title="하락 TOP100"
         tone="down"
-        items={data.losers}
+        items={losers}
         subtitle={subtitle}
         message={data.status === 'ready' ? '' : data.message}
         onOpenTicker={onOpenTicker}
@@ -74,6 +76,19 @@ export function TopMoversBoard({
       />
     </div>
   );
+}
+
+function sortTopMoverItems(
+  items: ReadonlyArray<MarketTopMoverItem>,
+  tone: 'up' | 'down',
+): MarketTopMoverItem[] {
+  return [...items].sort((a, b) => {
+    const diff = tone === 'up'
+      ? b.changePct - a.changePct
+      : a.changePct - b.changePct;
+    if (diff !== 0) return diff;
+    return a.rank - b.rank;
+  });
 }
 
 interface TopMoversColumnProps {
@@ -107,7 +122,7 @@ function TopMoversColumn({
           <div
             style={{
               fontSize: compact ? 13 : 14,
-              fontWeight: 700,
+              fontWeight: 800,
               color: tone === 'up' ? 'var(--kr-up)' : 'var(--kr-down)',
               whiteSpace: 'nowrap',
             }}
@@ -234,8 +249,8 @@ function TopMoverRow({ item, isFirst, onOpenTicker, compact }: TopMoverRowProps)
         <span
           style={{
             display: 'block',
-            fontSize: compact ? 11 : 12,
-            fontWeight: 700,
+            fontSize: compact ? 12 : 13,
+            fontWeight: 800,
             color: 'var(--text-primary)',
             lineHeight: 1.2,
             overflow: 'hidden',
@@ -245,7 +260,7 @@ function TopMoverRow({ item, isFirst, onOpenTicker, compact }: TopMoverRowProps)
         >
           {item.name}
         </span>
-        <span style={{ display: 'block', marginTop: 1, fontSize: compact ? 8 : 9, fontWeight: 600, color: 'var(--text-muted)' }}>
+        <span style={{ display: 'block', marginTop: 1, fontSize: compact ? 9 : 10, fontWeight: 700, color: 'var(--text-muted)' }}>
           {item.ticker}
         </span>
       </span>
@@ -253,8 +268,8 @@ function TopMoverRow({ item, isFirst, onOpenTicker, compact }: TopMoverRowProps)
         <span
           style={{
             position: 'relative',
-            fontSize: 12,
-            fontWeight: 700,
+            fontSize: 13,
+            fontWeight: 800,
             color: 'var(--text-primary)',
             textAlign: 'right',
             minWidth: 64,
@@ -276,11 +291,11 @@ function TopMoverRow({ item, isFirst, onOpenTicker, compact }: TopMoverRowProps)
         }}
       >
         {compact && (
-          <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
             {fmtPrice(item.price)}
           </span>
         )}
-        <span style={{ fontSize: compact ? 10 : 12, fontWeight: 700, color, lineHeight: 1.1 }}>
+        <span style={{ fontSize: compact ? 11 : 12, fontWeight: 800, color, lineHeight: 1.1 }}>
           {fmtPct(item.changePct)}
         </span>
         {!compact && item.changeAbs !== null && (

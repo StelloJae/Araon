@@ -88,6 +88,11 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   dartDisclosureService?: DartDisclosureService;
   agentEventQueue?: AgentEventQueue;
   refreshQuote?: (ticker: string) => Promise<Price>;
+  fetchSparklineSeedCandles?: (input: {
+    ticker: string;
+    window: { from: string; to: string };
+    now: Date;
+  }) => Promise<readonly PriceCandle[]>;
   now?: () => Date;
 }
 
@@ -136,6 +141,7 @@ const priceHistoryQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   limit: z.coerce.number().int().positive().max(20_000).default(20_000),
+  includeCandleSeed: z.preprocess((value) => value === true || value === 'true', z.boolean()).default(false),
 });
 
 const candleBackfillBodySchema = z.object({
@@ -521,7 +527,13 @@ export async function stockRoutes(
     }
 
     const now = (opts.now ?? (() => new Date()))();
-    const window = resolveCandleWindow(parsed.data.range, parsed.data.from, parsed.data.to);
+    const isIntradayChart = !dailyBaseInterval(parsed.data.interval);
+    const window = resolveCandleWindow(
+      parsed.data.range,
+      parsed.data.from,
+      parsed.data.to,
+      { intradayChart: isIntradayChart },
+    );
     if (window === null) {
       return reply.status(400).send({
         success: false,
@@ -884,7 +896,15 @@ export async function stockRoutes(
       limit: parsed.data.limit,
     });
     const displayPoints = filterRealtimePreferredPriceHistory(points);
-    const items = displayPoints.map(toPriceHistoryApiItem);
+    const seedPoints = shouldUseSparklineCandleSeed(displayPoints, parsed.data.includeCandleSeed)
+      ? await sparklineSeedPoints({
+          ticker,
+          window,
+          now: (opts.now ?? (() => new Date()))(),
+          fetchSparklineSeedCandles: opts.fetchSparklineSeedCandles,
+        })
+      : [];
+    const items = (seedPoints.length >= 2 ? seedPoints : displayPoints).map(toPriceHistoryApiItem);
     const first = items[0];
     const last = items[items.length - 1];
 
@@ -930,7 +950,13 @@ export async function stockRoutes(
       });
     }
 
-    const window = resolveCandleWindow(parsed.data.range, parsed.data.from, parsed.data.to);
+    const isIntradayChart = !dailyBaseInterval(parsed.data.interval);
+    const window = resolveCandleWindow(
+      parsed.data.range,
+      parsed.data.from,
+      parsed.data.to,
+      { intradayChart: isIntradayChart },
+    );
     if (window === null) {
       return reply.status(400).send({
         success: false,
@@ -938,7 +964,7 @@ export async function stockRoutes(
       });
     }
 
-    const baseInterval = dailyBaseInterval(parsed.data.interval) ? '1d' : '1m';
+    const baseInterval = isIntradayChart ? '1m' : '1d';
     const rawBase = opts.candleRepo.listCandles({
       ticker,
       interval: baseInterval,
@@ -1043,6 +1069,7 @@ function resolveCandleWindow(
   range: '1d' | '1w' | '1m' | '3m' | '6m' | '1y',
   from: string | undefined,
   to: string | undefined,
+  options: { intradayChart?: boolean } = {},
 ): { from: string; to: string } | null {
   const toDate = to !== undefined ? new Date(to) : new Date();
   if (Number.isNaN(toDate.getTime())) return null;
@@ -1053,10 +1080,71 @@ function resolveCandleWindow(
     return { from: fromDate.toISOString(), to: toDate.toISOString() };
   }
 
+  if (range === '1d' && options.intradayChart === true) {
+    return latestKstTradingSessionWindow(toDate);
+  }
+
   const durationMs = rangeDurationMs(range);
   return {
     from: new Date(toDate.getTime() - durationMs).toISOString(),
     to: toDate.toISOString(),
+  };
+}
+
+const KST_INTRADAY_START_MINUTE = 8 * 60;
+const KST_INTRADAY_END_MINUTE = 20 * 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function latestKstTradingSessionWindow(toDate: Date): { from: string; to: string } {
+  let startOfKstDay = kstStartOfDay(toDate);
+  const clock = kstClockFromDate(toDate);
+
+  if (!isWeekdayKst(toDate) || clock.minutes < KST_INTRADAY_START_MINUTE) {
+    startOfKstDay = previousWeekdayKstStart(startOfKstDay);
+  }
+
+  const sessionStartMs = startOfKstDay.getTime() + KST_INTRADAY_START_MINUTE * 60_000;
+  const sessionEndMs = startOfKstDay.getTime() + KST_INTRADAY_END_MINUTE * 60_000;
+  const effectiveToMs = Math.min(Math.max(toDate.getTime(), sessionStartMs), sessionEndMs);
+  return {
+    from: new Date(sessionStartMs).toISOString(),
+    to: new Date(effectiveToMs).toISOString(),
+  };
+}
+
+function kstStartOfDay(date: Date): Date {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  const utcMs =
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+      0,
+      0,
+      0,
+      0,
+    ) - KST_OFFSET_MS;
+  return new Date(utcMs);
+}
+
+function previousWeekdayKstStart(startOfKstDay: Date): Date {
+  let cursor = new Date(startOfKstDay.getTime() - DAY_MS);
+  while (!isWeekdayKst(cursor)) {
+    cursor = new Date(cursor.getTime() - DAY_MS);
+  }
+  return cursor;
+}
+
+function isWeekdayKst(date: Date): boolean {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  const day = shifted.getUTCDay();
+  return day >= 1 && day <= 5;
+}
+
+function kstClockFromDate(date: Date): { minutes: number } {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  return {
+    minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes(),
   };
 }
 
@@ -1074,7 +1162,7 @@ function resolvePriceHistoryWindow(
     return { from: fromDate.toISOString(), to: toDate.toISOString() };
   }
 
-  return { from: kstStartOfDayIso(now), to: toDate.toISOString() };
+  return latestKstTradingSessionWindow(toDate);
 }
 
 function toPriceHistoryApiItem(point: {
@@ -1094,6 +1182,54 @@ function toPriceHistoryApiItem(point: {
   };
 }
 
+async function sparklineSeedPoints(input: {
+  ticker: string;
+  window: { from: string; to: string };
+  now: Date;
+  fetchSparklineSeedCandles: StockRoutesOptions['fetchSparklineSeedCandles'];
+}): Promise<PriceHistoryPoint[]> {
+  if (input.fetchSparklineSeedCandles === undefined) return [];
+  try {
+    const candles = await input.fetchSparklineSeedCandles({
+      ticker: input.ticker,
+      window: input.window,
+      now: input.now,
+    });
+    return candlesToPriceHistorySeed(input.ticker, candles);
+  } catch (err: unknown) {
+    log.debug(
+      { ticker: input.ticker, err: err instanceof Error ? err.message : String(err) },
+      'sparkline candle seed unavailable',
+    );
+    return [];
+  }
+}
+
+function candlesToPriceHistorySeed(
+  ticker: string,
+  candles: readonly PriceCandle[],
+): PriceHistoryPoint[] {
+  return candles
+    .filter((candle) =>
+      candle.ticker === ticker
+      && candle.interval === '1m'
+      && Number.isFinite(candle.close)
+      && candle.close > 0
+      && !Number.isNaN(new Date(candle.bucketAt).getTime()),
+    )
+    .sort((a, b) => a.bucketAt.localeCompare(b.bucketAt))
+    .map((candle) => ({
+      ticker,
+      bucketAt: candle.bucketAt,
+      price: candle.close,
+      changeRate: 0,
+      sampleCount: candle.sampleCount,
+      source: candle.source,
+      createdAt: candle.createdAt,
+      updatedAt: candle.updatedAt,
+    }));
+}
+
 function filterRealtimePreferredPriceHistory<T extends { source: PriceCandleSource | null }>(
   points: readonly T[],
 ): T[] {
@@ -1104,6 +1240,15 @@ function filterRealtimePreferredPriceHistory<T extends { source: PriceCandleSour
   }
   if (liveCount < 2) return [...points];
   return points.filter((point) => isRealtimePriceSource(point.source));
+}
+
+function shouldUseSparklineCandleSeed(
+  points: readonly PriceHistoryPoint[],
+  includeCandleSeed: boolean,
+): boolean {
+  if (!includeCandleSeed) return false;
+  if (points.length < 2) return true;
+  return new Set(points.map((point) => point.price)).size <= 1;
 }
 
 function rangeDurationMs(range: '1d' | '1w' | '1m' | '3m' | '6m' | '1y'): number {
@@ -1257,17 +1402,14 @@ function mergeObservedPriceHistoryCandles(
   ticker: string,
 ): PriceCandle[] {
   const byBucket = new Map<string, PriceCandle>();
-  const storedBuckets = new Set<string>();
   for (const candle of candles) {
     byBucket.set(candle.bucketAt, candle);
-    storedBuckets.add(candle.bucketAt);
   }
 
   for (const point of points) {
     if (point.ticker !== ticker) continue;
     if (!isObservedPriceHistoryPoint(point)) continue;
     const bucketAt = bucketAtForInterval(point.bucketAt, '1m');
-    if (storedBuckets.has(bucketAt)) continue;
     const existing = byBucket.get(bucketAt);
     if (existing === undefined) {
       byBucket.set(bucketAt, {
@@ -1533,12 +1675,15 @@ function enqueueSignalAgentEvent(
   queue.enqueue({
     type: 'market_movement_detected',
     ticker: event.ticker,
+    productCode: `A${event.ticker}`,
+    krTicker: event.ticker,
+    displayName: event.name,
     source: event.source,
     publishedAt: event.signalAt,
     firstSeenAt: event.createdAt,
     relevance: signalRelevance(event.signalType),
     confidence: 0.9,
-    reason: `Realtime momentum ${event.signalType} ${event.momentumWindow} ${formatSignedPct(event.momentumPct)}`,
+    reason: `실시간 모멘텀 · ${signalTypeLabel(event.signalType)} · ${signalWindowLabel(event.momentumWindow)} · ${formatSignedPct(event.momentumPct)}`,
     dedupeKey: `market-movement:${event.source}:${event.id}`,
     payloadRef: `stock-signal:${event.id}`,
   });
@@ -1577,6 +1722,36 @@ function signalRelevance(signalType: StockSignalEvent['signalType']): number {
       return 0.72;
     case 'trend':
       return 0.55;
+  }
+}
+
+function signalTypeLabel(signalType: StockSignalEvent['signalType']): string {
+  switch (signalType) {
+    case 'overheat':
+      return '과열';
+    case 'strong_scalp':
+      return '강한 단기 급등';
+    case 'scalp':
+      return '단기 급등';
+    case 'trend':
+      return '추세 급등';
+  }
+}
+
+function signalWindowLabel(window: StockSignalEvent['momentumWindow']): string {
+  switch (window) {
+    case '10s':
+      return '10초';
+    case '20s':
+      return '20초';
+    case '30s':
+      return '30초';
+    case '1m':
+      return '1분';
+    case '3m':
+      return '3분';
+    case '5m':
+      return '5분';
   }
 }
 

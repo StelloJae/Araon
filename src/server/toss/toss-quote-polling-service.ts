@@ -83,31 +83,32 @@ export function createTossQuotePollingService(
   async function refreshOnce(): Promise<TossQuotePollingSnapshot> {
     const settings = options.settings.snapshot();
     const startedAt = now();
-    lastCycleMs = 0;
-    tickersInCycle = 0;
-    requestedCount = 0;
-    returnedCount = 0;
-    missingCount = 0;
 
     if (!settings.tossQuotePollingEnabled) {
       return snapshot();
     }
 
     const tickers = uniqueTickers(options.stockRepo.findAll());
-    tickersInCycle = tickers.length;
     if (tickers.length === 0) {
       cycleCount += 1;
       lastCycleMs = now() - startedAt;
+      tickersInCycle = 0;
+      requestedCount = 0;
+      returnedCount = 0;
+      missingCount = 0;
       lastMessage = 'no_tracked_tickers';
       return snapshot();
     }
 
+    let nextRequestedCount = 0;
+    let nextReturnedCount = 0;
+    let nextMissingCount = 0;
     try {
       for (const batch of chunk(tickers, settings.tossQuotePollingBatchSize)) {
         const result = await options.provider.getQuoteBatch({ tickers: batch });
-        requestedCount += result.requestedCount;
-        returnedCount += result.returnedCount;
-        missingCount += result.missingTickers.length;
+        nextRequestedCount += result.requestedCount;
+        nextReturnedCount += result.returnedCount;
+        nextMissingCount += result.missingTickers.length;
         for (const price of result.prices) {
           if (isUsablePrice(price)) {
             options.priceStore.setPrice(price);
@@ -116,16 +117,24 @@ export function createTossQuotePollingService(
       }
       cycleCount += 1;
       lastCycleMs = now() - startedAt;
+      tickersInCycle = tickers.length;
+      requestedCount = nextRequestedCount;
+      returnedCount = nextReturnedCount;
+      missingCount = nextMissingCount;
       consecutiveFailureCount = 0;
       lastSuccessAt = new Date(now()).toISOString();
       lastErrorCode = null;
-      lastMessage = returnedCount === tickersInCycle
+      lastMessage = nextReturnedCount === tickers.length
         ? 'ready'
         : 'partial_quote_batch';
       return snapshot();
     } catch (err: unknown) {
       cycleCount += 1;
       lastCycleMs = now() - startedAt;
+      tickersInCycle = tickers.length;
+      requestedCount = nextRequestedCount;
+      returnedCount = nextReturnedCount;
+      missingCount = nextMissingCount;
       errorCount += 1;
       consecutiveFailureCount += 1;
       lastFailureAt = new Date(now()).toISOString();

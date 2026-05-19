@@ -1,6 +1,7 @@
 import type { TossAccountSummaryClient } from './toss-account-summary-client.js';
 import type { TossOrdersClient } from './toss-orders-client.js';
 import type { TossPortfolioClient } from './toss-portfolio-client.js';
+import type { TossProductIconCache } from './toss-product-icon.js';
 import type { TossSseRefreshHint } from './toss-sse-refresh-router.js';
 
 export type TossSseRefreshExecutionResult =
@@ -17,6 +18,7 @@ export interface TossSseRefreshExecutorOptions {
   readonly ordersClient: Pick<TossOrdersClient, 'listPendingOrders' | 'listCompletedOrders'>;
   readonly accountSummaryClient: Pick<TossAccountSummaryClient, 'getSummary'>;
   readonly portfolioClient: Pick<TossPortfolioClient, 'listPositions'>;
+  readonly productIconCache?: Pick<TossProductIconCache, 'clear'>;
   readonly minRefreshGapMs?: number;
   readonly now?: () => number;
 }
@@ -67,10 +69,14 @@ function taskForHint(
       return () => options.accountSummaryClient.getSummary();
     case 'portfolio-positions':
       return () => options.portfolioClient.listPositions();
+    case 'icons':
+      return async () => {
+        options.productIconCache?.clear();
+        await options.portfolioClient.listPositions();
+      };
     case 'quote':
     case 'user-notifications':
     case 'preferences':
-    case 'icons':
       return null;
   }
 }
@@ -81,11 +87,11 @@ function refreshKey(hint: TossSseRefreshHint): string {
     case 'completed-orders':
     case 'account-summary':
     case 'portfolio-positions':
+    case 'icons':
       return hint.resource;
     case 'quote':
     case 'user-notifications':
     case 'preferences':
-    case 'icons':
       return `${hint.resource}:${hint.ticker ?? '*'}`;
   }
 }

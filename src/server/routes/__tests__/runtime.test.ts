@@ -938,8 +938,8 @@ describe('GET /runtime/data-health', () => {
           enabled: true,
           source: 'toss-fast-quote',
           intervalMs: 500,
-          targetCap: 40,
-          hardCap: 60,
+          targetCap: 64,
+          hardCap: 100,
           candidateCount: 18,
           requestedCount: 18,
           returnedCount: 17,
@@ -969,8 +969,8 @@ describe('GET /runtime/data-health', () => {
       enabled: true,
       source: 'toss-fast-quote',
       intervalMs: 500,
-      targetCap: 40,
-      hardCap: 60,
+      targetCap: 64,
+      hardCap: 100,
       candidateCount: 18,
       requestedCount: 18,
       returnedCount: 17,
@@ -3263,7 +3263,7 @@ describe('POST /runtime/realtime/session-enable', () => {
     expect(settings.save).not.toHaveBeenCalled();
   });
 
-  it('prioritizes agent order-intent candidates over manual watchlist candidates', async () => {
+  it('keeps manual watchlist candidates ahead of agent order-intent candidates', async () => {
     const applyDiff = vi.fn(async () => undefined);
     const connect = vi.fn(async () => undefined);
     const settings = settingsStore();
@@ -3304,10 +3304,10 @@ describe('POST /runtime/realtime/session-enable', () => {
       outcome: 'enabled',
       sessionRealtimeEnabled: true,
       sessionCap: 1,
-      sessionTickers: ['000660'],
+      sessionTickers: ['005930'],
     });
     expect(applyDiff).toHaveBeenCalledWith({
-      subscribe: ['000660'],
+      subscribe: ['005930'],
       unsubscribe: [],
     });
     expect(JSON.stringify(res.json())).not.toContain('intent-000660');
@@ -3315,7 +3315,7 @@ describe('POST /runtime/realtime/session-enable', () => {
     expect(settings.save).not.toHaveBeenCalled();
   });
 
-  it('prioritizes recent news agent events over manual watchlist candidates', async () => {
+  it('keeps manual watchlist candidates ahead of recent news agent events', async () => {
     const applyDiff = vi.fn(async () => undefined);
     const connect = vi.fn(async () => undefined);
     const settings = settingsStore();
@@ -3358,10 +3358,10 @@ describe('POST /runtime/realtime/session-enable', () => {
       outcome: 'enabled',
       sessionRealtimeEnabled: true,
       sessionCap: 1,
-      sessionTickers: ['000660'],
+      sessionTickers: ['005930'],
     });
     expect(applyDiff).toHaveBeenCalledWith({
-      subscribe: ['000660'],
+      subscribe: ['005930'],
       unsubscribe: [],
     });
     expect(JSON.stringify(res.json())).not.toContain('evt-news-000660');
@@ -3369,7 +3369,7 @@ describe('POST /runtime/realtime/session-enable', () => {
     expect(settings.save).not.toHaveBeenCalled();
   });
 
-  it('prioritizes the current screen ticker over manual watchlist candidates', async () => {
+  it('keeps manual watchlist candidates ahead of the current screen ticker', async () => {
     const applyDiff = vi.fn(async () => undefined);
     const connect = vi.fn(async () => undefined);
     const settings = settingsStore();
@@ -3396,10 +3396,10 @@ describe('POST /runtime/realtime/session-enable', () => {
       outcome: 'enabled',
       sessionRealtimeEnabled: true,
       sessionCap: 1,
-      sessionTickers: ['000660'],
+      sessionTickers: ['005930'],
     });
     expect(applyDiff).toHaveBeenCalledWith({
-      subscribe: ['000660'],
+      subscribe: ['005930'],
       unsubscribe: [],
     });
     expect(JSON.stringify(res.json())).not.toContain('A000660');

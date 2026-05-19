@@ -8,12 +8,15 @@ import {
 import type { AgentEvent } from '../agent/agent-event-queue.js';
 import type { OrderIntentPreview } from '../agent/order-intent-service.js';
 import type { MarketQuoteBatchResult } from '../market/market-data-provider.js';
+import type { TossPortfolioPositionsPayload } from './toss-portfolio-client.js';
+import type { TossWatchlistPayload } from './toss-watchlist-client.js';
 
 const log = createChildLogger('toss-fast-quote-lane');
 
 export type TossFastQuoteCandidateSource =
   | 'current_view'
   | 'watchlist'
+  | 'holding'
   | 'agent_candidate'
   | 'top100_gainer'
   | 'top100_loser'
@@ -31,6 +34,8 @@ export interface TossFastQuoteCandidateInput {
   readonly now: string;
   readonly currentTickers?: readonly string[];
   readonly favorites?: readonly Favorite[];
+  readonly watchlistSnapshot?: TossWatchlistPayload | null;
+  readonly portfolioSnapshot?: TossPortfolioPositionsPayload | null;
   readonly agentEvents?: readonly AgentEvent[];
   readonly orderIntentPreviews?: readonly OrderIntentPreview[];
   readonly topMovers?: MarketTopMoversResponse | null;
@@ -95,10 +100,19 @@ export interface TossFastQuoteLaneOptions {
   readonly staleAfterMs?: number;
 }
 
-const DEFAULT_INTERVAL_MS = 500;
-const DEFAULT_TARGET_CAP = 40;
-const DEFAULT_HARD_CAP = 60;
-const DEFAULT_BATCH_SIZE = 50;
+interface TossFastQuoteCycleCounters {
+  requestedCount: number;
+  returnedCount: number;
+  acceptedCount: number;
+  droppedUnchangedCount: number;
+  droppedStaleCount: number;
+  droppedInvalidCount: number;
+}
+
+const DEFAULT_INTERVAL_MS = 100;
+const DEFAULT_TARGET_CAP = 200;
+const DEFAULT_HARD_CAP = 400;
+const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_STALE_AFTER_MS = 5_000;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
 const NETWORK_BACKOFF_MAX_MS = 5_000;
@@ -112,11 +126,15 @@ export function buildTossFastQuoteCandidates(
   const cap = Math.min(targetCap, hardCap);
   const byTicker = new Map<string, TossFastQuoteCandidate>();
 
-  for (const ticker of input.currentTickers ?? []) {
-    addCandidate(byTicker, ticker, 'current_view', '현재 선택 종목', 700, now);
+  for (const position of input.portfolioSnapshot?.positions ?? []) {
+    if (position.marketType !== 'KR' && position.marketCode !== 'KRX') continue;
+    addCandidate(byTicker, position.productCode, 'holding', '보유 종목', 950, input.portfolioSnapshot?.fetchedAt ?? now);
+  }
+  for (const item of input.watchlistSnapshot?.items ?? []) {
+    addCandidate(byTicker, item.productCode, 'watchlist', 'Toss 즐겨찾기', 925, input.watchlistSnapshot?.fetchedAt ?? now);
   }
   for (const favorite of input.favorites ?? []) {
-    addCandidate(byTicker, favorite.ticker, 'watchlist', '즐겨찾기', 600, favorite.addedAt);
+    addCandidate(byTicker, favorite.ticker, 'watchlist', '즐겨찾기', 900, favorite.addedAt);
   }
   for (const event of input.agentEvents ?? []) {
     addCandidate(
@@ -124,7 +142,7 @@ export function buildTossFastQuoteCandidates(
       event.krTicker ?? event.productCode ?? event.ticker,
       'agent_candidate',
       '에이전트 후보',
-      500 + Math.round((event.relevance ?? event.confidence) * 100),
+      800 + Math.round((event.relevance ?? event.confidence) * 100),
       event.firstSeenAt,
     );
   }
@@ -134,9 +152,12 @@ export function buildTossFastQuoteCandidates(
       preview.ticker,
       'agent_candidate',
       '주문 intent 후보',
-      540,
+      840,
       preview.createdAt,
     );
+  }
+  for (const ticker of input.currentTickers ?? []) {
+    addCandidate(byTicker, ticker, 'current_view', '현재 선택 종목', 700, now);
   }
 
   const topMovers = input.topMovers;
@@ -147,7 +168,7 @@ export function buildTossFastQuoteCandidates(
         item.ticker,
         'top100_gainer',
         `TOP100 상승 #${item.rank}`,
-        400 - item.rank,
+        200 - item.rank,
         topMovers.fetchedAt ?? topMovers.generatedAt,
       );
     }
@@ -157,14 +178,14 @@ export function buildTossFastQuoteCandidates(
         item.ticker,
         'top100_loser',
         `TOP100 하락 #${item.rank}`,
-        300 - item.rank,
+        150 - item.rank,
         topMovers.fetchedAt ?? topMovers.generatedAt,
       );
     }
   }
 
   for (const ticker of input.kisTrackedTickers ?? []) {
-    addCandidate(byTicker, ticker, 'kis_tracked', '실시간 추적 companion', 200, now);
+    addCandidate(byTicker, ticker, 'kis_tracked', '실시간 추적 companion', 100, now);
   }
 
   return [...byTicker.values()]
@@ -228,19 +249,27 @@ export function createTossFastQuoteLane(
   }
 
   async function runRefresh(startedAtMs: number): Promise<TossFastQuoteLaneSnapshot> {
+    const counters: TossFastQuoteCycleCounters = {
+      requestedCount: 0,
+      returnedCount: 0,
+      acceptedCount: 0,
+      droppedUnchangedCount: 0,
+      droppedStaleCount: 0,
+      droppedInvalidCount: 0,
+    };
     try {
       const candidates = (await options.collectCandidates())
         .slice(0, hardCap);
-      candidateCount = candidates.length;
-      requestedCount = 0;
-      returnedCount = 0;
-      acceptedCount = 0;
-      droppedUnchangedCount = 0;
-      droppedStaleCount = 0;
-      droppedInvalidCount = 0;
 
       const tickers = uniqueTickers(candidates.map((candidate) => candidate.ticker)).slice(0, hardCap);
       if (tickers.length === 0) {
+        candidateCount = 0;
+        requestedCount = 0;
+        returnedCount = 0;
+        acceptedCount = 0;
+        droppedUnchangedCount = 0;
+        droppedStaleCount = 0;
+        droppedInvalidCount = 0;
         lastMessage = 'no_candidates';
         lastErrorCode = null;
         return snapshot();
@@ -248,13 +277,20 @@ export function createTossFastQuoteLane(
 
       for (const batch of chunk(tickers, batchSize)) {
         const result = await options.provider.getQuoteBatch({ tickers: batch });
-        requestedCount += result.requestedCount;
-        returnedCount += result.returnedCount;
+        counters.requestedCount += result.requestedCount;
+        counters.returnedCount += result.returnedCount;
         for (const price of result.prices) {
-          acceptPrice(price, startedAtMs);
+          acceptPrice(price, startedAtMs, counters);
         }
       }
 
+      candidateCount = candidates.length;
+      requestedCount = counters.requestedCount;
+      returnedCount = counters.returnedCount;
+      acceptedCount = counters.acceptedCount;
+      droppedUnchangedCount = counters.droppedUnchangedCount;
+      droppedStaleCount = counters.droppedStaleCount;
+      droppedInvalidCount = counters.droppedInvalidCount;
       consecutiveFailureCount = 0;
       backoffUntilMs = 0;
       lastSuccessAt = new Date(now()).toISOString();
@@ -265,6 +301,12 @@ export function createTossFastQuoteLane(
       failureCount += 1;
       consecutiveFailureCount += 1;
       lastFailureAt = new Date(now()).toISOString();
+      requestedCount = counters.requestedCount;
+      returnedCount = counters.returnedCount;
+      acceptedCount = counters.acceptedCount;
+      droppedUnchangedCount = counters.droppedUnchangedCount;
+      droppedStaleCount = counters.droppedStaleCount;
+      droppedInvalidCount = counters.droppedInvalidCount;
       lastErrorCode = isRateLimitError(err)
         ? 'TOSS_FAST_QUOTE_RATE_LIMITED'
         : 'TOSS_FAST_QUOTE_FAILED';
@@ -283,19 +325,23 @@ export function createTossFastQuoteLane(
     }
   }
 
-  function acceptPrice(price: Price, cycleStartedAtMs: number): void {
+  function acceptPrice(
+    price: Price,
+    cycleStartedAtMs: number,
+    counters: TossFastQuoteCycleCounters,
+  ): void {
     if (!isUsablePrice(price)) {
-      droppedInvalidCount += 1;
+      counters.droppedInvalidCount += 1;
       return;
     }
-    const ticker = normalizeKrTicker(price.ticker);
+    const ticker = normalizeQuoteKey(price.ticker);
     if (ticker === null) {
-      droppedInvalidCount += 1;
+      counters.droppedInvalidCount += 1;
       return;
     }
     const updatedAtMs = Date.parse(price.updatedAt);
     if (Number.isFinite(updatedAtMs) && updatedAtMs < cycleStartedAtMs - staleAfterMs) {
-      droppedStaleCount += 1;
+      counters.droppedStaleCount += 1;
       return;
     }
     const normalized: Price = {
@@ -306,11 +352,11 @@ export function createTossFastQuoteLane(
     };
     const previous = lastAcceptedByTicker.get(ticker);
     if (previous !== undefined && isSameEffectivePrice(previous, normalized)) {
-      droppedUnchangedCount += 1;
+      counters.droppedUnchangedCount += 1;
       return;
     }
     lastAcceptedByTicker.set(ticker, normalized);
-    acceptedCount += 1;
+    counters.acceptedCount += 1;
     options.priceStore.setPrice(normalized);
   }
 
@@ -398,7 +444,7 @@ function addCandidate(
   score: number,
   lastSeenAt: string,
 ): void {
-  const ticker = normalizeKrTicker(rawTicker);
+  const ticker = normalizeQuoteKey(rawTicker);
   if (ticker === null) return;
   const existing = byTicker.get(ticker);
   const candidate: TossFastQuoteCandidate = {
@@ -417,10 +463,10 @@ function addCandidate(
   }
 }
 
-function normalizeKrTicker(value: string): string | null {
+function normalizeQuoteKey(value: string): string | null {
   const productCode = normalizeTossProductCode(value);
   if (productCode === null) return null;
-  return krTickerFromTossProductCode(productCode);
+  return krTickerFromTossProductCode(productCode) ?? productCode;
 }
 
 function normalizeTimestamp(value: string): string {
@@ -438,7 +484,7 @@ function uniqueTickers(tickers: readonly string[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const ticker of tickers) {
-    const normalized = normalizeKrTicker(ticker);
+    const normalized = normalizeQuoteKey(ticker);
     if (normalized === null || seen.has(normalized)) continue;
     seen.add(normalized);
     out.push(normalized);

@@ -69,6 +69,50 @@ describe('StockCandleChart', () => {
     expect(html).toContain('클릭하면 봉 고정');
   });
 
+  it('exposes latest candle metadata for browser progression QA without synthetic data', () => {
+    const html = renderToStaticMarkup(
+      createElement(CandleChartView, {
+        status: 'ready',
+        interval: '1m',
+        range: '1d',
+        items: [
+          {
+            time: 1777939200,
+            bucketAt: '2026-05-05T00:00:00.000Z',
+            open: 70_000,
+            high: 70_500,
+            low: 69_800,
+            close: 70_200,
+            volume: 123,
+            sampleCount: 3,
+            source: 'toss-time-today',
+            isPartial: false,
+          },
+          {
+            time: 1777939260,
+            bucketAt: '2026-05-05T00:01:00.000Z',
+            open: 70_200,
+            high: 70_700,
+            low: 70_100,
+            close: 70_500,
+            volume: 145,
+            sampleCount: 4,
+            source: 'toss-fast-quote',
+            isPartial: true,
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('data-testid="stock-candle-chart-host"');
+    expect(html).toContain('data-candle-count="2"');
+    expect(html).toContain('data-latest-candle-time="2026-05-05T00:01:00.000Z"');
+    expect(html).toContain('data-latest-candle-close="70500"');
+    expect(html).toContain('data-latest-candle-sample-count="4"');
+    expect(html).toContain('data-latest-candle-source="toss-fast-quote"');
+    expect(html).toContain('data-latest-candle-partial="true"');
+  });
+
   it('trims non-trading REST placeholder candles from chart edges', () => {
     const trimmed = trimNonTradingEdgeCandles([
       {
@@ -139,6 +183,134 @@ describe('StockCandleChart', () => {
       '2026-05-14T00:01:00.000Z',
     ]);
     expect(merged.map((item) => item.close)).toEqual([70_000, 70_500]);
+  });
+
+  it('advances the current minute candle close and sample count from real live quotes', () => {
+    const storedBucketAt = '2026-05-14T00:01:00.000Z';
+    const stored = [
+      {
+        time: Math.trunc(Date.parse(storedBucketAt) / 1000),
+        bucketAt: storedBucketAt,
+        open: 70_000,
+        high: 70_300,
+        low: 69_900,
+        close: 70_100,
+        volume: 100,
+        sampleCount: 3,
+        source: 'toss-time-today' as const,
+        isPartial: false,
+      },
+    ];
+
+    const first = mergeLiveQuoteIntoCandleItems(stored, {
+      ticker: '005930',
+      price: 70_500,
+      volume: 150,
+      updatedAt: '2026-05-14T00:01:10.000Z',
+      isSnapshot: false,
+      source: 'toss-fast-quote',
+    }, '1m');
+    const second = mergeLiveQuoteIntoCandleItems(first, {
+      ticker: '005930',
+      price: 69_800,
+      volume: 170,
+      updatedAt: '2026-05-14T00:01:20.000Z',
+      isSnapshot: false,
+      source: 'toss-fast-quote',
+    }, '1m');
+
+    expect(first[0]).toMatchObject({
+      open: 70_000,
+      high: 70_500,
+      low: 69_900,
+      close: 70_500,
+      volume: 150,
+      sampleCount: 4,
+      source: 'mixed',
+      isPartial: true,
+    });
+    expect(second[0]).toMatchObject({
+      open: 70_000,
+      high: 70_500,
+      low: 69_800,
+      close: 69_800,
+      volume: 170,
+      sampleCount: 5,
+      source: 'mixed',
+      isPartial: true,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(CandleChartView, {
+        status: 'ready',
+        interval: '1m',
+        range: '1d',
+        items: second,
+      }),
+    );
+
+    expect(html).toContain('data-latest-candle-close="69800"');
+    expect(html).toContain('data-latest-candle-sample-count="5"');
+    expect(html).toContain('data-latest-candle-source="mixed"');
+    expect(html).toContain('data-latest-candle-partial="true"');
+  });
+
+  it('does not append live quotes from a different KST session to stored intraday candles', () => {
+    const storedBucketAt = '2026-05-15T07:03:00.000Z';
+    const stored = [
+      {
+        time: Math.trunc(Date.parse(storedBucketAt) / 1000),
+        bucketAt: storedBucketAt,
+        open: 820_000,
+        high: 821_000,
+        low: 819_000,
+        close: 820_000,
+        volume: 10,
+        sampleCount: 1,
+        source: 'toss-time-today' as const,
+        isPartial: false,
+      },
+    ];
+
+    const merged = mergeLiveQuoteIntoCandleItems(stored, {
+      ticker: '277810',
+      price: 817_000,
+      volume: 734_000,
+      updatedAt: '2026-05-17T09:33:10.000Z',
+      isSnapshot: false,
+      source: 'toss-fast-quote',
+    }, '1m');
+
+    expect(merged).toEqual(stored);
+  });
+
+  it('does not create closed-night live candles without stored candle data for that bucket', () => {
+    const storedBucketAt = '2026-05-15T07:03:00.000Z';
+    const stored = [
+      {
+        time: Math.trunc(Date.parse(storedBucketAt) / 1000),
+        bucketAt: storedBucketAt,
+        open: 820_000,
+        high: 821_000,
+        low: 819_000,
+        close: 820_000,
+        volume: 10,
+        sampleCount: 1,
+        source: 'toss-time-today' as const,
+        isPartial: false,
+      },
+    ];
+
+    const merged = mergeLiveQuoteIntoCandleItems(stored, {
+      ticker: '277810',
+      price: 818_000,
+      volume: 734_000,
+      updatedAt: '2026-05-15T12:30:10.000Z',
+      isSnapshot: false,
+      source: 'toss-fast-quote',
+    }, '1m');
+
+    expect(merged).toEqual(stored);
   });
 
   it('supports Korean and US candlestick color conventions', () => {

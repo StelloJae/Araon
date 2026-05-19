@@ -37,6 +37,7 @@ import {
   type MomentumSignalType,
   type MomentumWindow,
 } from './realtime-momentum';
+import { resolveProductDisplayName } from './product-display-name';
 import type { StockViewModel } from './view-models';
 
 export interface SurgeViewItem {
@@ -69,6 +70,7 @@ export function aggregateSurgeView(
   now: number,
   maxRows: number,
   marketCapFilter: SurgeMarketCapFilter = 'all',
+  displayNames: Readonly<Record<string, string>> = {},
 ): SurgeViewItem[] {
   const liveItems: SurgeViewItem[] = [];
   const stockByCode = new Map<string, StockViewModel>();
@@ -87,9 +89,12 @@ export function aggregateSurgeView(
       }
       const stock = stockByCode.get(e.code);
       if (!matchesMarketCapFilter(stock, marketCapFilter)) continue;
+      const displayName =
+        resolveProductDisplayName(e.code, stock?.name ?? e.name, displayNames) ??
+        e.name;
       liveItems.push({
         code: e.code,
-        name: e.name,
+        name: displayName,
         price: e.price,
         changePct: e.momentumPct ?? e.surgePct,
         volume: e.volume ?? stock?.volume ?? null,

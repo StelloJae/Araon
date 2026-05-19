@@ -162,6 +162,31 @@ describe('TOP100 view chrome', () => {
     expect(html).not.toContain('1초마다');
   });
 
+  it('orders rows by the latest percent snapshot before rendering', () => {
+    const data = {
+      ...topMovers(),
+      gainers: [
+        { ...topMovers().gainers[0], ticker: '000660', name: 'SK하이닉스', rank: 1, changePct: 2.1 },
+        { ...topMovers().gainers[0], ticker: '005930', name: '삼성전자', rank: 2, changePct: 5.4 },
+      ],
+      losers: [
+        { ...topMovers().losers[0], ticker: '035420', name: 'NAVER', rank: 1, changePct: -1.2 },
+        { ...topMovers().losers[0], ticker: '000660', name: 'SK하이닉스', rank: 2, changePct: -4.8 },
+      ],
+    } satisfies MarketTopMoversResponse;
+    const html = renderToStaticMarkup(
+      createElement(TopMoversBoard, {
+        data,
+        onOpenTicker: vi.fn(),
+      }),
+    );
+
+    expect(html.indexOf('삼성전자')).toBeLessThan(html.indexOf('SK하이닉스'));
+    expect(html.indexOf('SK하이닉스', html.indexOf('하락 TOP100'))).toBeLessThan(
+      html.indexOf('NAVER'),
+    );
+  });
+
   it('keeps TOP100 polling sub-second but never schedules after cancellation', () => {
     expect(normalizeMarketTop100RefreshDelayMs(500)).toBe(500);
     expect(normalizeMarketTop100RefreshDelayMs(250)).toBe(300);

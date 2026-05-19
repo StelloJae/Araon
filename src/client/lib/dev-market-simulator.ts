@@ -216,7 +216,7 @@ function buildSurgeEntry(
   const momentumPct =
     signalType === 'trend'
       ? round1(2.8 + step * 0.25)
-      : round1(1.4 + step * 0.2);
+      : round1(3.0 + step * 0.3);
 
   return {
     code: stock.ticker,

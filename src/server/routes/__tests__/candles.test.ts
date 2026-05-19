@@ -159,6 +159,37 @@ describe('GET /stocks/:ticker/candles', () => {
     ]);
   });
 
+  it('uses the latest KST trading session for intraday 1d charts instead of a weekend 24h window', async () => {
+    const repo = new PriceCandleRepository(db);
+    await repo.bulkUpsertCandles([
+      candle('2026-05-15T00:00:00.000Z', { close: 70_100 }),
+      candle('2026-05-15T00:01:00.000Z', { close: 70_200 }),
+      candle('2026-05-17T09:00:00.000Z', {
+        close: 70_900,
+        source: 'rest',
+        isPartial: true,
+        sampleCount: 1,
+      }),
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo: repo,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/candles?interval=1m&range=1d&to=2026-05-17T09:30:00.000Z',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.items.map((item: { bucketAt: string }) => item.bucketAt)).toEqual([
+      '2026-05-15T00:00:00.000Z',
+      '2026-05-15T00:01:00.000Z',
+    ]);
+  });
+
   it('returns Toss fast quote current candles for live chart progression', async () => {
     const repo = new PriceCandleRepository(db);
     await repo.bulkUpsertCandles([
@@ -258,6 +289,65 @@ describe('GET /stocks/:ticker/candles', () => {
       }),
     ]);
     expect(body.data.coverage.sourceMix).toEqual(['kis-time-today', 'rest']);
+  });
+
+  it('overlays live quote observations onto an existing current minute candle', async () => {
+    const candleRepo = new PriceCandleRepository(db);
+    const priceHistoryRepo = new PriceHistoryPointRepository(db);
+    await candleRepo.bulkUpsertCandles([
+      candle('2026-05-05T00:00:00.000Z', {
+        open: 100,
+        high: 101,
+        low: 99,
+        close: 100,
+        volume: 50,
+        sampleCount: 1,
+        source: 'toss-time-today',
+      }),
+    ]);
+    await priceHistoryRepo.bulkUpsertPoints([
+      {
+        ...pricePoint('2026-05-05T00:00:10.000Z', 102),
+        source: 'toss-fast-quote',
+      },
+      {
+        ...pricePoint('2026-05-05T00:00:30.000Z', 98),
+        source: 'toss-fast-quote',
+      },
+      {
+        ...pricePoint('2026-05-05T00:00:55.000Z', 103),
+        source: 'toss-fast-quote',
+      },
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      candleRepo,
+      priceHistoryRepo,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/005930/candles?interval=1m&from=2026-05-05T00:00:00.000Z&to=2026-05-05T00:01:00.000Z',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.items).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-05T00:00:00.000Z',
+        open: 100,
+        high: 103,
+        low: 98,
+        close: 103,
+        volume: 50,
+        sampleCount: 4,
+        source: 'mixed',
+        isPartial: true,
+      }),
+    ]);
+    expect(body.data.coverage.sourceMix).toEqual(['mixed']);
+    expect(body.data.status.state).toBe('partial');
   });
 
   it('reports visible candle gaps in coverage metadata', async () => {

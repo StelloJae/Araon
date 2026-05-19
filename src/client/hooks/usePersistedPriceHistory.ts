@@ -61,7 +61,7 @@ function drainHydrationQueue(): void {
   activeHydrations += 1;
   lastHydrationStartAt = Date.now();
 
-  const pending = getStockPriceHistory(ticker, { range: '1d' })
+  const pending = getStockPriceHistory(ticker, { range: '1d', includeCandleSeed: true })
     .then((history) => {
       usePriceHistoryStore.getState().seedTicker(
         ticker,
