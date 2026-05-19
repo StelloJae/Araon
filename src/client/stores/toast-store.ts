@@ -29,7 +29,16 @@ export const useToastStore = create<ToastState>((set, get) => ({
 
   push: (spec) => {
     const entry: ToastEntry = { ...spec, pushedAt: Date.now() };
-    const next = [...get().toasts, entry];
+    const current = get().toasts;
+    const existingIndex = current.findIndex(
+      (toast) =>
+        toast.id === entry.id ||
+        toast.cooldownKey === entry.cooldownKey,
+    );
+    const next =
+      existingIndex >= 0
+        ? current.map((toast, index) => (index === existingIndex ? entry : toast))
+        : [...current, entry];
     if (next.length > MAX_TOASTS) {
       next.splice(0, next.length - MAX_TOASTS);
     }

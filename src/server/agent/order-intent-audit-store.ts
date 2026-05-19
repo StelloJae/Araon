@@ -1,14 +1,23 @@
 import type Database from 'better-sqlite3';
 
-import { buildOrderIntentLifecycle } from './order-intent-service.js';
+import {
+  buildOrderIntentLifecycle,
+  buildOrderIntentPaperLedgerPreview,
+  buildOrderIntentPreviewImpact,
+  buildOrderIntentRiskPolicyEvaluation,
+  buildOrderIntentStrategyEvaluation,
+  hashOrderIntentApprovalSummary,
+} from './order-intent-service.js';
 import type {
   OrderIntentAuditDecision,
   OrderIntentAuditEntry,
   OrderIntentAuditEvent,
   OrderIntentApprovalChallenge,
+  OrderIntentApprovalOrderSummary,
   OrderIntentApprovalChallengeStatus,
   OrderIntentMarket,
   OrderIntentOrderType,
+  OrderIntentPaperLedgerEntry,
   OrderIntentPreview,
   OrderIntentRequestedMode,
   OrderIntentRiskCheck,
@@ -60,12 +69,29 @@ interface OrderIntentApprovalChallengeRow {
   requested_mode: string;
   status: string;
   confirmation_text: string;
+  intent_hash: string;
+  order_summary_json: string;
+  kill_switch: string;
   live_execution_locked: number;
   operator_id: string | null;
   created_at: string;
   expires_at: string;
   confirmed_at: string | null;
   audit_ref: string;
+}
+
+interface OrderIntentPaperLedgerRow {
+  id: string;
+  intent_id: string;
+  ticker: string;
+  side: string;
+  market: string;
+  status: string;
+  booked: number;
+  position_delta: number | null;
+  cash_delta_krw: number | null;
+  note: string;
+  created_at: string;
 }
 
 export function createSqliteOrderIntentStore(db: Database.Database): OrderIntentStore {
@@ -114,6 +140,40 @@ export function createSqliteOrderIntentStore(db: Database.Database): OrderIntent
         preview.auditRef,
       );
     },
+    appendPaperLedgerEntry(entry) {
+      db.prepare(
+        `INSERT OR REPLACE INTO agent_order_intent_paper_ledger_entries (
+           id, intent_id, ticker, side, market, status, booked, position_delta,
+           cash_delta_krw, note, created_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        entry.id,
+        entry.intentId,
+        entry.ticker,
+        entry.side,
+        entry.market,
+        entry.status,
+        entry.booked ? 1 : 0,
+        entry.positionDelta,
+        entry.cashDeltaKrw,
+        entry.note,
+        entry.createdAt,
+      );
+    },
+    snapshotPaperLedger(limit) {
+      const safeLimit = normalizeLimit(limit);
+      const rows = db
+        .prepare<[number], OrderIntentPaperLedgerRow>(
+          `SELECT id, intent_id, ticker, side, market, status, booked,
+                  position_delta, cash_delta_krw, note, created_at
+           FROM agent_order_intent_paper_ledger_entries
+           ORDER BY created_at DESC, id DESC
+           LIMIT ?`,
+        )
+        .all(safeLimit);
+      return rows.map(rowToPaperLedgerEntry);
+    },
     appendAudit(entry) {
       db.prepare(
         `INSERT OR REPLACE INTO agent_order_intent_audit_entries (
@@ -139,10 +199,11 @@ export function createSqliteOrderIntentStore(db: Database.Database): OrderIntent
       db.prepare(
         `INSERT OR REPLACE INTO agent_order_intent_approval_challenges (
            id, intent_id, ticker, side, requested_mode, status,
-           confirmation_text, live_execution_locked, operator_id, created_at,
-           expires_at, confirmed_at, audit_ref
+           confirmation_text, intent_hash, order_summary_json, kill_switch,
+           live_execution_locked, operator_id, created_at, expires_at,
+           confirmed_at, audit_ref
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         challenge.id,
         challenge.intentId,
@@ -151,6 +212,9 @@ export function createSqliteOrderIntentStore(db: Database.Database): OrderIntent
         challenge.requestedMode,
         challenge.status,
         challenge.confirmationText,
+        challenge.intentHash,
+        JSON.stringify(challenge.orderSummary),
+        challenge.killSwitch,
         challenge.liveExecutionLocked ? 1 : 0,
         challenge.operatorId,
         challenge.createdAt,
@@ -171,8 +235,9 @@ export function createSqliteOrderIntentStore(db: Database.Database): OrderIntent
       const row = db
         .prepare<[string], OrderIntentApprovalChallengeRow>(
           `SELECT id, intent_id, ticker, side, requested_mode, status,
-                  confirmation_text, live_execution_locked, operator_id,
-                  created_at, expires_at, confirmed_at, audit_ref
+                  confirmation_text, intent_hash, order_summary_json,
+                  kill_switch, live_execution_locked, operator_id, created_at,
+                  expires_at, confirmed_at, audit_ref
            FROM agent_order_intent_approval_challenges
            WHERE id = ?`,
         )
@@ -184,8 +249,9 @@ export function createSqliteOrderIntentStore(db: Database.Database): OrderIntent
       const rows = db
         .prepare<[number], OrderIntentApprovalChallengeRow>(
           `SELECT id, intent_id, ticker, side, requested_mode, status,
-                  confirmation_text, live_execution_locked, operator_id,
-                  created_at, expires_at, confirmed_at, audit_ref
+                  confirmation_text, intent_hash, order_summary_json,
+                  kill_switch, live_execution_locked, operator_id, created_at,
+                  expires_at, confirmed_at, audit_ref
            FROM agent_order_intent_approval_challenges
            ORDER BY created_at DESC, id DESC
            LIMIT ?`,
@@ -224,7 +290,24 @@ export function createSqliteOrderIntentStore(db: Database.Database): OrderIntent
   };
 }
 
+function rowToPaperLedgerEntry(row: OrderIntentPaperLedgerRow): OrderIntentPaperLedgerEntry {
+  return {
+    id: row.id,
+    intentId: row.intent_id,
+    ticker: row.ticker,
+    side: row.side as OrderIntentSide,
+    market: row.market as OrderIntentMarket,
+    status: 'preview_only',
+    booked: false,
+    positionDelta: row.position_delta,
+    cashDeltaKrw: row.cash_delta_krw,
+    note: row.note,
+    createdAt: row.created_at,
+  };
+}
+
 function rowToApprovalChallenge(row: OrderIntentApprovalChallengeRow): OrderIntentApprovalChallenge {
+  const orderSummary = parseApprovalOrderSummary(row.order_summary_json, row);
   return {
     id: row.id,
     intentId: row.intent_id,
@@ -233,6 +316,11 @@ function rowToApprovalChallenge(row: OrderIntentApprovalChallengeRow): OrderInte
     requestedMode: 'live',
     status: row.status as OrderIntentApprovalChallengeStatus,
     confirmationText: row.confirmation_text,
+    intentHash: row.intent_hash.length > 0
+      ? row.intent_hash
+      : hashOrderIntentApprovalSummary(orderSummary),
+    orderSummary,
+    killSwitch: 'engaged',
     liveExecutionLocked: true,
     operatorId: row.operator_id,
     createdAt: row.created_at,
@@ -242,7 +330,43 @@ function rowToApprovalChallenge(row: OrderIntentApprovalChallengeRow): OrderInte
   };
 }
 
+function parseApprovalOrderSummary(
+  value: string,
+  row: Pick<OrderIntentApprovalChallengeRow, 'ticker' | 'side'>,
+): OrderIntentApprovalOrderSummary {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (isApprovalOrderSummary(parsed)) return parsed;
+  } catch {
+    // Older rows can be restored from non-secret challenge fields.
+  }
+  return {
+    ticker: row.ticker,
+    side: row.side as OrderIntentSide,
+    market: 'KR',
+    orderType: 'market',
+    quantity: null,
+    cashAmount: null,
+    limitPrice: null,
+    liveExecutionLocked: true,
+  };
+}
+
+function isApprovalOrderSummary(value: unknown): value is OrderIntentApprovalOrderSummary {
+  if (value === null || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.ticker === 'string'
+    && (record.side === 'buy' || record.side === 'sell')
+    && (record.market === 'KR' || record.market === 'US')
+    && (record.orderType === 'market' || record.orderType === 'limit')
+    && (typeof record.quantity === 'number' || record.quantity === null)
+    && (typeof record.cashAmount === 'number' || record.cashAmount === null)
+    && (typeof record.limitPrice === 'number' || record.limitPrice === null)
+    && record.liveExecutionLocked === true;
+}
+
 function rowToPreview(row: OrderIntentRow): OrderIntentPreview {
+  const riskChecks = parseRiskChecks(row.risk_checks_json);
   return {
     id: row.id,
     ticker: row.ticker,
@@ -259,7 +383,29 @@ function rowToPreview(row: OrderIntentRow): OrderIntentPreview {
     triggerEventId: row.trigger_event_id,
     agentId: row.agent_id,
     reason: row.reason,
-    riskChecks: parseRiskChecks(row.risk_checks_json),
+    riskChecks,
+    strategyEvaluation: buildOrderIntentStrategyEvaluation({
+      side: row.side as OrderIntentSide,
+      requestedMode: row.requested_mode as Exclude<OrderIntentRequestedMode, 'live'>,
+      triggerEventId: row.trigger_event_id,
+      orderType: row.order_type as OrderIntentOrderType,
+      market: row.market as OrderIntentMarket,
+    }),
+    riskPolicy: buildOrderIntentRiskPolicyEvaluation(riskChecks),
+    paperLedgerPreview: buildOrderIntentPaperLedgerPreview({
+      intentId: row.id,
+      side: row.side as OrderIntentSide,
+      market: row.market as OrderIntentMarket,
+      quantity: row.quantity,
+      cashAmount: row.cash_amount,
+    }),
+    previewImpact: buildOrderIntentPreviewImpact({
+      side: row.side as OrderIntentSide,
+      market: row.market as OrderIntentMarket,
+      quantity: row.quantity,
+      cashAmount: row.cash_amount,
+      limitPrice: row.limit_price,
+    }),
     lifecycle: buildOrderIntentLifecycle({ triggerEventId: row.trigger_event_id }),
     createdAt: row.created_at,
     expiresAt: row.expires_at,

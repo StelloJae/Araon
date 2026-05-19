@@ -217,4 +217,194 @@ describe('agentEventToToastSpec', () => {
       direction: 'up',
     });
   });
+
+  it('labels negative realtime momentum as 급락 and down direction', () => {
+    const event: AgentEventNotificationEvent = {
+      type: 'agent-event',
+      id: 15,
+      event: {
+        id: 'agent-event-negative',
+        type: 'market_movement_detected',
+        ticker: '064800',
+        source: 'realtime-momentum',
+        publishedAt: '2026-05-11T06:00:20.000Z',
+        firstSeenAt: '2026-05-11T06:00:20.000Z',
+        freshnessMs: 0,
+        freshness: 'near_realtime',
+        relevance: 0.5,
+        confidence: 0.9,
+        reason: 'Realtime momentum overheat 30s -3.26%',
+        payloadRef: null,
+        createdAt: '2026-05-11T06:00:20.000Z',
+      },
+    };
+
+    const spec = maybeAgentEventToToastSpec(
+      event,
+      '포니링크',
+      { notificationsEnabled: true, marketMovementThresholdPct: 3 },
+      1_111,
+    );
+
+    expect(spec).toMatchObject({
+      direction: 'down',
+      changePct: -3.26,
+    });
+    expect(spec?.detail).toContain('급락 신호');
+    expect(spec?.detail).not.toContain('급상승 신호');
+  });
+
+  it('labels TOP100 하락 movement as 급락 when no percent is present', () => {
+    const event: AgentEventNotificationEvent = {
+      type: 'agent-event',
+      id: 16,
+      event: {
+        id: 'agent-event-top100-down',
+        type: 'market_movement_detected',
+        ticker: '084670',
+        source: 'realtime-momentum',
+        publishedAt: '2026-05-11T06:00:20.000Z',
+        firstSeenAt: '2026-05-11T06:00:20.000Z',
+        freshnessMs: 0,
+        freshness: 'near_realtime',
+        relevance: 0.5,
+        confidence: 0.9,
+        reason: 'TOP100 하락 #5',
+        payloadRef: null,
+        createdAt: '2026-05-11T06:00:20.000Z',
+      },
+    };
+
+    const spec = agentEventToToastSpec(event, '포니링크', 1_111);
+
+    expect(spec.direction).toBe('down');
+    expect(spec.detail).toContain('급락 신호');
+    expect(spec.detail).not.toContain('급상승 신호');
+  });
+
+  it('uses a semantic cooldown key for equivalent market movement events', () => {
+    const baseEvent: AgentEventNotificationEvent = {
+      type: 'agent-event',
+      id: 13,
+      event: {
+        id: 'agent-event-7',
+        type: 'market_movement_detected',
+        ticker: '277810',
+        source: 'realtime-momentum',
+        publishedAt: '2026-05-11T06:00:20.000Z',
+        firstSeenAt: '2026-05-11T06:00:20.000Z',
+        freshnessMs: 0,
+        freshness: 'near_realtime',
+        relevance: 0.5,
+        confidence: 0.9,
+        reason: '급상승 신호 · 실시간 모멘텀 · 과열 · 10초 · +3.09%',
+        payloadRef: null,
+        createdAt: '2026-05-11T06:00:20.000Z',
+      },
+    };
+    const nextEvent: AgentEventNotificationEvent = {
+      ...baseEvent,
+      id: 14,
+      event: {
+        ...baseEvent.event,
+        id: 'agent-event-8',
+      },
+    };
+
+    const first = maybeAgentEventToToastSpec(
+      baseEvent,
+      '켄코아에어로스페이스',
+      { notificationsEnabled: true, marketMovementThresholdPct: 3 },
+      1_111,
+    );
+    const second = maybeAgentEventToToastSpec(
+      nextEvent,
+      '켄코아에어로스페이스',
+      { notificationsEnabled: true, marketMovementThresholdPct: 3 },
+      1_222,
+    );
+
+    expect(first?.id).not.toBe(second?.id);
+    expect(first?.cooldownKey).toBe(second?.cooldownKey);
+    expect(first?.cooldownKey).toBe('agent-event:market:277810:realtime-momentum:10s:up');
+  });
+
+  it('uses the 0-30s semantic window for recent surge movement toasts', () => {
+    const event: AgentEventNotificationEvent = {
+      type: 'agent-event',
+      id: 17,
+      event: {
+        id: 'agent-event-recent-surge',
+        type: 'market_movement_detected',
+        ticker: '277810',
+        source: 'realtime-momentum',
+        publishedAt: '2026-05-11T06:00:20.000Z',
+        firstSeenAt: '2026-05-11T06:00:20.000Z',
+        freshnessMs: 0,
+        freshness: 'near_realtime',
+        relevance: 0.5,
+        confidence: 0.9,
+        reason: '최근 급상승 · 0~30초 · +3.09%',
+        payloadRef: null,
+        createdAt: '2026-05-11T06:00:20.000Z',
+      },
+    };
+
+    const spec = maybeAgentEventToToastSpec(
+      event,
+      '켄코아에어로스페이스',
+      { notificationsEnabled: true, marketMovementThresholdPct: 3 },
+      1_111,
+    );
+
+    expect(spec?.cooldownKey).toBe('agent-event:market:277810:realtime-momentum:0-30s:up');
+  });
+
+  it('uses public product displayName when caller has no local catalog match', () => {
+    const event: AgentEventNotificationEvent = {
+      type: 'agent-event',
+      id: 14,
+      event: {
+        id: 'agent-event-8',
+        type: 'market_movement_detected',
+        ticker: '084670',
+        product: {
+          productCode: 'A084670',
+          krTicker: '084670',
+          market: 'KOSPI',
+          displayName: '동양고속',
+        },
+        source: 'realtime-momentum',
+        publishedAt: '2026-05-18T00:17:30.000Z',
+        firstSeenAt: '2026-05-18T00:17:30.000Z',
+        freshnessMs: 0,
+        freshness: 'near_realtime',
+        relevance: 0.8,
+        confidence: 0.9,
+        reason: 'Realtime momentum overheat 30s +3.26%',
+        payloadRef: null,
+        rawPayloadRedacted: true,
+        relatedIds: {
+          watchlistId: null,
+          holdingId: null,
+          orderIntentId: null,
+          approvalId: null,
+        },
+        skipReason: null,
+        createdAt: '2026-05-18T00:17:30.000Z',
+      },
+    };
+
+    expect(
+      maybeAgentEventToToastSpec(
+        event,
+        undefined,
+        { notificationsEnabled: true, marketMovementThresholdPct: 3 },
+        1_111,
+      ),
+    ).toMatchObject({
+      title: '시장 움직임: 동양고속',
+      name: '동양고속',
+    });
+  });
 });

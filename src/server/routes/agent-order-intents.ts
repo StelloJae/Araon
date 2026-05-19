@@ -134,6 +134,7 @@ export async function agentOrderIntentRoutes(
             auditRef: result.rejection.auditRef,
             liveExecutionLocked: result.liveExecutionLocked,
             execution: result.execution,
+            lockedExecutionProof: result.lockedExecutionProof,
           },
         });
       }
@@ -143,6 +144,7 @@ export async function agentOrderIntentRoutes(
           challenge: result.challenge,
           liveExecutionLocked: result.liveExecutionLocked,
           execution: result.execution,
+          lockedExecutionProof: result.lockedExecutionProof,
         },
       });
     } catch (err: unknown) {
@@ -185,6 +187,42 @@ export async function agentOrderIntentRoutes(
       });
     } catch {
       return sendSnapshotFailure(reply, 'Order intent audit snapshot failed');
+    }
+  });
+
+  app.get('/agent/order-intents/paper-ledger', async (request, reply) => {
+    try {
+      const limit = parseLimit((request.query as { limit?: unknown }).limit);
+      return reply.send({
+        success: true,
+        data: opts.service.snapshotPaperLedger(limit),
+      });
+    } catch {
+      return sendSnapshotFailure(reply, 'Order intent paper ledger snapshot failed');
+    }
+  });
+
+  app.get('/agent/order-intents/performance-review', async (request, reply) => {
+    try {
+      const limit = parseLimit((request.query as { limit?: unknown }).limit);
+      return reply.send({
+        success: true,
+        data: opts.service.snapshotPerformanceReview(limit),
+      });
+    } catch {
+      return sendSnapshotFailure(reply, 'Order intent performance review snapshot failed');
+    }
+  });
+
+  app.get('/agent/order-intents/reconciliation', async (request, reply) => {
+    try {
+      const limit = parseLimit((request.query as { limit?: unknown }).limit);
+      return reply.send({
+        success: true,
+        data: opts.service.snapshotReconciliation(limit),
+      });
+    } catch {
+      return sendSnapshotFailure(reply, 'Order intent reconciliation snapshot failed');
     }
   });
 }

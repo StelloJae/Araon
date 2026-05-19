@@ -56,6 +56,63 @@ describe('agent event alert delivery store', () => {
     }
   });
 
+  it('records order-intent lifecycle alert events without violating event type constraints', () => {
+    const db = new Database(':memory:');
+    try {
+      migrateUp(db);
+      const store = createSqliteAgentEventAlertDeliveryStore(db, {
+        idFactory: () => 'delivery-preview',
+        now: () => '2026-05-11T06:00:01.000Z',
+      });
+
+      const event: AgentEvent = {
+        id: 'event-preview',
+        type: 'preview_created',
+        ticker: '005930',
+        productCode: 'A005930',
+        krTicker: '005930',
+        market: 'KOSPI',
+        displayName: '삼성전자',
+        source: 'order-intent',
+        publishedAt: '2026-05-11T06:00:00.000Z',
+        firstSeenAt: '2026-05-11T06:00:00.000Z',
+        freshnessMs: 0,
+        relevance: 0.5,
+        confidence: 1,
+        reason: 'Local simulated order preview created; live execution remains locked.',
+        dedupeKey: 'order-intent:preview:intent-preview',
+        payloadRef: null,
+        rawPayloadRedacted: true,
+        relatedIds: {
+          watchlistId: null,
+          holdingId: null,
+          orderIntentId: 'intent-preview',
+          approvalId: null,
+        },
+        skipReason: 'live execution locked',
+        createdAt: '2026-05-11T06:00:00.000Z',
+      };
+
+      const inserted = store.append({
+        event,
+        channel: 'browser-sse',
+        target: 'local-ui',
+        status: 'skipped_no_client',
+        clientCount: 0,
+        reason: 'agent-event SSE notification',
+      });
+
+      expect(inserted).toMatchObject({
+        id: 'delivery-preview',
+        eventType: 'preview_created',
+        eventId: 'event-preview',
+        dispatchLatencyMs: 1_000,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it('summarizes first_seen to dispatch latency against the 30s target', () => {
     const db = new Database(':memory:');
     try {

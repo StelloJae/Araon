@@ -86,6 +86,17 @@ export function OrderSafetyModal({
           )}
         </SafetySection>
 
+        <SafetySection title="실행 준비 계약" badge={executionReadinessBadge(livePolicy)}>
+          <div className="safety-fact-list">
+            <Fact label="주문 연결" value={executionAdapterLabel(livePolicy)} />
+            <Fact label="실행기" value={executionLockedExecutorLabel(livePolicy)} />
+            <Fact label="승인 실행기" value={executionLiveApprovalExecutorLabel(livePolicy)} />
+            <Fact label="승인 게이트" value={executionApprovalLabel(livePolicy)} />
+            <Fact label="체결 대조" value={executionReconciliationLabel(livePolicy)} />
+            <Fact label="데이터 신선도" value={executionDataFreshnessLabel(livePolicy)} />
+          </div>
+        </SafetySection>
+
         <div className="order-safety-modal__grid">
           <SafetySection title="1. 주문 미리보기" badge="모의 / 기록용">
             {preview === null ? (
@@ -96,6 +107,11 @@ export function OrderSafetyModal({
                 <Fact label="방향" value={preview.side === 'buy' ? '매수' : '매도'} />
                 <Fact label="모드" value={modeLabel(preview.requestedMode)} />
                 <Fact label="금액" value={previewAmount(preview)} />
+                <Fact label="전략" value={strategySummary(preview)} />
+                <Fact label="리스크" value={riskPolicySummary(preview)} />
+                <Fact label="모의 변화" value={paperLedgerSummary(preview)} />
+                <Fact label="영향" value={previewImpactSummary(preview)} />
+                <Fact label="손익" value={previewPnlSummary(preview)} />
                 <Fact label="근거" value={humanOrderReason(preview.reason)} />
               </div>
             )}
@@ -259,10 +275,146 @@ function automationReadinessStatusLabel(
   }
 }
 
+function executionReadinessBadge(policy: OrderIntentLivePolicyPayload | null): string {
+  if (policy?.executionReadiness === undefined) return '확인 중';
+  return '실거래 잠금';
+}
+
+function executionAdapterLabel(policy: OrderIntentLivePolicyPayload | null): string {
+  const readiness = policy?.executionReadiness;
+  if (readiness === undefined) return '계약 확인 중';
+  if (
+    readiness.orderAdapter.provider === 'toss' &&
+    readiness.orderAdapter.status === 'contract_ready' &&
+    readiness.orderAdapter.liveMutationEnabled === false
+  ) {
+    return 'Toss dry-run 계약 준비';
+  }
+  return '계약 확인 필요';
+}
+
+function executionLockedExecutorLabel(policy: OrderIntentLivePolicyPayload | null): string {
+  const executor = policy?.executionReadiness?.lockedExecutor;
+  if (executor === undefined) return '실행기 확인 중';
+  if (
+    executor.status === 'ready_locked' &&
+    executor.blockedBeforeNetwork &&
+    executor.liveMutationEnabled === false
+  ) {
+    return '네트워크 주문 전 차단 · proof만 생성';
+  }
+  return '실행기 확인 필요';
+}
+
+function executionLiveApprovalExecutorLabel(policy: OrderIntentLivePolicyPayload | null): string {
+  const executor = policy?.executionReadiness?.liveApprovalExecutor;
+  if (executor === undefined) return '승인 실행기 확인 중';
+  if (
+    executor.status === 'ready_locked' &&
+    executor.blockedBeforeAdapter &&
+    executor.liveMutationEnabled === false
+  ) {
+    return '승인 후에도 주문 연결 전 차단';
+  }
+  return '승인 실행기 확인 필요';
+}
+
+function executionApprovalLabel(policy: OrderIntentLivePolicyPayload | null): string {
+  const readiness = policy?.executionReadiness;
+  if (readiness === undefined) return '승인 정책 확인 중';
+  if (
+    readiness.approvalGate.status === 'locked' &&
+    readiness.approvalGate.requiresFreshApproval &&
+    readiness.approvalGate.liveExecutionLocked
+  ) {
+    return 'fresh 승인 필요 · 실행 잠금';
+  }
+  return '승인 정책 확인 필요';
+}
+
+function executionReconciliationLabel(policy: OrderIntentLivePolicyPayload | null): string {
+  const readiness = policy?.executionReadiness;
+  if (readiness === undefined) return '대조 계획 확인 중';
+  if (
+    readiness.reconciliation.status === 'planned' &&
+    readiness.reconciliation.liveMutationEnabled === false
+  ) {
+    return `${readiness.reconciliation.requiredStates.length.toLocaleString('ko-KR')}개 상태 · read-only 대조 계획`;
+  }
+  return '대조 계획 확인 필요';
+}
+
+function executionDataFreshnessLabel(policy: OrderIntentLivePolicyPayload | null): string {
+  const gate = policy?.executionReadiness?.dataFreshnessGate;
+  if (gate === undefined) return '신선도 계약 확인 중';
+  if (
+    gate.status === 'ready_locked' &&
+    gate.blocksLiveExecution &&
+    gate.liveMutationEnabled === false
+  ) {
+    return '가격/차트/뉴스·공시 확인 전 차단';
+  }
+  return '신선도 계약 확인 필요';
+}
+
 function previewAmount(preview: OrderIntentPreviewPayload): string {
   if (preview.cashAmount !== null) return `${preview.cashAmount.toLocaleString('ko-KR')}원`;
   if (preview.quantity !== null) return `${preview.quantity.toLocaleString('ko-KR')}주`;
   return '수량 미정';
+}
+
+function strategySummary(preview: OrderIntentPreviewPayload): string {
+  const decision = preview.strategyEvaluation?.decision ?? preview.side;
+  const confidence = preview.strategyEvaluation?.confidence === 'guarded' ? '신중' : '확인 중';
+  return `${decision === 'buy' ? '매수 검토' : '매도 검토'} · ${confidence}`;
+}
+
+function riskPolicySummary(preview: OrderIntentPreviewPayload): string {
+  const checks = preview.riskPolicy?.checks ?? preview.riskChecks;
+  const blockedCount = checks.filter((check) => check.status === 'blocked').length;
+  const warningCount = checks.filter((check) => check.status === 'warning').length;
+  if (preview.riskPolicy?.liveBlocked === true) {
+    if (blockedCount > 0 || warningCount > 0) {
+      const parts = [`${blockedCount.toLocaleString('ko-KR')}개 차단`];
+      if (warningCount > 0) parts.push(`${warningCount.toLocaleString('ko-KR')}개 경고`);
+      parts.push('모의만');
+      return parts.join(' · ');
+    }
+    return '실거래 잠금 · 모의만';
+  }
+  if (blockedCount > 0) return '실거래 잠금';
+  return '확인 중';
+}
+
+function paperLedgerSummary(preview: OrderIntentPreviewPayload): string {
+  const ledger = preview.paperLedgerPreview;
+  if (ledger === undefined) return '모의 원장 대기';
+  if (ledger.positionDelta !== null) {
+    return `${signedNumber(ledger.positionDelta)}주 변화 · 미기록`;
+  }
+  if (ledger.cashDeltaKrw !== null) {
+    return `${signedKrw(ledger.cashDeltaKrw)} 변화 · 미기록`;
+  }
+  return '변화량 미정 · 미기록';
+}
+
+function previewImpactSummary(preview: OrderIntentPreviewPayload): string {
+  const impact = preview.previewImpact;
+  if (impact === undefined) return '영향 추정 대기';
+  return `${impact.positionImpact} · ${impact.cashImpact}`;
+}
+
+function previewPnlSummary(preview: OrderIntentPreviewPayload): string {
+  return preview.previewImpact?.pnlImpact ?? '손익 추정 대기';
+}
+
+function signedNumber(value: number): string {
+  const abs = Math.abs(value).toLocaleString('ko-KR');
+  return value > 0 ? `+${abs}` : value < 0 ? `-${abs}` : '0';
+}
+
+function signedKrw(value: number): string {
+  return `${signedNumber(value)}원`;
 }
 
 function approvalStatusLabel(status: OrderIntentApprovalChallengePayload['status']): string {

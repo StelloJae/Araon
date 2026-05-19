@@ -38,6 +38,26 @@ describe('agent event order-intent mapping', () => {
     expect(input.market).toBe('US');
     expect(input.requestedMode).toBe('simulated');
   });
+
+  it('maps downward market movement to a simulated sell preview without live execution', () => {
+    const input = buildSimulatedBuyPreviewInputFromAgentEvent(agentEvent({
+      type: 'market_movement_detected',
+      ticker: '064800',
+      source: 'toss-fast-quote',
+      reason: '실시간 모멘텀 · 강한 단기 급락 · 30초 · -3.26%',
+      payloadRef: null,
+    }));
+
+    expect(input).toMatchObject({
+      ticker: '064800',
+      side: 'sell',
+      market: 'KR',
+      requestedMode: 'simulated',
+      triggerEventId: 'event-1',
+    });
+    expect(input).not.toHaveProperty('cashAmount');
+    expect(input).not.toHaveProperty('quantity');
+  });
 });
 
 function agentEvent(overrides: Partial<AgentEventPayload>): AgentEventPayload {

@@ -129,6 +129,7 @@ describe('market movement agent event', () => {
       queue,
       candidate: {
         ticker: 'A005930',
+        name: '삼성전자',
         direction: 'gainers',
         rank: 3,
         reason: 'TOP100 상승 #3',
@@ -146,6 +147,7 @@ describe('market movement agent event', () => {
         id: 'event-top100',
         type: 'market_movement_detected',
         ticker: '005930',
+        displayName: '삼성전자',
         source: 'toss-top100-rotation',
         publishedAt: '2026-05-12T00:02:00.000Z',
         firstSeenAt: '2026-05-12T00:02:15.000Z',
@@ -158,5 +160,31 @@ describe('market movement agent event', () => {
       }),
     ]);
     expect(JSON.stringify(queue.snapshot())).not.toContain('price');
+  });
+
+  it('does not treat TOP100 loser rotation as an upside surge candidate', () => {
+    const queue = createAgentEventQueue({
+      idFactory: () => 'event-top100-loser',
+      now: () => '2026-05-12T00:02:15.000Z',
+    });
+
+    const result = enqueueMarketMovementFromTopMover({
+      queue,
+      candidate: {
+        ticker: 'A000660',
+        name: 'SK하이닉스',
+        direction: 'losers',
+        rank: 1,
+        reason: 'TOP100 하락 #1',
+        score: 0.9,
+        ttlMs: 240_000,
+        lastSeenAt: '2026-05-12T00:02:00.000Z',
+      },
+      source: 'toss-top100-rotation',
+      now: () => '2026-05-12T00:02:15.000Z',
+    });
+
+    expect(result).toBeNull();
+    expect(queue.snapshot()).toEqual([]);
   });
 });

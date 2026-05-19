@@ -62,6 +62,36 @@ describe('SQLite order intent store', () => {
         ticker: '005930',
       }),
     ]);
+    expect(restored.snapshotPaperLedger()).toEqual({
+      returnedCount: 1,
+      items: [
+        expect.objectContaining({
+          id: 'paper-preview:intent-persisted',
+          intentId: 'intent-persisted',
+          ticker: '005930',
+          side: 'buy',
+          status: 'preview_only',
+          booked: false,
+          positionDelta: 2,
+          cashDeltaKrw: null,
+        }),
+      ],
+      summary: {
+        entryCount: 1,
+        bookedCount: 0,
+        previewOnlyCount: 1,
+        cashDeltaKrw: 0,
+        byTicker: [
+          {
+            ticker: '005930',
+            previewCount: 1,
+            positionDelta: 2,
+            cashDeltaKrw: 0,
+            lastPreviewAt: '2026-05-11T14:10:00.000Z',
+          },
+        ],
+      },
+    });
   });
 
   it('persists blocked live attempts without creating a preview row', () => {
@@ -136,6 +166,13 @@ describe('SQLite order intent store', () => {
         intentId: 'intent-confirm-persisted',
         status: 'confirmed_live_locked',
         confirmationText: 'CONFIRM 005930 BUY LIVE',
+        intentHash: expect.stringMatching(/^[a-f0-9]{16}$/),
+        orderSummary: expect.objectContaining({
+          ticker: '005930',
+          side: 'buy',
+          cashAmount: 500000,
+        }),
+        killSwitch: 'engaged',
         confirmedAt: '2026-05-11T14:12:20.000Z',
       }),
     ]);

@@ -677,6 +677,7 @@ export interface TossPortfolioPosition {
   productCode: string;
   symbol: string;
   name: string;
+  iconUrl?: string | null;
   marketType: string;
   marketCode: string;
   quantity: number;
@@ -869,6 +870,7 @@ export interface TossWatchlistItem {
   productCode: string;
   symbol: string;
   name: string;
+  iconUrl?: string | null;
   currency: string;
   base: number;
   last: number;
@@ -901,24 +903,39 @@ export type AraonWatchlistTrackingState =
   | 'disabled'
   | 'unknown';
 
+export type AraonWatchlistMembershipSource =
+  | 'toss_watchlist'
+  | 'holding_auto'
+  | 'araon_local'
+  | 'merged';
+
 export interface AraonWatchlistItem {
   productCode: string;
   krTicker: string | null;
   symbol: string;
   name: string;
+  iconUrl?: string | null;
   market: AraonProductMarket;
   currency: 'KRW' | 'USD' | 'UNKNOWN';
-  source: 'toss' | 'local' | 'merged';
+  source: 'toss' | 'local' | 'merged' | 'toss_position';
   syncState: AraonWatchlistSyncState;
   kisEligible: boolean;
   tossEligible: boolean;
   chartEligible: boolean;
   quoteEligible: boolean;
   realtimeTrackingState: AraonWatchlistTrackingState;
+  watchSurfaceMember: boolean;
+  watchlistMember: boolean;
+  membershipSource: AraonWatchlistMembershipSource;
+  manualWatchlist: boolean;
+  autoSyncedFromHolding: boolean;
+  localFallback: boolean;
+  holding: boolean;
   addedAt: string | null;
   groupName: string | null;
   base: number | null;
   last: number | null;
+  changePct: number | null;
 }
 
 export interface AraonWatchlistPayload {
@@ -929,6 +946,7 @@ export interface AraonWatchlistPayload {
   warning: { code: 'TOSS_SESSION_REQUIRED' | 'TOSS_READ_FAILED' } | null;
   counts: {
     toss: number;
+    positions: number;
     local: number;
     merged: number;
     returned: number;
@@ -957,6 +975,50 @@ export interface AraonWatchlistMutationResult {
     | 'unsupported_product'
     | 'not_found';
   item: AraonWatchlistItem | null;
+}
+
+export interface AraonWatchlistReconcileResult {
+  provider: 'araon-watchlist';
+  fetchedAt: string;
+  dryRun: boolean;
+  status: 'preview' | 'applied' | 'mutation_disabled' | 'watchlist_unavailable' | 'failed';
+  counts: {
+    addCandidates: number;
+    removeCandidates: number;
+    attempted: number;
+    added: number;
+    removed: number;
+    unchanged: number;
+    failed: number;
+    skipped: number;
+  };
+  addCandidates: Array<{
+    productCode: string;
+    krTicker: string | null;
+    name: string;
+    reason: 'holding_missing_in_toss_watchlist' | 'auto_holding_no_longer_held';
+  }>;
+  removeCandidates: Array<{
+    productCode: string;
+    krTicker: string | null;
+    name: string;
+    reason: 'holding_missing_in_toss_watchlist' | 'auto_holding_no_longer_held';
+  }>;
+  mutations: Array<{
+    productCode: string;
+    krTicker: string | null;
+    name: string;
+    action: 'add' | 'remove';
+    status: 'succeeded' | 'unchanged' | 'failed' | 'skipped';
+    reason:
+      | 'local_fallback'
+      | 'toss_mutation_disabled'
+      | 'toss_mutation_succeeded'
+      | 'toss_mutation_failed'
+      | 'unsupported_product'
+      | 'not_found'
+      | 'max_mutations_reached';
+  }>;
 }
 
 export async function getTossAccountSummary(): Promise<TossAccountSummaryPayload> {
@@ -1058,6 +1120,18 @@ export async function removeAraonWatchlistItem(
   return unwrap<AraonWatchlistMutationResult>(res);
 }
 
+export async function reconcileAraonWatchlist(input: {
+  dryRun?: boolean;
+  maxMutations?: number;
+} = {}): Promise<AraonWatchlistReconcileResult> {
+  const res = await fetch('/watchlist/reconcile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return unwrap<AraonWatchlistReconcileResult>(res);
+}
+
 export type OrderIntentSide = 'buy' | 'sell';
 export type OrderIntentMarket = 'KR' | 'US';
 export type OrderIntentOrderType = 'market' | 'limit';
@@ -1111,13 +1185,206 @@ export interface OrderIntentLivePolicyPayload {
   cooldownMs: number | null;
   missingConstraints: readonly OrderIntentLivePolicyMissingConstraint[];
   automationReadinessGaps: readonly OrderIntentAutomationReadinessGapPayload[];
+  executionReadiness?: OrderIntentExecutionReadinessPayload;
   generatedAt: string;
+}
+
+export type OrderIntentExecutionStatePayload =
+  | 'submitted'
+  | 'accepted'
+  | 'rejected'
+  | 'partial_fill'
+  | 'filled'
+  | 'canceled';
+
+export interface OrderIntentExecutionReadinessPayload {
+  orderAdapter: {
+    provider: 'toss';
+    mode: 'dry_run_locked';
+    status: 'contract_ready';
+    liveMutationEnabled: false;
+    supportedMarkets: readonly OrderIntentMarket[];
+    supportedSides: readonly OrderIntentSide[];
+    supportedOrderTypes: readonly OrderIntentOrderType[];
+  };
+  lockedExecutor: {
+    status: 'ready_locked';
+    blockedBeforeNetwork: true;
+    liveMutationEnabled: false;
+    output: 'locked_execution_proof';
+    requires: readonly (
+      | 'fresh_approval'
+      | 'risk_policy'
+      | 'kill_switch_release'
+      | 'reconciliation_ready'
+    )[];
+  };
+  liveApprovalExecutor: {
+    status: 'ready_locked';
+    blockedBeforeAdapter: true;
+    liveMutationEnabled: false;
+    input: 'confirmed_approval_challenge';
+    output: 'locked_execution_proof';
+    requires: readonly (
+      | 'confirmed_approval_challenge'
+      | 'intent_hash_match'
+      | 'kill_switch_release'
+      | 'locked_order_adapter'
+    )[];
+  };
+  approvalGate: {
+    status: 'locked';
+    requiresFreshApproval: true;
+    confirmationChallenge: true;
+    liveExecutionLocked: true;
+  };
+  reconciliation: {
+    status: 'planned';
+    source: 'toss_account_readonly_snapshot';
+    requiredStates: readonly OrderIntentExecutionStatePayload[];
+    executor: {
+      status: 'read_only_ready';
+      requiredInputs: readonly (
+        | 'intent_hash'
+        | 'order_summary'
+        | 'read_only_account_snapshot'
+      )[];
+      matchKeys: readonly ('intent_hash' | 'ticker' | 'side')[];
+      liveMutationEnabled: false;
+    };
+    liveMutationEnabled: false;
+  };
+  dataFreshnessGate: {
+    status: 'ready_locked';
+    requiredSources: readonly (
+      | 'quote'
+      | 'chart'
+      | 'news_or_disclosure'
+      | 'watchlist_membership'
+    )[];
+    maxAgeMs: {
+      quote: 1000;
+      chart: 60000;
+      newsOrDisclosure: 300000;
+      watchlistMembership: 300000;
+    };
+    blocksLiveExecution: true;
+    liveMutationEnabled: false;
+  };
 }
 
 export interface OrderIntentRiskCheckPayload {
   code: string;
   status: 'pass' | 'warning' | 'blocked';
   message: string;
+}
+
+export interface OrderIntentStrategyEvaluationPayload {
+  strategyId: 'araon-deterministic-preview-v1';
+  status: 'evaluated';
+  decision: OrderIntentSide;
+  confidence: 'guarded';
+  rationale: string;
+  signals: readonly string[];
+}
+
+export interface OrderIntentRiskPolicyEvaluationPayload {
+  policyId: 'araon-live-lock-risk-v1';
+  status: 'simulated_only';
+  liveBlocked: true;
+  maxOrderKrw: null;
+  maxDailyLossKrw: null;
+  checks: readonly OrderIntentRiskCheckPayload[];
+}
+
+export interface OrderIntentPaperLedgerPreviewPayload {
+  ledgerId: string;
+  status: 'preview_only';
+  booked: false;
+  positionDelta: number | null;
+  cashDeltaKrw: number | null;
+  note: string;
+}
+
+export interface OrderIntentPreviewImpactPayload {
+  status: 'estimated' | 'incomplete';
+  estimatedNotionalKrw: number | null;
+  positionImpact: string;
+  cashImpact: string;
+  pnlImpact: string;
+  liveExecutionImpact: string;
+}
+
+export interface OrderIntentPaperLedgerEntryPayload {
+  id: string;
+  intentId: string;
+  ticker: string;
+  side: OrderIntentSide;
+  market: OrderIntentMarket;
+  status: 'preview_only';
+  booked: false;
+  positionDelta: number | null;
+  cashDeltaKrw: number | null;
+  note: string;
+  createdAt: string;
+}
+
+export interface OrderIntentPaperLedgerTickerSummaryPayload {
+  ticker: string;
+  previewCount: number;
+  positionDelta: number;
+  cashDeltaKrw: number;
+  lastPreviewAt: string;
+}
+
+export interface OrderIntentPaperLedgerSummaryPayload {
+  entryCount: number;
+  bookedCount: 0;
+  previewOnlyCount: number;
+  cashDeltaKrw: number;
+  byTicker: readonly OrderIntentPaperLedgerTickerSummaryPayload[];
+}
+
+export interface OrderIntentPaperLedgerSnapshotPayload {
+  items: readonly OrderIntentPaperLedgerEntryPayload[];
+  returnedCount: number;
+  summary: OrderIntentPaperLedgerSummaryPayload;
+}
+
+export interface OrderIntentPerformanceReviewItemPayload {
+  id: string;
+  intentId: string;
+  ticker: string;
+  side: OrderIntentSide;
+  market: OrderIntentMarket;
+  outcomeStatus: 'pending_market_result';
+  booked: false;
+  liveMutationEnabled: false;
+  reviewLabel: string;
+  reason: string;
+  createdAt: string;
+  reviewedAt: string;
+}
+
+export interface OrderIntentPerformanceReviewSummaryPayload {
+  previewOnlyCount: number;
+  bookedCount: 0;
+  pendingReviewCount: number;
+  buyPreviewCount: number;
+  sellPreviewCount: number;
+  liveSubmittedCount: 0;
+  reviewedTickerCount: number;
+  latestPreviewAt: string | null;
+  reviewStatus: 'empty' | 'needs_market_result';
+}
+
+export interface OrderIntentPerformanceReviewSnapshotPayload {
+  items: readonly OrderIntentPerformanceReviewItemPayload[];
+  returnedCount: number;
+  liveMutationEnabled: false;
+  source: 'paper_ledger_preview_only';
+  generatedAt: string;
+  summary: OrderIntentPerformanceReviewSummaryPayload;
 }
 
 export type OrderIntentLifecycleStepCode =
@@ -1159,6 +1426,10 @@ export interface OrderIntentPreviewPayload {
   agentId: string | null;
   reason: string;
   riskChecks: OrderIntentRiskCheckPayload[];
+  strategyEvaluation?: OrderIntentStrategyEvaluationPayload;
+  riskPolicy?: OrderIntentRiskPolicyEvaluationPayload;
+  paperLedgerPreview?: OrderIntentPaperLedgerPreviewPayload;
+  previewImpact?: OrderIntentPreviewImpactPayload;
   lifecycle: readonly OrderIntentLifecycleStepPayload[];
   createdAt: string;
   expiresAt: string;
@@ -1209,6 +1480,18 @@ export interface OrderIntentApprovalChallengePayload {
   requestedMode: 'live';
   status: OrderIntentApprovalChallengeStatus;
   confirmationText: string;
+  intentHash?: string;
+  orderSummary?: {
+    ticker: string;
+    side: OrderIntentSide;
+    market: OrderIntentMarket;
+    orderType: OrderIntentOrderType;
+    quantity: number | null;
+    cashAmount: number | null;
+    limitPrice: number | null;
+    liveExecutionLocked: true;
+  };
+  killSwitch?: 'engaged';
   liveExecutionLocked: true;
   operatorId: string | null;
   createdAt: string;
@@ -1252,6 +1535,48 @@ export interface ConfirmOrderIntentApprovalChallengePayload {
   challenge: OrderIntentApprovalChallengePayload;
   liveExecutionLocked: true;
   execution: null;
+  lockedExecutionProof: {
+    provider: 'toss';
+    mode: 'dry_run_locked';
+    status: 'blocked';
+    reason: 'live_execution_locked';
+    liveMutationEnabled: false;
+    challengeId: string;
+    intentId: string;
+    intentHash: string;
+    orderSummary: NonNullable<OrderIntentApprovalChallengePayload['orderSummary']>;
+    killSwitch: 'engaged';
+    checkedAt: string;
+  } | null;
+}
+
+export interface OrderIntentReconciliationItemPayload {
+  id: string;
+  intentId: string;
+  challengeId: string;
+  ticker: string;
+  side: OrderIntentSide;
+  status: 'not_submitted_live_locked';
+  reason: 'live_execution_locked';
+  liveMutationEnabled: false;
+  execution: null;
+  intentHash: string;
+  orderSummary: NonNullable<OrderIntentApprovalChallengePayload['orderSummary']>;
+  checkedAt: string;
+}
+
+export interface OrderIntentReconciliationSnapshotPayload {
+  items: OrderIntentReconciliationItemPayload[];
+  returnedCount: number;
+  liveMutationEnabled: false;
+  source: 'local_locked_execution_proof';
+  generatedAt: string;
+  summary: {
+    checkedCount: number;
+    liveSubmittedCount: 0;
+    blockedCount: number;
+    pendingAccountSnapshotCount: 0;
+  };
 }
 
 export async function createAgentOrderIntentPreview(
@@ -1317,6 +1642,30 @@ export async function getAgentOrderIntentApprovalChallenges(
 export async function getAgentOrderIntentLivePolicy(): Promise<OrderIntentLivePolicyResponsePayload> {
   const res = await fetch('/agent/order-intents/live-policy');
   return unwrap<OrderIntentLivePolicyResponsePayload>(res);
+}
+
+export async function getAgentOrderIntentPaperLedger(
+  limit = 20,
+): Promise<OrderIntentPaperLedgerSnapshotPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents/paper-ledger?${params.toString()}`);
+  return unwrap<OrderIntentPaperLedgerSnapshotPayload>(res);
+}
+
+export async function getAgentOrderIntentPerformanceReview(
+  limit = 20,
+): Promise<OrderIntentPerformanceReviewSnapshotPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents/performance-review?${params.toString()}`);
+  return unwrap<OrderIntentPerformanceReviewSnapshotPayload>(res);
+}
+
+export async function getAgentOrderIntentReconciliation(
+  limit = 20,
+): Promise<OrderIntentReconciliationSnapshotPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents/reconciliation?${params.toString()}`);
+  return unwrap<OrderIntentReconciliationSnapshotPayload>(res);
 }
 
 /**
@@ -1445,6 +1794,7 @@ export async function getStockPriceHistory(
     from?: string;
     to?: string;
     limit?: number;
+    includeCandleSeed?: boolean;
   } = {},
 ): Promise<PriceHistoryApiResponse> {
   const params = new URLSearchParams();
@@ -1452,6 +1802,7 @@ export async function getStockPriceHistory(
   if (options.from !== undefined) params.set('from', options.from);
   if (options.to !== undefined) params.set('to', options.to);
   if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.includeCandleSeed === true) params.set('includeCandleSeed', 'true');
   const res = await fetch(
     `/stocks/${encodeURIComponent(ticker)}/price-history?${params.toString()}`,
   );

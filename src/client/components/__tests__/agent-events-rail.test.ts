@@ -1,10 +1,15 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentEventsRail } from '../AgentEventsRail';
+import { useProductDisplayNameStore } from '../../stores/product-display-name-store';
 
 describe('AgentEventsRail', () => {
+  beforeEach(() => {
+    useProductDisplayNameStore.getState().reset();
+  });
+
   it('renders a compact read-only event feed without provider dedupe keys', () => {
     const html = renderToStaticMarkup(
       createElement(AgentEventsRail, {
@@ -57,17 +62,20 @@ describe('AgentEventsRail', () => {
         ],
         loading: false,
         onOpenTicker: vi.fn(),
+        displayNamesOverride: { '084670': '동양고속' },
       }),
     );
 
-    expect(html).toContain('에이전트 관찰');
-    expect(html).toContain('뉴스·공시·급등 신호를 보고 거래 후보만 만듭니다');
+    expect(html).toContain('감지된 거래 후보');
+    expect(html).toContain('현재 단계: 판단 보조');
+    expect(html).toContain('감지 → 후보 → 근거 → 모의 → 리스크 → 승인 → 잠금');
     expect(html).toContain('뉴스 감지');
     expect(html).toContain('시장 급변');
     expect(html).toContain('005930');
     expect(html).toContain('000660');
-    expect(html).toContain('실시간 추적');
+    expect(html).toContain('급상승 신호');
     expect(html).toContain('가격 업데이트 · 등락률 0.89%');
+    expect(html).toContain('신뢰 중간');
     expect(html).not.toContain('kis-ws-tick');
     expect(html).not.toContain('KIS WS tick');
     expect(html).toContain('18.0초');
@@ -115,10 +123,13 @@ describe('AgentEventsRail', () => {
         ],
         loading: false,
         onOpenTicker: vi.fn(),
+        displayNamesOverride: { '084670': '동양고속' },
       }),
     );
 
-    expect(html).toContain('실시간 추적');
+    expect(html).toContain('급락 신호');
+    expect(html).toContain('매도 검토');
+    expect(html).not.toContain('급상승 신호');
     expect(html).toContain('가격 업데이트 · 등락률 -4.33%');
     expect(html).not.toContain('실시간 추적 가격 업데이트');
   });
@@ -149,10 +160,120 @@ describe('AgentEventsRail', () => {
       }),
     );
 
-    expect(html).toContain('모의 미리보기');
+    expect(html).toContain('모의 매수');
     expect(html).toContain('005930');
     expect(html).not.toContain('event-1');
     expect(html).not.toContain('internal-key');
     expect(html).not.toContain('stock-news:42');
+  });
+
+  it('shows one row for duplicate market movement display events', () => {
+    const baseEvent = {
+      type: 'market_movement_detected' as const,
+      ticker: '412350',
+      source: 'realtime-momentum',
+      publishedAt: null,
+      firstSeenAt: '2026-05-18T00:17:30.000Z',
+      freshness: 'near_realtime' as const,
+      relevance: 0.8,
+      confidence: 0.9,
+      reason: '실시간 모멘텀 · 추세 급등 · 1분 · +3.09%',
+      payloadRef: null,
+      createdAt: '2026-05-18T00:17:30.000Z',
+    };
+    const html = renderToStaticMarkup(
+      createElement(AgentEventsRail, {
+        events: [
+          { ...baseEvent, id: 'event-a', freshnessMs: 2 },
+          { ...baseEvent, id: 'event-b', freshnessMs: 6 },
+        ],
+        loading: false,
+        onOpenTicker: vi.fn(),
+        displayNamesOverride: { '412350': '레이저쎌' },
+      }),
+    );
+
+    expect(html).toContain('레이저쎌');
+    expect(html).toContain('방금');
+    expect(html).not.toContain('6ms');
+    expect(html).toContain('2건');
+    expect(html).not.toContain('event-a');
+    expect(html).not.toContain('event-b');
+  });
+
+  it('shows more than two candidates in compact home mode', () => {
+    const events = Array.from({ length: 5 }, (_, index) => ({
+      id: `event-${index + 1}`,
+      type: 'market_movement_detected' as const,
+      ticker: `08467${index}`,
+      source: 'realtime-momentum',
+      publishedAt: null,
+      firstSeenAt: '2026-05-18T00:17:30.000Z',
+      freshnessMs: 2 + index,
+      freshness: 'near_realtime' as const,
+      relevance: 0.8,
+      confidence: 0.9,
+      reason: `실시간 모멘텀 · 강한 단기 급등 · 30초 · +3.2${index}%`,
+      payloadRef: null,
+      createdAt: '2026-05-18T00:17:30.000Z',
+    }));
+
+    const html = renderToStaticMarkup(
+      createElement(AgentEventsRail, {
+        events,
+        loading: false,
+        onOpenTicker: vi.fn(),
+        compact: true,
+        displayNamesOverride: {
+          '084670': '동양고속',
+          '084671': '후보둘',
+          '084672': '후보셋',
+          '084673': '후보넷',
+          '084674': '후보다섯',
+        },
+      }),
+    );
+
+    expect(html).toContain('동양고속');
+    expect(html).toContain('후보둘');
+    expect(html).toContain('후보셋');
+    expect(html).toContain('후보넷');
+    expect(html).toContain('외 1건');
+    expect(html).not.toContain('후보다섯');
+  });
+
+  it('renders cached product display names instead of ticker-only fallback', () => {
+    useProductDisplayNameStore
+      .getState()
+      .upsert([{ ticker: '084670', name: '동양고속' }]);
+
+    const html = renderToStaticMarkup(
+      createElement(AgentEventsRail, {
+        events: [
+          {
+            id: 'event-surge',
+            type: 'market_movement_detected',
+            ticker: '084670',
+            source: 'realtime-momentum',
+            publishedAt: null,
+            firstSeenAt: '2026-05-18T00:17:30.000Z',
+            freshnessMs: 4,
+            freshness: 'near_realtime',
+            relevance: 0.8,
+            confidence: 0.9,
+            reason: '실시간 모멘텀 · 강한 단기 급등 · 30초 · +3.26%',
+            payloadRef: null,
+            createdAt: '2026-05-18T00:17:30.000Z',
+          },
+        ],
+        loading: false,
+        onOpenTicker: vi.fn(),
+        displayNamesOverride: { '084670': '동양고속' },
+      }),
+    );
+
+    expect(html).toContain('동양고속');
+    expect(html).toContain('084670');
+    expect(html).not.toContain('title="시장 급변 · 084670"');
   });
 });

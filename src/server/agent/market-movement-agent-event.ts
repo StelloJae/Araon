@@ -47,6 +47,8 @@ export function enqueueMarketMovementFromPrice(
   return input.queue.enqueue({
     type: 'market_movement_detected',
     ticker,
+    productCode: `A${ticker}`,
+    krTicker: ticker,
     source,
     publishedAt,
     firstSeenAt,
@@ -61,6 +63,8 @@ export function enqueueMarketMovementFromPrice(
 export function enqueueMarketMovementFromTopMover(
   input: EnqueueMarketMovementFromTopMoverInput,
 ): AgentEventQueueResult | null {
+  if (input.candidate.direction !== 'gainers') return null;
+
   const ticker = normalizeKrTicker(input.candidate.ticker);
   if (ticker === null) return null;
 
@@ -71,6 +75,9 @@ export function enqueueMarketMovementFromTopMover(
   return input.queue.enqueue({
     type: 'market_movement_detected',
     ticker,
+    productCode: `A${ticker}`,
+    krTicker: ticker,
+    displayName: input.candidate.name,
     source,
     publishedAt,
     firstSeenAt,
