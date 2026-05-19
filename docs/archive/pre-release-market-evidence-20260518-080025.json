@@ -1,0 +1,186 @@
+{
+  "ok": true,
+  "marketEvidenceReady": true,
+  "completionReady": true,
+  "finalGoalCompletionReady": false,
+  "finalGoalRemainingNeed": "This report only proves read-only market data evidence. Final Araon goal completion still requires browser/Computer Use visual QA and the written completion audit.",
+  "evidenceScope": "read-only-market-data",
+  "targetUrl": "http://127.0.0.1:3000",
+  "startedAt": "2026-05-17T23:00:25.794Z",
+  "finishedAt": "2026-05-17T23:01:25.796Z",
+  "durationMs": 60000,
+  "intervalMs": 500,
+  "selectedTicker": "005930",
+  "quoteTickers": [
+    "005930",
+    "000660"
+  ],
+  "sampleCount": 600,
+  "endpointSummaries": [
+    {
+      "endpoint": "top-movers",
+      "sampleCount": 120,
+      "okCount": 120,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 113,
+      "p95DurationMs": 192,
+      "maxDurationMs": 455
+    },
+    {
+      "endpoint": "realtime-ranking",
+      "sampleCount": 120,
+      "okCount": 120,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 63,
+      "p95DurationMs": 81,
+      "maxDurationMs": 138
+    },
+    {
+      "endpoint": "quote-batch",
+      "sampleCount": 120,
+      "okCount": 120,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 26,
+      "p95DurationMs": 32,
+      "maxDurationMs": 238
+    },
+    {
+      "endpoint": "candles",
+      "sampleCount": 120,
+      "okCount": 120,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 1,
+      "p95DurationMs": 2,
+      "maxDurationMs": 3
+    },
+    {
+      "endpoint": "runtime-health",
+      "sampleCount": 120,
+      "okCount": 120,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 2,
+      "p95DurationMs": 3,
+      "maxDurationMs": 7
+    }
+  ],
+  "top100Cadence": {
+    "observed": true,
+    "rankOrderObserved": true,
+    "valueMovementObserved": true,
+    "distinctRankOrders": 7,
+    "distinctValueStates": 57,
+    "goodSamples": 120
+  },
+  "realtimeRankingCadence": {
+    "observed": true,
+    "rankOrderObserved": false,
+    "valueMovementObserved": true,
+    "distinctRankOrders": 1,
+    "distinctValueStates": 120,
+    "goodSamples": 120
+  },
+  "quoteSampleCadence": {
+    "observed": true,
+    "valueMovementObserved": true,
+    "distinctValueStates": 120,
+    "goodSamples": 120
+  },
+  "chartProgression": {
+    "observed": true,
+    "distinctLastCandles": 13,
+    "goodSamples": 120,
+    "newestBucketAt": "2026-05-17T23:01:00.000Z",
+    "latestSampleCount": 43
+  },
+  "sampleCadence": {
+    "ok": true,
+    "requestedIntervalMs": 500,
+    "p95AllowedGapMs": 1000,
+    "maxAllowedGapMs": 1750,
+    "p95GapMs": 643,
+    "maxGapMs": 970,
+    "gapCount": 595
+  },
+  "fastQuoteLane": {
+    "ok": true,
+    "observed": true,
+    "configured": true,
+    "running": true,
+    "sourceOk": true,
+    "intervalOk": true,
+    "capOk": true,
+    "minIntervalMs": 500,
+    "maxIntervalMs": 500,
+    "maxTargetCap": 40,
+    "maxHardCap": 60,
+    "maxCandidateCount": 33,
+    "maxRequestedCount": 33,
+    "maxAcceptedCount": 31,
+    "goodSamples": 120
+  },
+  "marketWindow": {
+    "kstStartedAt": "2026-05-18 08:00 KST",
+    "kstFinishedAt": "2026-05-18 08:01 KST",
+    "kstWeekday": true,
+    "regularMarketLikely": false,
+    "integratedLiveWindowLikely": true,
+    "note": "KST weekday integrated live window, but outside regular KRX market-hours evidence window. Official holiday calendar is not checked."
+  },
+  "latency": {
+    "ok": true,
+    "p95DurationMs": 139,
+    "maxDurationMs": 455
+  },
+  "marketHoursUseful": true,
+  "completionCriteria": [
+    {
+      "criterion": 12,
+      "label": "TOP100 updates/reorders at intended cadence without severe lag",
+      "status": "pass",
+      "evidence": "liveWindowOk=true; top100Observed=true; realtimeRankingObserved=true; top100RankReorderObserved=true; realtimeRankReorderObserved=false; sampleGapP95Ms=643; endpointP95Ms=139",
+      "remainingNeed": null
+    },
+    {
+      "criterion": 13,
+      "label": "Recent surge uses toss-fast-quote and ws-integrated, not generic REST",
+      "status": "supporting",
+      "evidence": "fastQuoteSourceOk=true; running=true; intervalMs=500-500; maxTargetCap=40; maxHardCap=60; maxAcceptedCount=31",
+      "remainingNeed": "Client surge tests still prove source filtering; market-hours UI must show realtime surge behavior from moving prices."
+    },
+    {
+      "criterion": 14,
+      "label": "Recent surge threshold/cooldown is correct",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; quoteMovementObserved=true; distinctValueStates=120; fastQuoteLaneOk=true",
+      "remainingNeed": "This harness only proves bounded quote movement input. Browser UI/toast observation must still prove threshold and cooldown behavior."
+    },
+    {
+      "criterion": 16,
+      "label": "Mini chart updates current candle from real samples without refresh",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; chartProgressionObserved=true; newestBucketAt=2026-05-17T23:01:00.000Z; latestSampleCount=43",
+      "remainingNeed": "Browser visual QA must still confirm mini chart renders the progression without refresh."
+    },
+    {
+      "criterion": 17,
+      "label": "Full chart updates current candle from real samples without refresh",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; chartProgressionObserved=true; newestBucketAt=2026-05-17T23:01:00.000Z; latestSampleCount=43",
+      "remainingNeed": "Browser visual QA must still confirm full chart renders the progression without refresh."
+    },
+    {
+      "criterion": 41,
+      "label": "Real browser visual QA passes",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; sampleGapP95Ms=643; endpointP95Ms=139; endpointMaxMs=455",
+      "remainingNeed": "Harness latency is supporting evidence only. Browser/Computer Use QA must still confirm no visible severe lag."
+    }
+  ],
+  "issues": [],
+  "blockers": []
+}

@@ -1,0 +1,189 @@
+{
+  "ok": true,
+  "marketEvidenceReady": false,
+  "completionReady": false,
+  "finalGoalCompletionReady": false,
+  "finalGoalRemainingNeed": "This report only proves read-only market data evidence. Final Araon goal completion still requires browser/Computer Use visual QA and the written completion audit.",
+  "evidenceScope": "read-only-market-data",
+  "targetUrl": "http://127.0.0.1:5173",
+  "startedAt": "2026-05-19T04:01:35.983Z",
+  "finishedAt": "2026-05-19T04:02:36.237Z",
+  "durationMs": 60000,
+  "intervalMs": 500,
+  "selectedTicker": "005930",
+  "quoteTickers": [
+    "005930",
+    "000660",
+    "035720"
+  ],
+  "sampleCount": 560,
+  "endpointSummaries": [
+    {
+      "endpoint": "top-movers",
+      "sampleCount": 112,
+      "okCount": 112,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 101,
+      "p95DurationMs": 294,
+      "maxDurationMs": 958
+    },
+    {
+      "endpoint": "realtime-ranking",
+      "sampleCount": 112,
+      "okCount": 112,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 75,
+      "p95DurationMs": 165,
+      "maxDurationMs": 461
+    },
+    {
+      "endpoint": "quote-batch",
+      "sampleCount": 112,
+      "okCount": 112,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 27,
+      "p95DurationMs": 41,
+      "maxDurationMs": 116
+    },
+    {
+      "endpoint": "candles",
+      "sampleCount": 112,
+      "okCount": 112,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 31,
+      "p95DurationMs": 65,
+      "maxDurationMs": 223
+    },
+    {
+      "endpoint": "runtime-health",
+      "sampleCount": 112,
+      "okCount": 112,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 95,
+      "p95DurationMs": 175,
+      "maxDurationMs": 434
+    }
+  ],
+  "top100Cadence": {
+    "observed": true,
+    "rankOrderObserved": true,
+    "valueMovementObserved": true,
+    "distinctRankOrders": 6,
+    "distinctValueStates": 94,
+    "goodSamples": 112
+  },
+  "realtimeRankingCadence": {
+    "observed": true,
+    "rankOrderObserved": false,
+    "valueMovementObserved": true,
+    "distinctRankOrders": 1,
+    "distinctValueStates": 111,
+    "goodSamples": 112
+  },
+  "quoteSampleCadence": {
+    "observed": true,
+    "valueMovementObserved": true,
+    "distinctValueStates": 112,
+    "goodSamples": 112
+  },
+  "chartProgression": {
+    "observed": true,
+    "distinctLastCandles": 13,
+    "goodSamples": 112,
+    "newestBucketAt": "2026-05-19T04:02:00.000Z",
+    "latestSampleCount": 333
+  },
+  "sampleCadence": {
+    "ok": true,
+    "requestedIntervalMs": 500,
+    "p95AllowedGapMs": 1000,
+    "maxAllowedGapMs": 1750,
+    "p95GapMs": 880,
+    "maxGapMs": 1508,
+    "gapCount": 555
+  },
+  "fastQuoteLane": {
+    "ok": false,
+    "observed": true,
+    "configured": true,
+    "running": true,
+    "sourceOk": true,
+    "intervalOk": false,
+    "capOk": false,
+    "minIntervalMs": 100,
+    "maxIntervalMs": 100,
+    "maxTargetCap": 200,
+    "maxHardCap": 400,
+    "maxCandidateCount": 53,
+    "maxRequestedCount": 53,
+    "maxAcceptedCount": 13,
+    "goodSamples": 112
+  },
+  "marketWindow": {
+    "kstStartedAt": "2026-05-19 13:01 KST",
+    "kstFinishedAt": "2026-05-19 13:02 KST",
+    "kstWeekday": true,
+    "regularMarketLikely": true,
+    "integratedLiveWindowLikely": true,
+    "note": "KST weekday regular KRX market-hours heuristic. Official holiday calendar is not checked."
+  },
+  "latency": {
+    "ok": true,
+    "p95DurationMs": 175,
+    "maxDurationMs": 958
+  },
+  "marketHoursUseful": true,
+  "completionCriteria": [
+    {
+      "criterion": 12,
+      "label": "TOP100 updates/reorders at intended cadence without severe lag",
+      "status": "pass",
+      "evidence": "liveWindowOk=true; top100Observed=true; realtimeRankingObserved=true; top100RankReorderObserved=true; realtimeRankReorderObserved=false; sampleGapP95Ms=880; endpointP95Ms=175",
+      "remainingNeed": null
+    },
+    {
+      "criterion": 13,
+      "label": "Recent surge uses toss-fast-quote and ws-integrated, not generic REST",
+      "status": "blocked",
+      "evidence": "fastQuoteSourceOk=true; running=true; intervalMs=100-100; maxTargetCap=200; maxHardCap=400; maxAcceptedCount=13",
+      "remainingNeed": "Runtime data-health must show a running bounded toss-fast-quote lane with safe caps."
+    },
+    {
+      "criterion": 14,
+      "label": "Recent surge threshold/cooldown is correct",
+      "status": "blocked",
+      "evidence": "liveWindowOk=true; quoteMovementObserved=true; distinctValueStates=112; fastQuoteLaneOk=false",
+      "remainingNeed": "This harness only proves bounded quote movement input. Browser UI/toast observation must still prove threshold and cooldown behavior."
+    },
+    {
+      "criterion": 16,
+      "label": "Mini chart updates current candle from real samples without refresh",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; chartProgressionObserved=true; newestBucketAt=2026-05-19T04:02:00.000Z; latestSampleCount=333",
+      "remainingNeed": "Browser visual QA must still confirm mini chart renders the progression without refresh."
+    },
+    {
+      "criterion": 17,
+      "label": "Full chart updates current candle from real samples without refresh",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; chartProgressionObserved=true; newestBucketAt=2026-05-19T04:02:00.000Z; latestSampleCount=333",
+      "remainingNeed": "Browser visual QA must still confirm full chart renders the progression without refresh."
+    },
+    {
+      "criterion": 41,
+      "label": "Real browser visual QA passes",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; sampleGapP95Ms=880; endpointP95Ms=175; endpointMaxMs=958",
+      "remainingNeed": "Harness latency is supporting evidence only. Browser/Computer Use QA must still confirm no visible severe lag."
+    }
+  ],
+  "issues": [],
+  "blockers": [
+    "Toss fast quote lane runtime was not healthy."
+  ]
+}

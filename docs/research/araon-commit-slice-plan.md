@@ -6,14 +6,300 @@ Authoritative basis: `docs/research/araon-release-readiness-live-watchlist-agent
 
 Status: planning document only. Do not stage or commit from this document until the user explicitly approves.
 
+## 0. 2026-05-19 current-state update
+
+This document remains useful for the high-level commit order, but its original
+file counts are stale. The current active complete-analysis goal re-audited the
+dirty tree on 2026-05-19.
+
+Use this latest document as the current slice map before staging:
+
+- `docs/research/araon-complete-analysis-followup-execution-audit.md`
+
+Current recommended order remains unchanged:
+
+1. Slice A - docs/evidence/artifacts
+2. Slice F - CLI/package
+3. Slice G - KIS containment
+4. Slice B - Toss backend/product identity/watchlist
+5. Slice C - realtime/chart/surge
+6. Slice E - agent safety/decision-support
+7. Slice D - frontend product UI
+8. Cross-slice/shared integration
+
+Important current notes:
+
+- The latest coarse classification is in the follow-up audit, not in the
+  original 2026-05-17 file list below.
+- 2026-05-19 product-100 continuation added product icon and agent decision
+  changes that must be staged with the correct slices, not as a single mixed
+  commit.
+  - `src/server/toss/toss-product-icon.ts` and its test belong to Slice B.
+  - `src/client/components/ProductAvatar.tsx` belongs to Slice D.
+  - `src/client/components/AgentDecisionSummary.tsx`,
+    `src/client/lib/agent-candidate-view-model.ts`, and agent decision tests
+    belong to Slice E.
+  - `src/client/lib/agent-event-order-intent.ts` now maps downward movement to
+    simulated sell previews and remains Slice E.
+  - `src/server/db/migrations/023-agent-order-intent-paper-ledger.sql`,
+    `/agent/order-intents/paper-ledger`, and related client/server tests belong
+    to Slice E. They are preview-only paper trading ledger plumbing, not live
+    execution.
+  - `src/server/db/migrations/024-agent-order-intent-approval-readiness.sql`,
+    approval challenge order summary/hash/kill-switch fields, and the
+    `OrderIntentSafetyRail` display belong to Slice E. This is locked-readiness
+    evidence only, not live execution.
+  - `ConfirmOrderIntentApprovalChallengePayload.lockedExecutionProof` and
+    service/route tests belong to Slice E. It proves confirmation still produces
+    a blocked dry-run result, with `execution=null`.
+  - `OrderIntentExecutionReadiness.lockedExecutor`,
+    `reconciliation.executor`, and the `OrderSafetyModal` Korean safety copy
+    belong to Slice E. They prove the live lane is blocked before any network
+    order request and only creates locked proof/read-only reconciliation
+    contracts.
+  - `/agent/order-intents/reconciliation`,
+    `getAgentOrderIntentReconciliation`, and related service/route/client tests
+    belong to Slice E. They expose confirmed approval challenges as
+    `not_submitted_live_locked` read-only snapshots with `execution=null` and
+    `liveSubmittedCount=0`.
+  - `src/client/App.tsx` has mixed hunks. The order-intent paper-ledger fetch
+    and `AgentDecisionSummary` wiring belong to Slice E; account rail, chart,
+    favorites, and layout hunks belong to Slice D/cross-slice.
+  - `src/client/components/StatusBar.tsx` has mixed hunks. Footer fast-price
+    product copy belongs to Slice D; KIS/REST/ranking wording containment in
+    `KisBudgetPill` belongs to Slice G.
+  - `src/client/components/FavoritesBlock.tsx` held-only filled-star behavior
+    belongs to Slice D with watchlist/holdings merge review context from Slice B.
+- `scripts/internal/probes/probe-favorite-sparkline-coverage.mts` belongs to
+  Slice C as internal read-only evidence tooling for sparkline/history
+  coverage. It must stay out of npm package output and must not print raw
+  watchlist values.
+- `scripts/internal/probes/probe-commit-slice-coverage.mts` belongs to the
+  cross-slice commit-readiness tooling lane. It is a no-mutation probe that
+  classifies current dirty/untracked paths and fails if any entry is unknown.
+- `status-bar.test.ts` was flagged by the coarse classifier as Slice F, but
+  likely belongs to Slice D or cross-slice during hunk-level staging.
+- Screenshot artifacts should not be committed by default unless explicitly
+  selected as evidence artifacts.
+- No staging or commit has been performed.
+
+## 0.1 2026-05-19 executable staging manifest
+
+This section is a proposed staging manifest only. Do not run these commands
+until the user explicitly approves staging/committing.
+
+Snapshot:
+
+- `git status --short -uall`: 178 entries after the latest
+  commit-readiness probe and Agent performance-review slice.
+- `git diff --stat`: 107 tracked files changed, 9652 insertions, 1232 deletions.
+- Root screenshot PNGs remain untracked and excluded by default.
+- No `dist/` build output is dirty in the current snapshot.
+- No staging or commit has been performed.
+- `npx tsx scripts/internal/probes/probe-commit-slice-coverage.mts`: PASS,
+  unknown=0 across all 178 dirty/untracked entries.
+
+### Slice A - docs/evidence/artifacts
+
+Stage:
+
+- `docs/research/araon-*.md`
+- `docs/research/toss-fast-quote-surge-lane-goal.md`
+- `docs/archive/complete-analysis-*.md`
+- `docs/archive/complete-analysis-*.json`
+- `docs/archive/pre-release-market-evidence-20260518-*.md`
+- `docs/archive/pre-release-market-evidence-20260518-*.json`
+
+Proposed command after approval:
+
+```bash
+git add -- docs/research/araon-*.md docs/research/toss-fast-quote-surge-lane-goal.md \
+  docs/archive/complete-analysis-*.md docs/archive/complete-analysis-*.json \
+  docs/archive/pre-release-market-evidence-20260518-*.md \
+  docs/archive/pre-release-market-evidence-20260518-*.json
+```
+
+Exclude by default:
+
+- Repo-root visual QA screenshots such as `araon-*.png`.
+- They can be archived separately if the user wants screenshot evidence in git.
+
+Draft commit:
+
+- `docs: record Araon product-100 evidence and commit plan`
+
+### Slice F - CLI/package
+
+Stage:
+
+- `package.json`
+- Any CLI files only if they still appear dirty in the final pre-stage status.
+
+Current command is intentionally narrow:
+
+```bash
+git add -- package.json
+```
+
+Draft commit:
+
+- `chore: update Araon package scripts for product checks`
+
+### Slice G - KIS containment / optional realtime tracking
+
+Stage:
+
+- `src/server/realtime/kis-ws-slot-allocator.ts`
+- `src/server/realtime/kis-ws-slot-candidates.ts`
+- `src/server/realtime/kis-ws-slot-session-rebalancer.ts`
+- `src/server/realtime/__tests__/kis-ws-slot-allocator.test.ts`
+- `src/server/realtime/__tests__/kis-ws-slot-candidates.test.ts`
+- `src/server/realtime/__tests__/kis-ws-slot-session-rebalancer.test.ts`
+- `src/server/routes/kis-ws-slots.ts`
+- `src/server/routes/__tests__/kis-ws-slots.test.ts`
+- KIS wording hunks in `src/client/components/StatusBar.tsx` only if split from product UI hunks.
+
+Proposed command after approval:
+
+```bash
+git add -- src/server/realtime/kis-ws-slot-allocator.ts \
+  src/server/realtime/kis-ws-slot-candidates.ts \
+  src/server/realtime/kis-ws-slot-session-rebalancer.ts \
+  src/server/realtime/__tests__/kis-ws-slot-allocator.test.ts \
+  src/server/realtime/__tests__/kis-ws-slot-candidates.test.ts \
+  src/server/realtime/__tests__/kis-ws-slot-session-rebalancer.test.ts \
+  src/server/routes/kis-ws-slots.ts \
+  src/server/routes/__tests__/kis-ws-slots.test.ts
+```
+
+Draft commit:
+
+- `refactor: contain KIS as optional realtime tracking`
+
+### Slice B - Toss backend / identity / watchlist
+
+Stage:
+
+- `src/shared/product-identity.ts`
+- `src/shared/types.ts`
+- `src/shared/__tests__/product-identity.test.ts`
+- `src/server/watchlist/araon-watchlist-service.ts`
+- `src/server/watchlist/__tests__/araon-watchlist-service.test.ts`
+- `src/server/toss/toss-watchlist-client.ts`
+- `src/server/toss/toss-portfolio-client.ts`
+- `src/server/toss/toss-product-icon.ts`
+- `src/server/toss/toss-cdp-login-service.ts`
+- `src/server/toss/toss-login-capture-smoke.ts`
+- Toss watchlist/portfolio/icon/login tests.
+- `src/server/routes/watchlist.ts`
+- `src/server/routes/toss-auth.ts`
+- `src/server/routes/__tests__/watchlist.test.ts`
+- `src/server/routes/__tests__/toss-auth.test.ts`
+- Product identity/watchlist DB migrations that are not agent-only.
+- Watchlist/account API hunks in `src/server/app.ts`, `src/server/routes/stocks.ts`, and `src/client/lib/api-client.ts` only after hunk review.
+
+Draft commit:
+
+- `feat: make Toss watchlist and product identity primary`
+
+### Slice C - realtime / TOP100 / surge / chart
+
+Stage:
+
+- `src/server/toss/toss-fast-quote-lane.ts`
+- `src/server/toss/toss-quote-polling-service.ts`
+- `src/server/toss/toss-sse-refresh-executor.ts`
+- Matching Toss fast quote / quote polling / SSE refresh tests.
+- `src/server/market/market-top-movers-service.ts`
+- `src/server/routes/stocks.ts` realtime/chart hunks.
+- `src/server/routes/runtime.ts`
+- `src/server/routes/__tests__/candles.test.ts`
+- `src/server/routes/__tests__/price-history.test.ts`
+- `src/server/routes/__tests__/runtime.test.ts`
+- `src/server/routes/__tests__/stock-timeline.test.ts`
+- `scripts/internal/probes/probe-favorite-sparkline-coverage.mts`
+- `scripts/internal/soak/pre-release-market-evidence*.mts`
+- Chart/realtime client hunks in `StockCandleChart`, `SurgeBlock`, `TopMoversBoard`,
+  `usePersistedPriceHistory`, `surge-aggregator`, and related tests.
+
+Draft commit:
+
+- `feat: stabilize Toss realtime quote, surge, and chart paths`
+
+### Slice E - agent safety / decision-support
+
+Stage:
+
+- `src/server/agent/**`
+- `src/server/routes/agent-order-intents.ts`
+- `src/server/routes/__tests__/agent-order-intents.test.ts`
+- Agent DB migrations `020`, `023`, and `024`.
+- `src/client/components/AgentDecisionSummary.tsx`
+- `src/client/components/AgentEventsRail.tsx`
+- `src/client/components/OrderIntentSafetyRail.tsx`
+- `src/client/components/OrderSafetyModal.tsx`
+- `src/client/lib/agent-candidate-view-model.ts`
+- `src/client/lib/agent-event-order-intent.ts`
+- `src/client/lib/agent-event-toast.ts`
+- Agent/order-intent/toast tests.
+- Agent hunks in `src/client/App.tsx` and `src/client/lib/api-client.ts` only after hunk review.
+
+Draft commit:
+
+- `feat: add locked agent decision-support and paper preview lane`
+
+### Slice D - frontend product UI
+
+Stage:
+
+- `src/client/components/ProductAvatar.tsx`
+- `src/client/components/FavoritesBlock.tsx`
+- `src/client/components/TossAccountRail.tsx`
+- `src/client/components/StatusBar.tsx` product UI hunks.
+- `src/client/components/SettingsModal.tsx`
+- `src/client/components/StockRow.tsx`
+- `src/client/components/DashboardFocusPanel.tsx`
+- `src/client/components/SectionStack.tsx`
+- `src/client/components/StockNewsDisclosurePanel.tsx`
+- `src/client/components/SSEIndicator.tsx`
+- `src/client/styles/global.css`
+- UI-focused client tests, product display-name hooks/stores, and product avatar tests.
+- Layout/account/favorites hunks in `src/client/App.tsx`.
+
+Draft commit:
+
+- `feat: polish Araon v7 product UI surfaces`
+
+### Cross-slice hunk-review list
+
+These files must not be staged blindly:
+
+- `src/client/App.tsx`
+- `src/client/lib/api-client.ts`
+- `src/client/components/StatusBar.tsx`
+- `src/client/styles/global.css`
+- `src/server/app.ts`
+- `src/server/routes/stocks.ts`
+- `src/server/routes/runtime.ts`
+- `src/server/routes/watchlist.ts`
+- `package.json`
+- `scripts/internal/probes/probe-commit-slice-coverage.mts`
+
+Rule:
+
+- Prefer `git add -p` or split patches by slice.
+- If hunk boundaries are too coarse, create a temporary patch file and apply
+  slice-specific hunks manually.
+- Run focused tests for the staged slice before commit.
+
 ## 1. Snapshot
 
 The current worktree is intentionally large and must not be reviewed as one giant change.
 
-- Dirty/untracked entries from `git status --short -uall`: 304 before this plan, 305 after adding this plan
-- Tracked diff stat from `git diff --stat`: 115 files changed, 15224 insertions, 1429 deletions
+- Dirty/untracked entries from `git status --short -uall`: 174 on 2026-05-19 after the latest Agent locked-readiness slice.
+- Tracked diff stat from `git diff --stat`: 104 files changed, 8239 insertions, 1220 deletions.
 - No dirty `dist/` build output appeared in the status snapshot.
-- No obvious generated logs, local DBs, screenshots, or credential files appeared in the status snapshot.
+- Local screenshot artifacts remain untracked and should not be committed by default unless selected as explicit visual evidence.
 - `src/client/components/ViewToggle.tsx` is a tracked deletion and belongs to the frontend v7 UI cleanup slice, not an immediate removal candidate.
 - `scripts/internal/probes/**` entries are internal probe/smoke tools. Keep them out of the npm package unless package policy is explicitly changed.
 
@@ -297,6 +583,7 @@ Files:
 - `?? src/server/toss/__tests__/toss-news-client.test.ts`
 - `?? src/server/toss/__tests__/toss-orders-client.test.ts`
 - `?? src/server/toss/__tests__/toss-portfolio-client.test.ts`
+- `?? src/server/toss/__tests__/toss-product-icon.test.ts`
 - `?? src/server/toss/__tests__/toss-realtime-refresh-handlers.test.ts`
 - `?? src/server/toss/__tests__/toss-realtime-route-smoke.test.ts`
 - `?? src/server/toss/__tests__/toss-realtime-smoke.test.ts`
@@ -315,6 +602,7 @@ Files:
 - `?? src/server/toss/toss-analysis-candidate-smoke.ts`
 - `?? src/server/toss/toss-authenticated-read-smoke.ts`
 - `?? src/server/toss/toss-login-capture-smoke.ts`
+- `?? src/server/toss/toss-product-icon.ts`
 - `?? src/server/toss/toss-news-client.ts`
 - `?? src/server/toss/toss-orders-client.ts`
 - `?? src/server/toss/toss-portfolio-client.ts`
@@ -440,16 +728,19 @@ Files:
 - `?? scripts/internal/probes/probe-agent-event-monitor-provider-mix-smoke.mts`
 - `?? scripts/internal/probes/probe-agent-event-monitor-smoke.mts`
 - `?? src/client/components/OrderIntentSafetyRail.tsx`
+- `?? src/client/components/AgentDecisionSummary.tsx`
 - `?? src/client/components/OrderSafetyModal.tsx`
 - `?? src/client/components/__tests__/agent-events-rail.test.ts`
 - `?? src/client/components/__tests__/order-intent-safety-rail.test.ts`
 - `?? src/client/lib/__tests__/agent-event-browser-event.test.ts`
 - `?? src/client/lib/__tests__/agent-event-order-intent.test.ts`
+- `?? src/client/lib/__tests__/agent-candidate-view-model.test.ts`
 - `?? src/client/lib/__tests__/agent-event-toast.test.ts`
 - `?? src/client/lib/__tests__/api-client-agent-events.test.ts`
 - `?? src/client/lib/__tests__/api-client-order-intents.test.ts`
 - `?? src/client/lib/agent-event-browser-event.ts`
 - `?? src/client/lib/agent-event-order-intent.ts`
+- `?? src/client/lib/agent-candidate-view-model.ts`
 - `?? src/client/lib/agent-event-toast.ts`
 - `?? src/server/agent/__tests__/agent-event-alert-delivery-smoke.test.ts`
 - `?? src/server/agent/__tests__/agent-event-alert-delivery-store.test.ts`
@@ -476,6 +767,8 @@ Files:
 - `?? src/server/db/migrations/017-agent-event-alert-deliveries.sql`
 - `?? src/server/db/migrations/018-order-intent-confirm-gate.sql`
 - `?? src/server/db/migrations/019-agent-event-alert-dispatch-latency.sql`
+- `?? src/server/db/migrations/023-agent-order-intent-paper-ledger.sql`
+- `?? src/server/db/migrations/024-agent-order-intent-approval-readiness.sql`
 - `?? src/server/routes/__tests__/agent-event-alert-deliveries.test.ts`
 - `?? src/server/routes/__tests__/agent-event-monitor.test.ts`
 - `?? src/server/routes/__tests__/agent-events.test.ts`
@@ -490,6 +783,18 @@ Review points:
 - Agent event payloads should be public/safe, not raw provider payload dumps.
 - `news_detected`, `disclosure_detected`, `toss_signal_detected`, and `market_movement_detected` should be normalized contracts.
 - Order intent must stop at preview/approval/confirm/audit foundation. Live execution remains locked.
+- Paper ledger entries are preview-only and must keep `booked=false`; no fills,
+  PnL, or live order effects belong in this slice.
+- Approval challenges carry order summary, intent hash, and kill-switch state
+  for no-live readiness evidence. They must still return `execution=null`.
+- Confirmed challenges also return a locked execution proof. This is not an
+  execution result and must keep `liveMutationEnabled=false`.
+- Locked executor/read-only reconciliation executor contracts are readiness
+  contracts only. They are not live Toss order execution, fills, or account
+  mutation.
+- Read-only reconciliation snapshots are proof artifacts for the locked lane
+  only. They must not be represented as submitted, filled, canceled, or live
+  Toss order results.
 - Audit logs should record decisions and skip reasons without secrets.
 - Migrations must be packaged and idempotent.
 
@@ -546,6 +851,7 @@ Files:
 - `M  vite.config.ts`
 - `?? src/client/components/AgentEventsRail.tsx`
 - `?? src/client/components/DashboardFocusPanel.tsx`
+- `?? src/client/components/ProductAvatar.tsx`
 - `?? src/client/components/TossAccountRail.tsx`
 - `?? src/client/components/TradingViewAdvancedChart.tsx`
 - `?? src/client/components/__tests__/favorites-block.test.ts`

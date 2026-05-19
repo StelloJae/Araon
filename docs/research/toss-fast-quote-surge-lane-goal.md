@@ -134,20 +134,24 @@ Build a `HotQuoteCandidateSet` from these sources:
 
 Default candidate caps:
 
-- Target cap: 40 tickers.
-- Hard cap: 60 tickers.
-- Batch size: 50.
+- Target cap: 64 tickers.
+- Hard cap: 100 tickers.
+- Batch size: 100.
 - Interval: 500ms.
-- Never exceed 100 without a separate explicit plan and measurement.
+- Do not treat 64 as a Toss limit. It is Araon's conservative default coverage
+  size for the hot candidate lane.
+- 2026-05-18 bounded public quote probes observed 10 rps x 64 for 10 minutes
+  clean, 300 rps x 64 for short burst clean, and latency degradation at
+  500 rps x 64. These are observational limits, not an official Toss contract.
 
 Priority:
 
-1. current selected/full chart ticker
-2. Toss watchlist/favorites
-3. agent candidates
-4. TOP100 gainers
-5. TOP100 losers/realtime ranking
-6. KIS tracked companions
+1. Toss watchlist/favorites and Toss holdings
+2. agent candidates
+3. current selected/full chart ticker
+4. KIS tracked companions
+5. TOP100 gainers
+6. TOP100 losers/realtime ranking
 
 Deduplicate by normalized Toss product code and six-digit KRX ticker mapping.
 Do not send Toss-only unsupported product codes into KIS.
