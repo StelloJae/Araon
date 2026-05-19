@@ -36,7 +36,7 @@ describe('KIS WS slot session rebalancer', () => {
     expect(applyDiff).not.toHaveBeenCalled();
   });
 
-  it('applies only the subscription diff and preserves the active session bounds', async () => {
+  it('keeps an active manual watchlist slot ahead of a lower-priority agent event', async () => {
     const activeTickers: string[] = ['005930'];
     const applyDiff = vi.fn(async (diff: { subscribe: readonly string[]; unsubscribe: readonly string[] }) => {
       for (const ticker of diff.unsubscribe) {
@@ -109,41 +109,38 @@ describe('KIS WS slot session rebalancer', () => {
     });
 
     await expect(rebalancer.rebalance('agent-event')).resolves.toMatchObject({
-      outcome: 'rebalanced',
+      outcome: 'unchanged',
       activeCount: 1,
       diff: {
-        subscribe: ['000660'],
-        unsubscribe: ['005930'],
+        subscribe: [],
+        unsubscribe: [],
       },
     });
-    expect(applyDiff).toHaveBeenCalledWith({
-      subscribe: ['000660'],
-      unsubscribe: ['005930'],
-    });
+    expect(applyDiff).not.toHaveBeenCalled();
     expect(sessionGate.snapshot()).toMatchObject({
       sessionRealtimeEnabled: true,
       sessionCap: 1,
       sessionEnabledAt: '2026-05-11T12:00:00.000Z',
       sessionExpiresAt: '2026-05-11T12:01:00.000Z',
-      sessionTickers: ['000660'],
+      sessionTickers: ['005930'],
       sessionStartParsedTickCount: 10,
       sessionStartAppliedTickCount: 2,
       sessionStartLimitIgnoredCount: 1,
     });
     expect(slotState.snapshot()).toEqual([{
-      ticker: '000660',
-      subscribedAt: '2026-05-11T12:01:00.000Z',
-      stickyUntilAt: '2026-05-11T12:01:30.000Z',
+      ticker: '005930',
+      subscribedAt: '2026-05-11T12:00:00.000Z',
+      stickyUntilAt: '2026-05-11T12:00:30.000Z',
     }]);
     expect(slotState.rebalanceSnapshot()).toMatchObject({
       requestedAt: '2026-05-11T12:01:00.000Z',
       reason: 'agent-event',
-      outcome: 'rebalanced',
+      outcome: 'unchanged',
       activeCount: 1,
       fallbackCount: 1,
       diff: {
-        subscribe: ['000660'],
-        unsubscribe: ['005930'],
+        subscribe: [],
+        unsubscribe: [],
       },
     });
   });

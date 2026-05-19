@@ -27,11 +27,11 @@ describe('KIS WS smart slot allocator', () => {
       '005930',
       '000660',
       '035420',
-      '005380',
+      '247540',
     ]);
-    expect(plan.fallback.map((item) => item.ticker)).toEqual(['042660', '247540']);
+    expect(plan.fallback.map((item) => item.ticker)).toEqual(['005380', '042660']);
     expect(plan.diff).toEqual({
-      subscribe: ['005930', '000660', '035420', '005380'],
+      subscribe: ['005930', '000660', '035420', '247540'],
       unsubscribe: ['042660'],
     });
     expect(plan.subscribed[0]).toMatchObject({
@@ -43,8 +43,8 @@ describe('KIS WS smart slot allocator', () => {
     });
     expect(plan.fallback[0]).toMatchObject({
       state: 'fallback',
-      source: 'recent_news',
-      reason: 'Fresh news detected',
+      source: 'current_view',
+      reason: 'Current chart',
     });
   });
 
@@ -66,10 +66,38 @@ describe('KIS WS smart slot allocator', () => {
     expect(plan.subscribed).toHaveLength(WS_MAX_SUBSCRIPTIONS);
     expect(plan.subscribed[0]).toMatchObject({
       ticker: '005930',
-      source: 'recent_disclosure',
-      reason: 'Disclosure detected',
+      source: 'manual_watchlist',
+      reason: 'Watchlist',
     });
     expect(plan.subscribed.every((item) => item.ticker !== 'A005930')).toBe(true);
+  });
+
+  it('uses TOP100 rotation only after user, agent, screen, and event candidates', () => {
+    const plan = allocateKisWsSlots({
+      candidates: [
+        candidate('100000', 'top100_rotation', 'TOP100 #1', 1),
+        candidate('100001', 'top100_rotation', 'TOP100 #2', 1),
+        candidate('100002', 'top100_rotation', 'TOP100 #3', 1),
+        candidate('005930', 'manual_watchlist', 'Watchlist', 0.1),
+        candidate('000660', 'agent_candidate', 'Agent candidate', 0.1),
+        candidate('035420', 'current_view', 'Current chart', 0.1),
+        candidate('042660', 'recent_news', 'Fresh news detected', 0.1),
+      ],
+      cap: 5,
+      now: '2026-05-11T06:00:10.000Z',
+    });
+
+    expect(plan.subscribed.map((item) => item.source)).toEqual([
+      'manual_watchlist',
+      'agent_candidate',
+      'current_view',
+      'recent_news',
+      'top100_rotation',
+    ]);
+    expect(plan.fallback.map((item) => item.source)).toEqual([
+      'top100_rotation',
+      'top100_rotation',
+    ]);
   });
 
   it('keeps existing slots sticky during the churn cooldown window', () => {

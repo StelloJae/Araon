@@ -124,7 +124,7 @@ describe('KIS WS slot routes', () => {
     expect(res.body).not.toContain('audit-1');
   });
 
-  it('adds the current screen ticker as a higher-priority current-view slot input', async () => {
+  it('adds the current screen ticker without outranking manual watchlist slots', async () => {
     const app = Fastify({ logger: false });
     await app.register(kisWsSlotsRoutes, {
       favoriteRepo: {
@@ -150,6 +150,11 @@ describe('KIS WS slot routes', () => {
         activeCount: 2,
         candidates: [
           expect.objectContaining({
+            ticker: '005930',
+            state: 'subscribed',
+            source: 'manual_watchlist',
+          }),
+          expect.objectContaining({
             ticker: '000660',
             state: 'subscribed',
             source: 'current_view',
@@ -157,11 +162,6 @@ describe('KIS WS slot routes', () => {
             score: 0.9,
             ttlMs: 300_000,
             pinned: false,
-          }),
-          expect.objectContaining({
-            ticker: '005930',
-            state: 'subscribed',
-            source: 'manual_watchlist',
           }),
         ],
       },
@@ -257,12 +257,12 @@ describe('KIS WS slot routes', () => {
             pinned: false,
           }),
           expect.objectContaining({
-            ticker: '000660',
-            source: 'current_view',
-          }),
-          expect.objectContaining({
             ticker: '035420',
             source: 'manual_watchlist',
+          }),
+          expect.objectContaining({
+            ticker: '000660',
+            source: 'current_view',
           }),
         ],
       },
@@ -354,6 +354,7 @@ describe('KIS WS slot routes', () => {
           rotationCandidates: [
             {
               ticker: 'A010130',
+              name: '고려아연',
               direction: 'gainers',
               rank: 1,
               reason: 'TOP100 상승 #1',

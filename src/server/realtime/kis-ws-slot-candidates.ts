@@ -5,6 +5,7 @@ import type { MarketPhase } from '../lifecycle/market-hours-scheduler.js';
 import type { OrderIntentPreview } from '../agent/order-intent-service.js';
 import type { MarketTopMoverRotationCandidate } from '../market/market-top-movers-service.js';
 import type { TossPortfolioPositionsPayload } from '../toss/toss-portfolio-client.js';
+import type { TossWatchlistPayload } from '../toss/toss-watchlist-client.js';
 import type { KisWsSlotCandidate } from './kis-ws-slot-allocator.js';
 
 export const KIS_WS_SLOT_CHURN_COOLDOWN_MS = 30_000;
@@ -13,6 +14,7 @@ export const KIS_WS_AGENT_EVENT_TTL_MS = 10 * 60_000;
 export interface BuildKisWsSlotCandidatesInput {
   readonly favorites?: readonly Favorite[];
   readonly portfolioSnapshot?: TossPortfolioPositionsPayload | null;
+  readonly watchlistSnapshot?: TossWatchlistPayload | null;
   readonly currentTicker?: string | undefined;
   readonly agentEvents?: readonly AgentEvent[];
   readonly orderIntentPreviews?: readonly OrderIntentPreview[];
@@ -26,10 +28,11 @@ export function buildKisWsSlotCandidates(
 ): KisWsSlotCandidate[] {
   return [
     ...holdingCandidates(input.portfolioSnapshot ?? null, input.now),
-    ...currentViewCandidates(input.currentTicker, input.now),
-    ...agentEventCandidates(input.agentEvents ?? [], input.now),
+    ...tossWatchlistCandidates(input.watchlistSnapshot ?? null, input.now),
     ...favoriteCandidates(input.favorites ?? [], input.now),
     ...orderIntentCandidates(input.orderIntentPreviews ?? [], input.now),
+    ...currentViewCandidates(input.currentTicker, input.now),
+    ...agentEventCandidates(input.agentEvents ?? [], input.now),
     ...topMoverRotationCandidates(
       input.topMoverRotationCandidates ?? [],
       input.marketPhase,
@@ -45,7 +48,6 @@ function holdingCandidates(
   const lastSeenAt = validIsoOrFallback(snapshot.fetchedAt, now);
   const byTicker = new Map<string, KisWsSlotCandidate>();
   for (const position of snapshot.positions) {
-    if (position.marketType !== 'KR' && position.marketCode !== 'KRX') continue;
     const ticker =
       normalizeKrTicker(position.productCode) ?? normalizeKrTicker(position.symbol);
     if (ticker === null) continue;
@@ -54,6 +56,29 @@ function holdingCandidates(
       source: 'holding',
       reason: '토스 보유종목',
       score: 1,
+      ttlMs: null,
+      lastSeenAt,
+      pinned: false,
+    });
+  }
+  return [...byTicker.values()];
+}
+
+function tossWatchlistCandidates(
+  snapshot: TossWatchlistPayload | null,
+  now: string,
+): KisWsSlotCandidate[] {
+  if (snapshot === null) return [];
+  const lastSeenAt = validIsoOrFallback(snapshot.fetchedAt, now);
+  const byTicker = new Map<string, KisWsSlotCandidate>();
+  for (const item of snapshot.items) {
+    const ticker = normalizeKrTicker(item.productCode) ?? normalizeKrTicker(item.symbol);
+    if (ticker === null) continue;
+    byTicker.set(ticker, {
+      ticker,
+      source: 'manual_watchlist',
+      reason: 'Toss 즐겨찾기',
+      score: 0.92,
       ttlMs: null,
       lastSeenAt,
       pinned: false,

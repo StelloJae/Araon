@@ -4,6 +4,7 @@ import type { Favorite } from '@shared/types.js';
 import type { AgentEvent } from '../../agent/agent-event-queue.js';
 import type { OrderIntentPreview } from '../../agent/order-intent-service.js';
 import type { TossPortfolioPositionsPayload } from '../../toss/toss-portfolio-client.js';
+import type { TossWatchlistPayload } from '../../toss/toss-watchlist-client.js';
 import { buildKisWsSlotCandidates } from '../kis-ws-slot-candidates.js';
 
 describe('KIS WS slot candidate builder', () => {
@@ -18,6 +19,35 @@ describe('KIS WS slot candidate builder', () => {
       positions: [
         portfolioPosition({ productCode: '000660', symbol: '000660', marketType: 'KR', marketCode: 'KRX' }),
         portfolioPosition({ productCode: 'US0378331005', symbol: 'AAPL', marketType: 'US', marketCode: 'NASDAQ' }),
+      ],
+    };
+    const watchlistSnapshot: TossWatchlistPayload = {
+      provider: 'toss',
+      fetchedAt: '2026-05-11T05:59:40.000Z',
+      groups: [],
+      items: [
+        {
+          ref: 'watchlist-item-1',
+          groupRef: 'watchlist-group-1',
+          groupName: '관심',
+          productCode: 'A129920',
+          symbol: '129920',
+          name: '대성하이텍',
+          currency: 'KRW',
+          base: 0,
+          last: 0,
+        },
+        {
+          ref: 'watchlist-item-2',
+          groupRef: 'watchlist-group-1',
+          groupName: '관심',
+          productCode: 'US0378331005',
+          symbol: 'AAPL',
+          name: 'Apple',
+          currency: 'USD',
+          base: 0,
+          last: 0,
+        },
       ],
     };
     const agentEvents: AgentEvent[] = [
@@ -47,6 +77,7 @@ describe('KIS WS slot candidate builder', () => {
     const topMoverRotationCandidates = [
       {
         ticker: 'A010130',
+        name: '고려아연',
         direction: 'gainers' as const,
         rank: 1,
         reason: 'TOP100 상승 #1',
@@ -59,6 +90,7 @@ describe('KIS WS slot candidate builder', () => {
     const candidates = buildKisWsSlotCandidates({
       favorites,
       portfolioSnapshot,
+      watchlistSnapshot,
       currentTicker: 'A005380',
       agentEvents,
       orderIntentPreviews,
@@ -77,18 +109,11 @@ describe('KIS WS slot candidate builder', () => {
         lastSeenAt: '2026-05-11T05:59:30.000Z',
       }),
       expect.objectContaining({
-        ticker: '005380',
-        source: 'current_view',
-        reason: '현재 화면',
-        score: 0.9,
-        ttlMs: 300_000,
-      }),
-      expect.objectContaining({
-        ticker: '042660',
-        source: 'recent_news',
-        reason: '최근 뉴스 이벤트',
-        score: 0.8,
-        ttlMs: 540_000,
+        ticker: '129920',
+        source: 'manual_watchlist',
+        reason: 'Toss 즐겨찾기',
+        score: 0.92,
+        lastSeenAt: '2026-05-11T05:59:40.000Z',
       }),
       expect.objectContaining({
         ticker: '005930',
@@ -108,6 +133,20 @@ describe('KIS WS slot candidate builder', () => {
         source: 'agent_candidate',
         reason: 'agent order-intent 후보',
         ttlMs: 180_000,
+      }),
+      expect.objectContaining({
+        ticker: '005380',
+        source: 'current_view',
+        reason: '현재 화면',
+        score: 0.9,
+        ttlMs: 300_000,
+      }),
+      expect.objectContaining({
+        ticker: '042660',
+        source: 'recent_news',
+        reason: '최근 뉴스 이벤트',
+        score: 0.8,
+        ttlMs: 540_000,
       }),
       expect.objectContaining({
         ticker: '010130',

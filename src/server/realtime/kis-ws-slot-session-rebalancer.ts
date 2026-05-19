@@ -14,6 +14,7 @@ import {
 } from './kis-ws-slot-candidates.js';
 import type { KisWsSlotStateStore } from './kis-ws-slot-state.js';
 import type { TossPortfolioPositionsPayload } from '../toss/toss-portfolio-client.js';
+import type { TossWatchlistPayload } from '../toss/toss-watchlist-client.js';
 
 export type KisWsSlotRebalanceOutcome =
   | 'rebalanced'
@@ -53,6 +54,7 @@ export interface KisWsSlotSessionRebalancerOptions {
   readonly orderIntentService?: Pick<OrderIntentService, 'snapshotPreviews'>;
   readonly agentEventQueue?: Pick<AgentEventQueue, 'snapshot'>;
   readonly portfolioPositions?: { snapshot(): TossPortfolioPositionsPayload | null };
+  readonly watchlistSnapshot?: { snapshot(): TossWatchlistPayload | null };
   readonly marketTopMoversService?: {
     snapshot(): {
       readonly rotationCandidates?: readonly MarketTopMoverRotationCandidate[];
@@ -102,6 +104,7 @@ export function createKisWsSlotSessionRebalancer(
       candidates: buildKisWsSlotCandidates({
         favorites: options.favoriteRepo.findAll(),
         portfolioSnapshot: options.portfolioPositions?.snapshot() ?? null,
+        watchlistSnapshot: options.watchlistSnapshot?.snapshot() ?? null,
         agentEvents: options.agentEventQueue?.snapshot(40) ?? [],
         orderIntentPreviews: options.orderIntentService?.snapshotPreviews(40) ?? [],
         topMoverRotationCandidates:

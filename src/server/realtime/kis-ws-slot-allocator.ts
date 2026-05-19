@@ -64,14 +64,14 @@ export interface AllocateKisWsSlotsInput {
 }
 
 const SOURCE_PRIORITY: Record<KisWsSlotSource, number> = {
-  holding: 700,
-  user_pin: 600,
-  current_view: 500,
-  recent_news: 400,
-  recent_disclosure: 400,
-  toss_signal: 400,
-  agent_candidate: 300,
-  manual_watchlist: 200,
+  holding: 900,
+  user_pin: 850,
+  manual_watchlist: 800,
+  agent_candidate: 700,
+  current_view: 600,
+  recent_news: 500,
+  recent_disclosure: 500,
+  toss_signal: 500,
   top100_rotation: 100,
 };
 
@@ -152,7 +152,7 @@ function findStickyReplacementIndex(selected: readonly KisWsSlotAssignment[]): n
   for (let index = selected.length - 1; index >= 0; index -= 1) {
     const item = selected[index];
     if (item === undefined) continue;
-    if (item.source === 'holding' || item.source === 'user_pin') continue;
+    if (item.source === 'holding' || item.source === 'user_pin' || item.source === 'manual_watchlist') continue;
     return index;
   }
   return -1;

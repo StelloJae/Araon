@@ -12,6 +12,7 @@ import {
 } from '../realtime/kis-ws-slot-candidates.js';
 import type { KisWsSlotStateStore } from '../realtime/kis-ws-slot-state.js';
 import type { TossPortfolioPositionsPayload } from '../toss/toss-portfolio-client.js';
+import type { TossWatchlistPayload } from '../toss/toss-watchlist-client.js';
 
 export interface KisWsSlotsRoutesOptions extends FastifyPluginOptions {
   readonly favoriteRepo: Pick<{ findAll(): Favorite[] }, 'findAll'>;
@@ -19,6 +20,7 @@ export interface KisWsSlotsRoutesOptions extends FastifyPluginOptions {
   readonly orderIntentService?: Pick<OrderIntentService, 'snapshotPreviews'>;
   readonly agentEventQueue?: Pick<AgentEventQueue, 'snapshot'>;
   readonly portfolioPositions?: { snapshot(): TossPortfolioPositionsPayload | null };
+  readonly watchlistSnapshot?: { snapshot(): TossWatchlistPayload | null };
   readonly marketTopMoversService?: {
     snapshot(): {
       readonly rotationCandidates?: readonly MarketTopMoverRotationCandidate[];
@@ -43,6 +45,7 @@ export async function kisWsSlotsRoutes(
           candidates: buildKisWsSlotCandidates({
             favorites: opts.favoriteRepo.findAll(),
             portfolioSnapshot: opts.portfolioPositions?.snapshot() ?? null,
+            watchlistSnapshot: opts.watchlistSnapshot?.snapshot() ?? null,
             currentTicker: request.query.currentTicker,
             agentEvents: opts.agentEventQueue?.snapshot(40) ?? [],
             orderIntentPreviews: opts.orderIntentService?.snapshotPreviews(40) ?? [],
