@@ -132,6 +132,40 @@ describe('candle aggregator', () => {
     });
   });
 
+  it('aggregates Toss fast quote updates into the current one-minute candle', async () => {
+    const { repo, batches } = writer();
+    const aggregator = createCandleAggregator({ writer: repo });
+
+    aggregator.recordPrice(price({
+      price: 70_000,
+      volume: 1_000,
+      source: 'toss-fast-quote',
+      tradeAt: '2026-05-07T00:00:01.000Z',
+    }));
+    aggregator.recordPrice(price({
+      price: 70_500,
+      volume: 1_200,
+      source: 'toss-fast-quote',
+      tradeAt: '2026-05-07T00:00:20.000Z',
+    }));
+    await aggregator.flushDirty();
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toEqual([
+      expect.objectContaining({
+        ticker: '005930',
+        interval: '1m',
+        bucketAt: '2026-05-07T00:00:00.000Z',
+        open: 70_000,
+        high: 70_500,
+        low: 70_000,
+        close: 70_500,
+        source: 'toss-fast-quote',
+        sampleCount: 2,
+      }),
+    ]);
+  });
+
   it('does not let out-of-order cumulative volume ticks reset the baseline', async () => {
     const { repo, batches } = writer();
     const aggregator = createCandleAggregator({ writer: repo });

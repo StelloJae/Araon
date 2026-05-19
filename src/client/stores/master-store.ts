@@ -18,6 +18,7 @@
 
 import { create } from 'zustand';
 import {
+  getCredentialsStatus,
   getMasterList,
   refreshMaster,
   type MasterStockEntry,
@@ -77,7 +78,8 @@ export const useMasterStore = create<MasterState>((set, get) => ({
         if (
           payload.items.length === 0 &&
           payload.rowCount === 0 &&
-          payload.refreshedAt === null
+          payload.refreshedAt === null &&
+          await canRefreshMasterWithKisCredentials()
         ) {
           await get().triggerRefresh();
         }
@@ -136,3 +138,11 @@ export const useMasterStore = create<MasterState>((set, get) => ({
     }
   },
 }));
+
+async function canRefreshMasterWithKisCredentials(): Promise<boolean> {
+  try {
+    return (await getCredentialsStatus()).configured;
+  } catch {
+    return false;
+  }
+}

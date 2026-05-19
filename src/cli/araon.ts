@@ -3,8 +3,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AraonStartedServer } from '../server/app.js';
 import { openBrowser } from './browser-open.js';
+import { createDoctorReport, formatDoctorReport } from './doctor.js';
 import { createCliShutdownManager, type CliShutdownManager } from './lifecycle.js';
+import { clearLauncherState, writeLauncherState } from './launcher-state.js';
 import { parseAraonCliArgs, resolveCliDataDir } from './options.js';
+import { resetAraonData, resetTossSession } from './reset.js';
+import { createStatusReport, formatStatusReport } from './status.js';
 
 interface PackageJson {
   version?: string;
@@ -24,6 +28,38 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
 
+  const dataDir = resolveCliDataDir(parsed.dataDir);
+
+  if (parsed.kind === 'doctor') {
+    const report = await createDoctorReport({ root, dataDir, version });
+    process.stdout.write(parsed.json ? `${JSON.stringify(report, null, 2)}\n` : formatDoctorReport(report));
+    if (!report.summary.ok) process.exitCode = 1;
+    return;
+  }
+
+  if (parsed.kind === 'status') {
+    const report = await createStatusReport({ dataDir });
+    process.stdout.write(parsed.json ? `${JSON.stringify(report, null, 2)}\n` : formatStatusReport(report));
+    if (report.url !== undefined && !report.running) process.exitCode = 1;
+    return;
+  }
+
+  if (parsed.kind === 'open') {
+    await openRunningAraon(dataDir);
+    return;
+  }
+
+  if (parsed.kind === 'reset') {
+    if (parsed.target === 'session') {
+      await resetTossSession(dataDir);
+      process.stdout.write(`Toss session reset. Other Araon data kept.\n`);
+      return;
+    }
+    await resetAraonData(dataDir, parsed.confirm);
+    process.stdout.write(`Araon local data reset: ${dataDir}\n`);
+    return;
+  }
+
   if (parsed.logLevel !== undefined) {
     process.env['LOG_LEVEL'] = parsed.logLevel;
   }
@@ -36,7 +72,6 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
     throw new Error(`Built client not found at ${staticDir}. Run npm run build before starting araon.`);
   }
 
-  const dataDir = resolveCliDataDir(parsed.dataDir);
   let started: AraonStartedServer | null = null;
   let shutdownManager: CliShutdownManager | null = null;
   const { startAraonServer } = await import('../server/app.js');
@@ -57,6 +92,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
 
   shutdownManager = createCliShutdownManager({
     close: async () => {
+      await clearLauncherState(dataDir);
       if (started !== null) {
         const current = started;
         started = null;
@@ -69,12 +105,35 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   process.stdout.write(`Data directory: ${dataDir}\n`);
   process.stdout.write('Press Ctrl+C to stop.\n');
 
+  await writeLauncherState(dataDir, {
+    url: started.url,
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+    version,
+  });
+
   if (parsed.openBrowser) {
     const result = await openBrowser(started.url);
     if (!result.opened) {
       process.stderr.write(`Could not open a browser automatically. Open this URL manually: ${started.url}\n`);
     }
   }
+}
+
+async function openRunningAraon(dataDir: string): Promise<void> {
+  const report = await createStatusReport({ dataDir });
+  if (report.url === undefined) {
+    throw new Error('Araon is not running. Start it with `araon` first.');
+  }
+  if (!report.processAlive) {
+    throw new Error('Araon launcher state is stale. Start it again with `araon`.');
+  }
+
+  const result = await openBrowser(report.url);
+  if (!result.opened) {
+    throw new Error(`Could not open a browser automatically. Open this URL manually: ${report.url}`);
+  }
+  process.stdout.write(`Opened Araon: ${report.url}\n`);
 }
 
 function readPackageVersion(root: string): string {

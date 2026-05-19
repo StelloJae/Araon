@@ -8,20 +8,24 @@ instruction to create throttles on purpose.
 
 Current live polling baseline:
 
+- global KIS REST start gap: 200ms
 - manual polling min start gap: 350ms
+- ranking min start gap: 1000ms
 - active AIMD observed polling override: 548ms, later 800ms after repeated
   polling throttle pressure
 - manual polling recovery rate: 3rps
 - recovery stable window: 30s
 - polling max in-flight: 2 at the governor layer
 
-These values come from local normal-operation evidence on 2026-05-10. They are
-not a KIS contract.
+These values come from local normal-operation evidence on 2026-05-10 and
+2026-05-11. They are not a KIS contract.
 
-The code baseline remains 350ms. Active AIMD may layer a runtime override on top
-of that baseline; rollback returns polling to the baseline. Recovery rps can be
-overridden for explicit experiments, but automatic AIMD decisions still tune the
-gap only.
+The code polling baseline remains 350ms. Active AIMD may layer a runtime
+override on top of that baseline; rollback returns polling to the baseline.
+Recovery rps can be overridden for explicit experiments, but automatic AIMD
+decisions still tune the polling gap only. The global KIS REST start gap is a
+separate cross-class de-sync guard, so it applies to polling/ranking/foreground
+starts even when class-specific gaps would otherwise permit the next request.
 
 ## Data Sources
 

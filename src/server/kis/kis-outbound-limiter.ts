@@ -63,6 +63,45 @@ export interface KisGovernorTelemetrySnapshot {
   recent: readonly KisGovernorTelemetryEvent[];
 }
 
+export type KisBudgetMeterEventType = 'started' | 'success' | 'failure' | 'throttle';
+
+export interface KisBudgetMeterClassSnapshot {
+  profileId: string;
+  endpointClass: KisEndpointClass | null;
+  priorityClass: KisPriorityClass;
+  startedCount: number;
+  successCount: number;
+  failureCount: number;
+  throttleCount: number;
+  callPerSec: number;
+  successPerSec: number;
+  failurePerMin: number;
+  throttlePerMin: number;
+  queueDepth: number;
+  currentAllowedRps: number | null;
+}
+
+export interface KisBudgetMeterWindowSnapshot {
+  windowMs: number;
+  startedCount: number;
+  successCount: number;
+  failureCount: number;
+  throttleCount: number;
+  callPerSec: number;
+  successPerSec: number;
+  failurePerMin: number;
+  throttlePerMin: number;
+  byClass: readonly KisBudgetMeterClassSnapshot[];
+}
+
+export interface KisBudgetMeterSnapshot {
+  generatedAtMs: number;
+  windows: {
+    tenSec: KisBudgetMeterWindowSnapshot;
+    sixtySec: KisBudgetMeterWindowSnapshot;
+  };
+}
+
 export interface KisOutboundLimiterAcquireInput {
   profileId?: string;
   endpointClass?: KisEndpointClass;
@@ -106,9 +145,11 @@ export interface KisOutboundLimiterSnapshot {
   ratePerSec: number;
   burst: number;
   tokens: number;
+  globalMinStartGapMs: number;
   queueDepth?: number;
   queuedByPriority?: Partial<Record<KisPriorityClass, number>>;
   telemetry?: KisGovernorTelemetrySnapshot;
+  budget?: KisBudgetMeterSnapshot;
   policies: KisOutboundLimiterPolicySnapshot[];
   profiles: KisOutboundLimiterProfileSnapshot[];
 }
@@ -158,6 +199,9 @@ const DEFAULT_RECOVERY_STABLE_MS = 10_000;
 const DEFAULT_CIRCUIT_BREAKER_AFTER_FAILURES = 6;
 const DEFAULT_CIRCUIT_BREAKER_MS = 30_000;
 const DEFAULT_TELEMETRY_CAPACITY = 200;
+const BUDGET_EVENT_RETENTION_MS = 2 * 60_000;
+const BUDGET_WINDOW_TEN_SEC_MS = 10_000;
+const BUDGET_WINDOW_SIXTY_SEC_MS = 60_000;
 
 interface ResolvedKisClassPolicy {
   priorityClass: KisPriorityClass;
@@ -190,6 +234,14 @@ interface QueuedAcquire {
   };
   resolve: () => void;
   reject: (err: unknown) => void;
+}
+
+interface BudgetMeterEvent {
+  atMs: number;
+  type: KisBudgetMeterEventType;
+  profileId: string;
+  endpointClass: KisEndpointClass | null;
+  priorityClass: KisPriorityClass;
 }
 
 const PRIORITY_ORDER: Record<KisPriorityClass, number> = {
@@ -319,6 +371,7 @@ export function createKisOutboundLimiter(
     options.telemetry?.initialEvents ?? [],
     telemetryCapacity,
   );
+  let budgetEvents: BudgetMeterEvent[] = [];
   let nextSequence = 0;
   let drainActive = false;
 
@@ -345,15 +398,18 @@ export function createKisOutboundLimiter(
   function recordFailure(input: KisOutboundLimiterFailureInput): void {
     release(input.endpointClass);
     if (isLocalCooldownError(input.error)) return;
+    appendBudgetEvent('failure', input.profileId ?? DEFAULT_PROFILE_ID, input.endpointClass);
     const classification = classifyKisRestFailure(input.error);
     if (!isKisSecondWindowThrottle(classification)) return;
     const profileId = input.profileId ?? DEFAULT_PROFILE_ID;
     const cooldownKey = cooldownMapKey(profileId, input.endpointClass);
+    appendBudgetEvent('throttle', profileId, input.endpointClass);
     recordLimited(cooldownKey, input.endpointClass, classification.code);
   }
 
   function recordSuccess(input: KisOutboundLimiterAcquireInput = {}): void {
     release(input.endpointClass);
+    appendBudgetEvent('success', input.profileId ?? DEFAULT_PROFILE_ID, input.endpointClass);
     const profileId = input.profileId ?? DEFAULT_PROFILE_ID;
     const cooldownKey = cooldownMapKey(profileId, input.endpointClass);
     const observation = observationsByKey.get(cooldownKey);
@@ -437,9 +493,11 @@ export function createKisOutboundLimiter(
       ratePerSec,
       burst,
       tokens,
+      globalMinStartGapMs,
       queueDepth: acquireQueue.length,
       queuedByPriority: queuedByPrioritySnapshot(),
       ...(telemetryEnabled ? { telemetry: telemetrySnapshot() } : {}),
+      budget: budgetSnapshot(current),
       policies: policySnapshot(),
       profiles: Array.from(cooldownUntilByKey.entries())
         .map(([key, cooldownUntilMs]) => ({
@@ -517,6 +575,119 @@ export function createKisOutboundLimiter(
       counts[priorityClass] += 1;
     }
     return counts;
+  }
+
+  function appendBudgetEvent(
+    type: KisBudgetMeterEventType,
+    profileId: string,
+    endpointClass: KisEndpointClass | undefined,
+  ): void {
+    const current = now();
+    budgetEvents.push({
+      atMs: current,
+      type,
+      profileId,
+      endpointClass: endpointClass ?? null,
+      priorityClass: priorityClassForEndpoint(endpointClass),
+    });
+    const oldestAllowed = current - BUDGET_EVENT_RETENTION_MS;
+    if (budgetEvents.length > 0 && budgetEvents[0]!.atMs < oldestAllowed) {
+      budgetEvents = budgetEvents.filter((event) => event.atMs >= oldestAllowed);
+    }
+  }
+
+  function budgetSnapshot(current: number): KisBudgetMeterSnapshot {
+    return {
+      generatedAtMs: current,
+      windows: {
+        tenSec: budgetWindowSnapshot(current, BUDGET_WINDOW_TEN_SEC_MS),
+        sixtySec: budgetWindowSnapshot(current, BUDGET_WINDOW_SIXTY_SEC_MS),
+      },
+    };
+  }
+
+  function budgetWindowSnapshot(
+    current: number,
+    windowMs: number,
+  ): KisBudgetMeterWindowSnapshot {
+    const events = budgetEvents.filter((event) => event.atMs >= current - windowMs);
+    const byClass = new Map<string, KisBudgetMeterClassSnapshot>();
+    for (const event of events) {
+      const key = budgetClassKey(event.profileId, event.endpointClass);
+      const currentClass = byClass.get(key) ?? emptyBudgetClassSnapshot(
+        event.profileId,
+        event.endpointClass,
+      );
+      byClass.set(key, incrementBudgetClassSnapshot(currentClass, event, windowMs));
+    }
+    const startedCount = countBudgetEvents(events, 'started');
+    const successCount = countBudgetEvents(events, 'success');
+    const failureCount = countBudgetEvents(events, 'failure');
+    const throttleCount = countBudgetEvents(events, 'throttle');
+    return {
+      windowMs,
+      startedCount,
+      successCount,
+      failureCount,
+      throttleCount,
+      callPerSec: ratePerSecond(startedCount, windowMs),
+      successPerSec: ratePerSecond(successCount, windowMs),
+      failurePerMin: ratePerMinute(failureCount, windowMs),
+      throttlePerMin: ratePerMinute(throttleCount, windowMs),
+      byClass: Array.from(byClass.values()).sort((a, b) => {
+        const profileOrder = a.profileId.localeCompare(b.profileId);
+        if (profileOrder !== 0) return profileOrder;
+        return String(a.endpointClass ?? '').localeCompare(String(b.endpointClass ?? ''));
+      }),
+    };
+  }
+
+  function emptyBudgetClassSnapshot(
+    profileId: string,
+    endpointClass: KisEndpointClass | null,
+  ): KisBudgetMeterClassSnapshot {
+    const priorityClass = priorityClassForEndpoint(endpointClass ?? undefined);
+    const observation = observationsByKey.get(
+      cooldownMapKey(profileId, endpointClass ?? undefined),
+    );
+    const policy = policyForEndpoint(endpointClass ?? undefined);
+    return {
+      profileId,
+      endpointClass,
+      priorityClass,
+      startedCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      throttleCount: 0,
+      callPerSec: 0,
+      successPerSec: 0,
+      failurePerMin: 0,
+      throttlePerMin: 0,
+      queueDepth: queuedByPrioritySnapshot()[priorityClass] ?? 0,
+      currentAllowedRps: effectiveRatePerSec(observation, policy),
+    };
+  }
+
+  function incrementBudgetClassSnapshot(
+    snapshot: KisBudgetMeterClassSnapshot,
+    event: BudgetMeterEvent,
+    windowMs: number,
+  ): KisBudgetMeterClassSnapshot {
+    const startedCount = snapshot.startedCount + (event.type === 'started' ? 1 : 0);
+    const successCount = snapshot.successCount + (event.type === 'success' ? 1 : 0);
+    const failureCount = snapshot.failureCount + (event.type === 'failure' ? 1 : 0);
+    const throttleCount = snapshot.throttleCount + (event.type === 'throttle' ? 1 : 0);
+    return {
+      ...snapshot,
+      startedCount,
+      successCount,
+      failureCount,
+      throttleCount,
+      callPerSec: ratePerSecond(startedCount, windowMs),
+      successPerSec: ratePerSecond(successCount, windowMs),
+      failurePerMin: ratePerMinute(failureCount, windowMs),
+      throttlePerMin: ratePerMinute(throttleCount, windowMs),
+    };
   }
 
   function refill(): void {
@@ -614,6 +785,7 @@ export function createKisOutboundLimiter(
     const startedAt = now();
     lastGlobalStartAtMs = startedAt;
     lastStartAtMsByPriority.set(policy.priorityClass, startedAt);
+    appendBudgetEvent('started', entry.input.profileId, entry.input.endpointClass);
     entry.resolve();
   }
 
@@ -874,6 +1046,29 @@ function emptyPriorityCounts(): Record<KisPriorityClass, number> {
     master_refresh: 0,
     maintenance: 0,
   };
+}
+
+function budgetClassKey(profileId: string, endpointClass: KisEndpointClass | null): string {
+  return `${profileId}\u0000${endpointClass ?? ''}`;
+}
+
+function countBudgetEvents(
+  events: readonly BudgetMeterEvent[],
+  type: KisBudgetMeterEventType,
+): number {
+  return events.reduce((sum, event) => sum + (event.type === type ? 1 : 0), 0);
+}
+
+function ratePerSecond(count: number, windowMs: number): number {
+  return roundRate(count / Math.max(0.001, windowMs / 1000));
+}
+
+function ratePerMinute(count: number, windowMs: number): number {
+  return roundRate(count / Math.max(0.001, windowMs / 60_000));
+}
+
+function roundRate(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function cooldownMapKey(profileId: string, endpointClass: KisEndpointClass | undefined): string {

@@ -1,4 +1,5 @@
 import type { PriceCandle } from '@shared/types.js';
+import type { PriceCandleSource } from '@shared/types.js';
 import type { PriceCandleRepository } from '../db/repositories.js';
 
 export interface TodayMinuteBackfillResult {
@@ -8,7 +9,7 @@ export interface TodayMinuteBackfillResult {
   updated: number;
   from: string | null;
   to: string | null;
-  source: 'kis-time-today';
+  source: Extract<PriceCandleSource, 'kis-time-today' | 'toss-time-today' | 'mixed'>;
   pages: number;
   coverage: {
     backfilled: boolean;
@@ -82,7 +83,7 @@ export function createTodayMinuteBackfillService(
       updated: existing,
       from: first?.bucketAt ?? null,
       to: last?.bucketAt ?? null,
-      source: 'kis-time-today',
+      source: todayMinuteBackfillSource(candles),
       pages,
       coverage: {
         backfilled: candles.length > 0,
@@ -92,6 +93,15 @@ export function createTodayMinuteBackfillService(
   }
 
   return { backfillTodayMinuteCandles };
+}
+
+function todayMinuteBackfillSource(
+  candles: readonly PriceCandle[],
+): Extract<PriceCandleSource, 'kis-time-today' | 'toss-time-today' | 'mixed'> {
+  const sources = new Set(candles.map((candle) => candle.source));
+  if (sources.size === 1 && sources.has('toss-time-today')) return 'toss-time-today';
+  if (sources.size === 1 && sources.has('kis-time-today')) return 'kis-time-today';
+  return 'mixed';
 }
 
 function dedupeCandles(candles: readonly PriceCandle[]): PriceCandle[] {

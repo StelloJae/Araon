@@ -15,14 +15,20 @@ import type {
   LocalRestoreResult,
   PriceHistoryApiResponse,
   MarketTapeSummary,
+  MarketTopMoversMarket,
   MarketTopMoversResponse,
   Price,
   Stock,
+  AgentEventNotificationPayload,
+  AgentEventNotificationType,
   StockDisclosurePage,
   StockNewsPage,
   StockSignalEvent,
   StockSignalOutcomeDashboard,
+  TossRealtimeRankingMarket,
+  TossRealtimeRankingResponse,
 } from '@shared/types';
+import type { AraonProductMarket } from '@shared/product-identity';
 import type { SessionRealtimeCap } from './realtime-session-control';
 
 interface SuccessEnvelope<T> {
@@ -86,13 +92,1580 @@ export async function getMarketSummary(): Promise<MarketTapeSummary> {
 }
 
 export async function getMarketTopMovers(
-  options: { limit?: number } = {},
+  options: { limit?: number; market?: MarketTopMoversMarket } = {},
 ): Promise<MarketTopMoversResponse> {
   const params = new URLSearchParams();
   if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.market !== undefined) params.set('market', options.market);
   const query = params.toString();
   const res = await fetch(`/market/top-movers${query.length > 0 ? `?${query}` : ''}`);
   return unwrap<MarketTopMoversResponse>(res);
+}
+
+export async function getTossRealtimeRanking(
+  options: { limit?: number; market?: TossRealtimeRankingMarket } = {},
+): Promise<TossRealtimeRankingResponse> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.market !== undefined) params.set('market', options.market);
+  const query = params.toString();
+  const res = await fetch(`/market/toss/realtime-ranking${query.length > 0 ? `?${query}` : ''}`);
+  return unwrap<TossRealtimeRankingResponse>(res);
+}
+
+export interface TossStockSearchItem {
+  ticker: string;
+  productCode: string;
+  krTicker: string | null;
+  name: string;
+  market: AraonProductMarket;
+  tossEligible: boolean;
+  kisEligible: boolean;
+  chartEligible: boolean;
+  quoteEligible: boolean;
+  matchType: string | null;
+  source: 'toss-public-search';
+}
+
+export interface TossStockSearchPayload {
+  providerId: 'toss-public';
+  fetchedAt: string;
+  query: string;
+  requestedLimit: number;
+  returnedCount: number;
+  items: TossStockSearchItem[];
+}
+
+export async function searchTossStocks(
+  query: string,
+  limit: number = 8,
+): Promise<TossStockSearchPayload> {
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('limit', String(limit));
+  const res = await fetch(`/market/toss/search?${params.toString()}`);
+  return unwrap<TossStockSearchPayload>(res);
+}
+
+// === Toss auth/realtime controls ==========================================
+
+export type TossSessionState =
+  | 'logged_out'
+  | 'session_scoped'
+  | 'persistent'
+  | 'expiring'
+  | 'expired';
+
+export interface TossSessionStatusPayload {
+  configured: boolean;
+  state: TossSessionState;
+  provider: 'toss' | null;
+  persistent: boolean;
+  cookieCount: number;
+  localStorageKeyCount: number;
+  sessionStorageKeyCount: number;
+  retrievedAt: string | null;
+  expiresAt: string | null;
+  serverExpiresAt: string | null;
+  effectiveExpiresAt: string | null;
+  expiresInMs: number | null;
+}
+
+export type TossLoginJobState =
+  | 'idle'
+  | 'starting'
+  | 'waiting_for_qr'
+  | 'waiting_for_persistent'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+export interface TossLoginStatusPayload {
+  state: TossLoginJobState;
+  startedAt: string | null;
+  updatedAt: string | null;
+  finishedAt: string | null;
+  message: string | null;
+  persistent: boolean;
+  cookieCount: number;
+  localStorageKeyCount: number;
+  sessionStorageKeyCount: number;
+  expiresAt: string | null;
+  missingCookieCount: number;
+  missingLocalStorageKeyCount: number;
+}
+
+export type TossSessionExtensionState =
+  | 'succeeded'
+  | 'failed'
+  | 'timeout'
+  | 'rejected';
+
+export interface TossSessionExtensionPayload {
+  state: TossSessionExtensionState;
+  requestedAt: string;
+  finishedAt: string;
+  serverExpiresAt: string | null;
+  approvalState: string | null;
+}
+
+export type TossRealtimeState =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'stopped'
+  | 'failed';
+
+export interface TossSseStatusPayload {
+  state: TossRealtimeState;
+  startedAt: string | null;
+  updatedAt: string | null;
+  stoppedAt: string | null;
+  eventCount: number;
+  priceRefreshEventCount: number;
+  userNotificationEventCount: number;
+  priceRefreshDispatchCount: number;
+  priceRefreshDispatchFailureCount: number;
+  refreshHintCount: number;
+  refreshHintDispatchCount: number;
+  refreshHintDispatchFailureCount: number;
+  refreshHints: Array<{ resource: string; count: number }>;
+  eventTypes: Array<{ type: string; count: number }>;
+  reconnectCount: number;
+  lastEventType: string | null;
+  lastStockCode: string | null;
+  lastEventAt: string | null;
+  lastPriceRefreshAt: string | null;
+  lastUserNotificationAt: string | null;
+  lastPriceRefreshDispatchAt: string | null;
+  lastRefreshHintAt: string | null;
+  lastRefreshHintResource: string | null;
+  lastRefreshHintTicker: string | null;
+  lastError: string | null;
+  thinNotificationOnly: boolean;
+}
+
+export type TossSseRefreshResource =
+  | 'quote'
+  | 'pending-orders'
+  | 'completed-orders'
+  | 'account-summary'
+  | 'portfolio-positions'
+  | 'user-notifications'
+  | 'preferences'
+  | 'icons';
+
+export type TossSseRefreshRecordedResult =
+  | 'refreshed'
+  | 'ignored'
+  | 'throttled'
+  | 'in_flight'
+  | 'failed';
+
+export interface TossSseRefreshResultItem {
+  id: string;
+  resource: TossSseRefreshResource;
+  ticker: string | null;
+  sourceType: string;
+  receivedAt: string;
+  result: TossSseRefreshRecordedResult;
+  reason: string;
+  recordedAt: string;
+  error: string | null;
+}
+
+export interface TossSseRefreshResultsPayload {
+  items: readonly TossSseRefreshResultItem[];
+  returnedCount: number;
+}
+
+export async function getTossAuthStatus(): Promise<TossSessionStatusPayload> {
+  const res = await fetch('/toss/auth/status');
+  return unwrap<TossSessionStatusPayload>(res);
+}
+
+export async function clearTossSession(): Promise<TossSessionStatusPayload> {
+  const res = await fetch('/toss/auth/session', { method: 'DELETE' });
+  return unwrap<TossSessionStatusPayload>(res);
+}
+
+export async function extendTossSession(
+  timeoutMs = 60_000,
+): Promise<TossSessionExtensionPayload> {
+  const res = await fetch('/toss/auth/session/extend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timeoutMs }),
+  });
+  return unwrap<TossSessionExtensionPayload>(res);
+}
+
+export async function getTossLoginStatus(): Promise<TossLoginStatusPayload | null> {
+  const res = await fetch('/toss/auth/login/status');
+  return unwrap<TossLoginStatusPayload | null>(res);
+}
+
+export async function startTossLogin(timeoutMs = 10 * 60_000): Promise<TossLoginStatusPayload> {
+  const res = await fetch('/toss/auth/login/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ headless: false, timeoutMs }),
+  });
+  return unwrap<TossLoginStatusPayload>(res);
+}
+
+export async function cancelTossLogin(): Promise<TossLoginStatusPayload> {
+  const res = await fetch('/toss/auth/login/cancel', { method: 'POST' });
+  return unwrap<TossLoginStatusPayload>(res);
+}
+
+export async function getTossSseStatus(): Promise<TossSseStatusPayload> {
+  const res = await fetch('/toss/realtime/status');
+  return unwrap<TossSseStatusPayload>(res);
+}
+
+export async function getTossSseRefreshResults(
+  limit = 20,
+): Promise<TossSseRefreshResultsPayload> {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  const res = await fetch(`/toss/realtime/refresh-results?${params.toString()}`);
+  return unwrap<TossSseRefreshResultsPayload>(res);
+}
+
+export type KisWsSlotSource =
+  | 'holding'
+  | 'user_pin'
+  | 'current_view'
+  | 'recent_news'
+  | 'recent_disclosure'
+  | 'toss_signal'
+  | 'agent_candidate'
+  | 'manual_watchlist'
+  | 'top100_rotation';
+
+export interface KisWsSlotCandidatePayload {
+  ticker: string;
+  state: 'subscribed' | 'fallback';
+  source: KisWsSlotSource;
+  reason: string;
+  score: number;
+  ttlMs: number | null;
+  lastSeenAt: string;
+  pinned: boolean;
+}
+
+export interface KisWsSlotRebalancePayload {
+  requestedAt: string;
+  reason: string;
+  outcome: 'rebalanced' | 'unchanged' | 'skipped' | 'no_candidates';
+  skipReason: string | null;
+  activeCount: number | null;
+  fallbackCount: number | null;
+  diff: {
+    subscribe: string[];
+    unsubscribe: string[];
+  } | null;
+}
+
+export interface KisWsSlotStatusPayload {
+  enabled: boolean;
+  provider: 'kis';
+  perProfileCap: number;
+  activeCount: number;
+  fallbackCount: number;
+  churnCooldownMs: number;
+  diff: {
+    subscribe: string[];
+    unsubscribe: string[];
+  };
+  lastRebalance?: KisWsSlotRebalancePayload | null;
+  candidates: KisWsSlotCandidatePayload[];
+}
+
+export async function getKisWsSlotStatus(
+  currentTicker?: string | null,
+): Promise<KisWsSlotStatusPayload> {
+  const params = new URLSearchParams();
+  if (currentTicker !== undefined && currentTicker !== null && currentTicker.trim().length > 0) {
+    params.set('currentTicker', currentTicker.trim().toUpperCase());
+  }
+  const qs = params.toString();
+  const res = await fetch(`/runtime/realtime/kis-ws-slots${qs.length > 0 ? `?${qs}` : ''}`);
+  return unwrap<KisWsSlotStatusPayload>(res);
+}
+
+export async function startTossSse(): Promise<TossSseStatusPayload> {
+  const res = await fetch('/toss/realtime/start', { method: 'POST' });
+  return unwrap<TossSseStatusPayload>(res);
+}
+
+export async function stopTossSse(): Promise<TossSseStatusPayload> {
+  const res = await fetch('/toss/realtime/stop', { method: 'POST' });
+  return unwrap<TossSseStatusPayload>(res);
+}
+
+export interface AgentEventMonitorStatusPayload {
+  enabled: boolean;
+  running: boolean;
+  intervalMs: number;
+  maxTickersPerCycle: number;
+  providerCooldownMs: number;
+  dispatchPolicy: AgentEventMonitorDispatchPolicyPayload;
+  watchPolicy: {
+    sources: readonly AgentEventMonitorWatchSourcePayload[];
+    fullMarket: false;
+  };
+  providers: {
+    news: boolean;
+    tossNews: boolean;
+    tossSignal: boolean;
+    disclosure: boolean;
+  };
+  providerPolicies: AgentEventMonitorProviderPoliciesPayload;
+  providerStates: {
+    news: AgentEventMonitorProviderStatePayload;
+    tossNews: AgentEventMonitorProviderStatePayload;
+    tossSignal: AgentEventMonitorProviderStatePayload;
+    disclosure: AgentEventMonitorProviderStatePayload;
+  };
+  providerObservations: AgentEventMonitorProviderObservationsPayload;
+  tossSignalContract: AgentEventMonitorTossSignalContractPayload;
+  cycleCount: number;
+  watchedTickers: readonly string[];
+  watchedCandidates: readonly AgentEventMonitorWatchCandidatePayload[];
+  lastCycleAt: string | null;
+  lastCycleDurationMs: number | null;
+  lastSkippedRefreshes: number;
+  lastErrorCode: string | null;
+}
+
+export type AgentEventMonitorWatchSourcePayload = 'favorite' | 'agent_event' | 'tracked';
+
+export interface AgentEventMonitorDispatchPolicyPayload {
+  mode: 'best_effort_after_first_seen';
+  targetFirstSeenToDispatchMs: {
+    min: number;
+    max: number;
+  };
+  providerPublicationGuarantee: false;
+  autoPollingRequiresOptIn: true;
+  fullMarketPolling: false;
+}
+
+export interface AgentEventMonitorProviderPolicyPayload {
+  enabled: boolean;
+  cooldownMs: number;
+  freshness: 'published_at_when_available';
+  firstSeen: 'araon_observed_at';
+}
+
+export interface AgentEventMonitorProviderPoliciesPayload {
+  news: AgentEventMonitorProviderPolicyPayload;
+  tossNews: AgentEventMonitorProviderPolicyPayload;
+  tossSignal: AgentEventMonitorProviderPolicyPayload;
+  disclosure: AgentEventMonitorProviderPolicyPayload;
+}
+
+export interface AgentEventMonitorProviderStatePayload {
+  enabled: boolean;
+  reason:
+    | 'refresh-ready'
+    | 'session-gated'
+    | 'session-required'
+    | 'request-body-template-configured'
+    | 'request-body-template-missing'
+    | 'dart-configured'
+    | 'dart-not-configured'
+    | 'disclosure-store-missing';
+}
+
+export type AgentEventMonitorProviderObservationOutcomePayload =
+  | 'refreshed'
+  | 'skipped_cooldown'
+  | 'failed'
+  | null;
+
+export interface AgentEventMonitorProviderObservationPayload {
+  lastAttemptedAt: string | null;
+  lastDurationMs: number | null;
+  lastOutcome: AgentEventMonitorProviderObservationOutcomePayload;
+  lastInsertedEvents: number;
+  lastErrorCode: string | null;
+}
+
+export interface AgentEventMonitorProviderObservationsPayload {
+  news: AgentEventMonitorProviderObservationPayload;
+  tossNews: AgentEventMonitorProviderObservationPayload;
+  tossSignal: AgentEventMonitorProviderObservationPayload;
+  disclosure: AgentEventMonitorProviderObservationPayload;
+}
+
+export interface AgentEventMonitorTossSignalContractPayload {
+  endpoint: {
+    method: 'POST';
+    host: 'wts-info-api.tossinvest.com';
+    path:
+      | '/api/v2/dashboard/wts/overview/signals'
+      | '/api/v1/dashboard/intelligences/all';
+  };
+  bodyContract: 'capture_required' | 'configured';
+  captureRequired: boolean;
+  externalCallsEnabled: boolean;
+  requestBodyTemplateSource: 'ARAON_TOSS_SIGNAL_REQUEST_BODY_TEMPLATE';
+  rawTemplateExposed: false;
+  shapeProbeCandidates: readonly AgentEventMonitorTossSignalShapeProbeCandidatePayload[];
+  semanticPolicy: AgentEventMonitorTossSignalSemanticPolicyPayload;
+  captureGuidance: AgentEventMonitorTossSignalCaptureGuidancePayload;
+  reference: 'tossinvest-cli rpc-catalog';
+}
+
+export interface AgentEventMonitorTossSignalShapeProbeCandidatePayload {
+  method: 'GET';
+  host:
+    | 'wts-info-api.tossinvest.com'
+    | 'wts-cert-api.tossinvest.com';
+  path: '/api/v1/trading/analysis/productCode/{productCode}';
+  purpose: 'shape_probe_only';
+  rawPayloadExposed: false;
+  rawSessionExposed: false;
+}
+
+export interface AgentEventMonitorTossSignalSemanticPolicyPayload {
+  emptyResponse: 'supported_empty_not_actionable';
+  eventEmission: 'non_empty_items_only';
+  agentEventType: 'toss_signal_detected';
+  rawPayloadExposed: false;
+}
+
+export interface AgentEventMonitorTossSignalCaptureGuidancePayload {
+  required: boolean;
+  requiresUserLoginForCapture: boolean;
+  requiresDevToolsForCapture: boolean;
+  rawTemplateExposed: false;
+  nextAction: 'user-assisted-capture-required' | 'configured';
+}
+
+export interface AgentEventMonitorWatchCandidatePayload {
+  ticker: string;
+  name: string;
+  source: 'favorite' | 'agent_event' | 'tracked';
+  reason: string;
+}
+
+export interface AgentEventMonitorRunResult {
+  state: 'disabled' | 'completed';
+  reason: string;
+  tickers: string[];
+  refreshedNews: number;
+  refreshedTossNews: number;
+  refreshedTossSignals: number;
+  refreshedDisclosures: number;
+  skippedRefreshes: number;
+  insertedEvents: number;
+}
+
+export async function getAgentEventMonitorStatus(): Promise<AgentEventMonitorStatusPayload> {
+  const res = await fetch('/agent/event-monitor/status');
+  return unwrap<AgentEventMonitorStatusPayload>(res);
+}
+
+export async function runAgentEventMonitorTick(): Promise<AgentEventMonitorRunResult> {
+  const res = await fetch('/agent/event-monitor/tick', { method: 'POST' });
+  return unwrap<AgentEventMonitorRunResult>(res);
+}
+
+export async function startAgentEventMonitor(): Promise<AgentEventMonitorStatusPayload> {
+  const res = await fetch('/agent/event-monitor/start', { method: 'POST' });
+  return unwrap<AgentEventMonitorStatusPayload>(res);
+}
+
+export async function stopAgentEventMonitor(): Promise<AgentEventMonitorStatusPayload> {
+  const res = await fetch('/agent/event-monitor/stop', { method: 'POST' });
+  return unwrap<AgentEventMonitorStatusPayload>(res);
+}
+
+export type AgentEventPayload = AgentEventNotificationPayload;
+
+export interface AgentEventsSnapshotPayload {
+  items: AgentEventPayload[];
+  returnedCount: number;
+}
+
+export async function getAgentEvents(limit = 20): Promise<AgentEventsSnapshotPayload> {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  const res = await fetch(`/agent/events?${params.toString()}`);
+  return unwrap<AgentEventsSnapshotPayload>(res);
+}
+
+export interface AgentEventAlertDeliveryPayload {
+  id: string;
+  eventId: string;
+  eventType: AgentEventNotificationType;
+  ticker: string;
+  channel: 'browser-sse';
+  target: 'local-ui';
+  status: 'dispatched' | 'skipped_no_client';
+  clientCount: number;
+  dispatchLatencyMs: number;
+  reason: string;
+  createdAt: string;
+}
+
+export interface AgentEventAlertDeliverySummaryPayload {
+  targetFirstSeenToDispatchMs: number;
+  totalCount: number;
+  dispatchedCount: number;
+  skippedNoClientCount: number;
+  dispatchedWithinTargetCount: number;
+  dispatchedLateCount: number;
+  lastDispatchLatencyMs: number | null;
+  maxDispatchLatencyMs: number | null;
+}
+
+export interface AgentEventAlertDeliveriesPayload {
+  items: AgentEventAlertDeliveryPayload[];
+  returnedCount: number;
+  summary: AgentEventAlertDeliverySummaryPayload;
+}
+
+export async function getAgentEventAlertDeliveries(
+  limit = 20,
+): Promise<AgentEventAlertDeliveriesPayload> {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  const res = await fetch(`/agent/event-alert-deliveries?${params.toString()}`);
+  return unwrap<AgentEventAlertDeliveriesPayload>(res);
+}
+
+export interface TossSettlementBucket {
+  date: string | null;
+  krw: number;
+  usd: number;
+}
+
+export interface TossAccountMarketSummary {
+  market: string;
+  pendingBuyOrderAmount: number;
+  evaluatedAmount: number;
+  principalAmount: number;
+  evaluatedProfitAmount: number;
+  profitRate: number;
+  totalAssetAmount: number;
+  orderableAmountKrw: number;
+  orderableAmountUsd: number;
+}
+
+export interface TossAccountSummaryPayload {
+  provider: 'toss';
+  fetchedAt: string;
+  totalAssetAmount: number;
+  evaluatedProfitAmount: number;
+  profitRate: number;
+  orderableAmountKrw: number;
+  orderableAmountUsd: number;
+  withdrawable: {
+    kr: readonly TossSettlementBucket[];
+    us: readonly TossSettlementBucket[];
+  };
+  markets: Readonly<Record<string, TossAccountMarketSummary>>;
+}
+
+export interface TossPortfolioPosition {
+  productCode: string;
+  symbol: string;
+  name: string;
+  iconUrl?: string | null;
+  marketType: string;
+  marketCode: string;
+  quantity: number;
+  averagePrice: number;
+  currentPrice: number;
+  marketValue: number;
+  unrealizedPnl: number;
+  profitRate: number;
+  dailyProfitLoss: number;
+  dailyProfitRate: number;
+  averagePriceUsd: number;
+  currentPriceUsd: number;
+  marketValueUsd: number;
+  unrealizedPnlUsd: number;
+  profitRateUsd: number;
+  dailyProfitLossUsd: number;
+  dailyProfitRateUsd: number;
+}
+
+export interface TossPortfolioPositionsPayload {
+  provider: 'toss';
+  fetchedAt: string;
+  positions: readonly TossPortfolioPosition[];
+}
+
+export interface TossPendingOrderItem {
+  ref: string;
+  symbol: string;
+  name: string;
+  market: string;
+  side: string;
+  status: string;
+  quantity: number;
+  originalQuantity: number;
+  price: number;
+  orderedDate: string | null;
+  submittedAt: string | null;
+}
+
+export interface TossPendingOrdersPayload {
+  provider: 'toss';
+  fetchedAt: string;
+  orders: readonly TossPendingOrderItem[];
+}
+
+export type TossOrdersMarket = 'kr' | 'us' | 'all';
+
+export interface TossCompletedOrderItem {
+  ref: string;
+  symbol: string;
+  name: string;
+  market: string;
+  side: string;
+  status: string;
+  quantity: number;
+  filledQuantity: number;
+  price: number;
+  averageExecutionPrice: number;
+  orderedDate: string | null;
+  submittedAt: string | null;
+}
+
+export interface TossCompletedOrdersRange {
+  market: TossOrdersMarket;
+  from: string;
+  to: string;
+  size: number;
+  number: number;
+}
+
+export interface TossCompletedOrdersPayload {
+  provider: 'toss';
+  fetchedAt: string;
+  range: TossCompletedOrdersRange;
+  orders: readonly TossCompletedOrderItem[];
+}
+
+export type TossOrderDetailKind = 'pending' | 'completed';
+
+export interface TossOrderDetailPayload {
+  provider: 'toss';
+  fetchedAt: string;
+  ref: string;
+  kind: TossOrderDetailKind;
+  range?: TossCompletedOrdersRange;
+  order: TossPendingOrderItem | TossCompletedOrderItem;
+}
+
+export interface TossCompletedOrdersOptions {
+  market?: TossOrdersMarket;
+  from?: string;
+  to?: string;
+  size?: number;
+  number?: number;
+}
+
+export type TossTransactionsMarket = 'kr' | 'us';
+export type TossTransactionsFilter = 'all' | 'trade' | 'cash' | 'inout' | 'cash-alt';
+
+export interface TossTransactionItem {
+  ref: string;
+  market: TossTransactionsMarket;
+  category: string;
+  type: string;
+  code: string;
+  displayName: string;
+  displayType: string;
+  summary: string | null;
+  symbol: string;
+  name: string;
+  currency: 'KRW' | 'USD';
+  quantity: number;
+  amount: number;
+  adjustedAmount: number;
+  commissionAmount: number;
+  taxAmount: number;
+  balanceAmount: number;
+  date: string | null;
+  dateTime: string | null;
+  orderDate: string | null;
+  settlementDate: string | null;
+  tradeType: string;
+  referenceType: string | null;
+}
+
+export interface TossTransactionsRange {
+  market: TossTransactionsMarket;
+  from: string;
+  to: string;
+  filter: TossTransactionsFilter;
+  size: number;
+  number: number;
+}
+
+export interface TossTransactionsNextPage {
+  number: number;
+  size: number;
+  filters: string;
+  type: string;
+}
+
+export interface TossTransactionsPayload {
+  provider: 'toss';
+  fetchedAt: string;
+  market: TossTransactionsMarket;
+  range: TossTransactionsRange;
+  lastPage: boolean;
+  next: TossTransactionsNextPage | null;
+  items: readonly TossTransactionItem[];
+}
+
+export interface TossTransactionsOptions {
+  market?: TossTransactionsMarket;
+  from?: string;
+  to?: string;
+  filter?: TossTransactionsFilter;
+  size?: number;
+  number?: number;
+}
+
+export interface TossTransactionSettlementEstimate {
+  date: string | null;
+  buyAmount: number;
+  sellAmount: number;
+}
+
+export interface TossTransactionWithdrawableBottomSheetEntry {
+  title: string;
+  krw: number;
+  usd: number;
+}
+
+export interface TossTransactionsOverviewPayload {
+  provider: 'toss';
+  fetchedAt: string;
+  market: TossTransactionsMarket;
+  orderableAmountKrw: number;
+  orderableAmountUsd: number;
+  withdrawable: readonly TossSettlementBucket[];
+  displayWithdrawable: readonly TossSettlementBucket[];
+  deposit: readonly TossSettlementBucket[];
+  estimateSettlement: readonly TossTransactionSettlementEstimate[];
+  withdrawableBottomSheet: readonly TossTransactionWithdrawableBottomSheetEntry[];
+}
+
+export interface TossWatchlistItem {
+  ref: string;
+  groupRef: string;
+  groupName: string;
+  productCode: string;
+  symbol: string;
+  name: string;
+  iconUrl?: string | null;
+  currency: string;
+  base: number;
+  last: number;
+}
+
+export interface TossWatchlistGroup {
+  ref: string;
+  name: string;
+  items: readonly TossWatchlistItem[];
+}
+
+export interface TossWatchlistPayload {
+  provider: 'toss';
+  fetchedAt: string;
+  groups: readonly TossWatchlistGroup[];
+  items: readonly TossWatchlistItem[];
+}
+
+export type AraonWatchlistSyncState =
+  | 'toss_synced'
+  | 'local_only'
+  | 'sync_pending'
+  | 'sync_unavailable'
+  | 'sync_failed';
+
+export type AraonWatchlistTrackingState =
+  | 'tracked'
+  | 'waiting'
+  | 'not_eligible'
+  | 'disabled'
+  | 'unknown';
+
+export type AraonWatchlistMembershipSource =
+  | 'toss_watchlist'
+  | 'holding_auto'
+  | 'araon_local'
+  | 'merged';
+
+export interface AraonWatchlistItem {
+  productCode: string;
+  krTicker: string | null;
+  symbol: string;
+  name: string;
+  iconUrl?: string | null;
+  market: AraonProductMarket;
+  currency: 'KRW' | 'USD' | 'UNKNOWN';
+  source: 'toss' | 'local' | 'merged' | 'toss_position';
+  syncState: AraonWatchlistSyncState;
+  kisEligible: boolean;
+  tossEligible: boolean;
+  chartEligible: boolean;
+  quoteEligible: boolean;
+  realtimeTrackingState: AraonWatchlistTrackingState;
+  watchSurfaceMember: boolean;
+  watchlistMember: boolean;
+  membershipSource: AraonWatchlistMembershipSource;
+  manualWatchlist: boolean;
+  autoSyncedFromHolding: boolean;
+  localFallback: boolean;
+  holding: boolean;
+  addedAt: string | null;
+  groupName: string | null;
+  base: number | null;
+  last: number | null;
+  changePct: number | null;
+}
+
+export interface AraonWatchlistPayload {
+  provider: 'araon-watchlist';
+  fetchedAt: string;
+  primarySource: 'toss' | 'local';
+  status: 'ready' | 'local_fallback';
+  warning: { code: 'TOSS_SESSION_REQUIRED' | 'TOSS_READ_FAILED' } | null;
+  counts: {
+    toss: number;
+    positions: number;
+    local: number;
+    merged: number;
+    returned: number;
+  };
+  items: readonly AraonWatchlistItem[];
+}
+
+export interface AraonWatchlistMutationInput {
+  productCode: string;
+  krTicker?: string | null;
+  symbol?: string | null;
+  name?: string | null;
+  market?: AraonProductMarket | null;
+  currency?: 'KRW' | 'USD' | 'UNKNOWN' | null;
+}
+
+export interface AraonWatchlistMutationResult {
+  provider: 'araon-watchlist';
+  action: 'added' | 'removed' | 'unchanged' | 'unsupported';
+  syncState: AraonWatchlistSyncState;
+  reason:
+    | 'local_fallback'
+    | 'toss_mutation_disabled'
+    | 'toss_mutation_succeeded'
+    | 'toss_mutation_failed'
+    | 'unsupported_product'
+    | 'not_found';
+  item: AraonWatchlistItem | null;
+}
+
+export interface AraonWatchlistReconcileResult {
+  provider: 'araon-watchlist';
+  fetchedAt: string;
+  dryRun: boolean;
+  status: 'preview' | 'applied' | 'mutation_disabled' | 'watchlist_unavailable' | 'failed';
+  counts: {
+    addCandidates: number;
+    removeCandidates: number;
+    attempted: number;
+    added: number;
+    removed: number;
+    unchanged: number;
+    failed: number;
+    skipped: number;
+  };
+  addCandidates: Array<{
+    productCode: string;
+    krTicker: string | null;
+    name: string;
+    reason: 'holding_missing_in_toss_watchlist' | 'auto_holding_no_longer_held';
+  }>;
+  removeCandidates: Array<{
+    productCode: string;
+    krTicker: string | null;
+    name: string;
+    reason: 'holding_missing_in_toss_watchlist' | 'auto_holding_no_longer_held';
+  }>;
+  mutations: Array<{
+    productCode: string;
+    krTicker: string | null;
+    name: string;
+    action: 'add' | 'remove';
+    status: 'succeeded' | 'unchanged' | 'failed' | 'skipped';
+    reason:
+      | 'local_fallback'
+      | 'toss_mutation_disabled'
+      | 'toss_mutation_succeeded'
+      | 'toss_mutation_failed'
+      | 'unsupported_product'
+      | 'not_found'
+      | 'max_mutations_reached';
+  }>;
+}
+
+export async function getTossAccountSummary(): Promise<TossAccountSummaryPayload> {
+  const res = await fetch('/toss/account/summary');
+  return unwrap<TossAccountSummaryPayload>(res);
+}
+
+export async function getTossPortfolioPositions(): Promise<TossPortfolioPositionsPayload> {
+  const res = await fetch('/toss/portfolio/positions');
+  return unwrap<TossPortfolioPositionsPayload>(res);
+}
+
+export async function getTossPendingOrders(): Promise<TossPendingOrdersPayload> {
+  const res = await fetch('/toss/orders/pending');
+  return unwrap<TossPendingOrdersPayload>(res);
+}
+
+export async function getTossCompletedOrders(
+  options: TossCompletedOrdersOptions = {},
+): Promise<TossCompletedOrdersPayload> {
+  const params = new URLSearchParams();
+  if (options.market !== undefined) params.set('market', options.market);
+  if (options.from !== undefined) params.set('from', options.from);
+  if (options.to !== undefined) params.set('to', options.to);
+  if (options.size !== undefined) params.set('size', String(options.size));
+  if (options.number !== undefined) params.set('number', String(options.number));
+  const query = params.toString();
+  const res = await fetch(`/toss/orders/completed${query.length > 0 ? `?${query}` : ''}`);
+  return unwrap<TossCompletedOrdersPayload>(res);
+}
+
+export async function getTossOrder(
+  ref: string,
+  options: TossCompletedOrdersOptions = {},
+): Promise<TossOrderDetailPayload> {
+  const params = new URLSearchParams();
+  if (options.market !== undefined) params.set('market', options.market);
+  if (options.from !== undefined) params.set('from', options.from);
+  if (options.to !== undefined) params.set('to', options.to);
+  if (options.size !== undefined) params.set('size', String(options.size));
+  if (options.number !== undefined) params.set('number', String(options.number));
+  const query = params.toString();
+  const res = await fetch(
+    `/toss/orders/${encodeURIComponent(ref)}${query.length > 0 ? `?${query}` : ''}`,
+  );
+  return unwrap<TossOrderDetailPayload>(res);
+}
+
+export async function getTossTransactions(
+  options: TossTransactionsOptions = {},
+): Promise<TossTransactionsPayload> {
+  const params = new URLSearchParams();
+  if (options.market !== undefined) params.set('market', options.market);
+  if (options.from !== undefined) params.set('from', options.from);
+  if (options.to !== undefined) params.set('to', options.to);
+  if (options.filter !== undefined) params.set('filter', options.filter);
+  if (options.size !== undefined) params.set('size', String(options.size));
+  if (options.number !== undefined) params.set('number', String(options.number));
+  const query = params.toString();
+  const res = await fetch(`/toss/transactions${query.length > 0 ? `?${query}` : ''}`);
+  return unwrap<TossTransactionsPayload>(res);
+}
+
+export async function getTossTransactionsOverview(
+  market: TossTransactionsMarket = 'kr',
+): Promise<TossTransactionsOverviewPayload> {
+  const params = new URLSearchParams({ market });
+  const res = await fetch(`/toss/transactions/overview?${params.toString()}`);
+  return unwrap<TossTransactionsOverviewPayload>(res);
+}
+
+export async function getTossWatchlist(): Promise<TossWatchlistPayload> {
+  const res = await fetch('/toss/watchlist');
+  return unwrap<TossWatchlistPayload>(res);
+}
+
+export async function getAraonWatchlist(): Promise<AraonWatchlistPayload> {
+  const res = await fetch('/watchlist');
+  return unwrap<AraonWatchlistPayload>(res);
+}
+
+export async function addAraonWatchlistItem(
+  input: AraonWatchlistMutationInput,
+): Promise<AraonWatchlistMutationResult> {
+  const res = await fetch('/watchlist/items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return unwrap<AraonWatchlistMutationResult>(res);
+}
+
+export async function removeAraonWatchlistItem(
+  productCode: string,
+): Promise<AraonWatchlistMutationResult> {
+  const res = await fetch(`/watchlist/items/${encodeURIComponent(productCode)}`, {
+    method: 'DELETE',
+  });
+  return unwrap<AraonWatchlistMutationResult>(res);
+}
+
+export async function reconcileAraonWatchlist(input: {
+  dryRun?: boolean;
+  maxMutations?: number;
+} = {}): Promise<AraonWatchlistReconcileResult> {
+  const res = await fetch('/watchlist/reconcile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return unwrap<AraonWatchlistReconcileResult>(res);
+}
+
+export type OrderIntentSide = 'buy' | 'sell';
+export type OrderIntentMarket = 'KR' | 'US';
+export type OrderIntentOrderType = 'market' | 'limit';
+export type OrderIntentRequestedMode = 'simulated' | 'paper' | 'live';
+export type OrderIntentLivePolicyMissingConstraint =
+  | 'policy_approval'
+  | 'allowed_tickers'
+  | 'max_order_amount'
+  | 'max_daily_loss'
+  | 'trading_hours'
+  | 'order_type'
+  | 'cooldown'
+  | 'kill_switch_release';
+
+export type OrderIntentAutomationReadinessGapCode =
+  | 'decision_engine'
+  | 'strategy_policy'
+  | 'risk_policy'
+  | 'paper_trading_ledger'
+  | 'simulation_result_view'
+  | 'toss_order_execution'
+  | 'live_approval_executor'
+  | 'execution_reconciliation'
+  | 'agent_performance_audit'
+  | 'intent_explanation'
+  | 'provider_freshness'
+  | 'event_dedupe';
+
+export type OrderIntentAutomationReadinessGapStatus =
+  | 'locked'
+  | 'not_ready'
+  | 'partial';
+
+export interface OrderIntentAutomationReadinessGapPayload {
+  code: OrderIntentAutomationReadinessGapCode;
+  status: OrderIntentAutomationReadinessGapStatus;
+  severity: 'blocking' | 'warning';
+  label: string;
+  detail: string;
+}
+
+export interface OrderIntentLivePolicyPayload {
+  liveExecutionEnabled: false;
+  policyApproved: false;
+  killSwitch: 'engaged';
+  allowedTickers: readonly string[];
+  maxOrderKrw: number | null;
+  maxDailyLossKrw: number | null;
+  tradingHours: null;
+  allowedOrderTypes: readonly OrderIntentOrderType[];
+  cooldownMs: number | null;
+  missingConstraints: readonly OrderIntentLivePolicyMissingConstraint[];
+  automationReadinessGaps: readonly OrderIntentAutomationReadinessGapPayload[];
+  executionReadiness?: OrderIntentExecutionReadinessPayload;
+  generatedAt: string;
+}
+
+export type OrderIntentExecutionStatePayload =
+  | 'submitted'
+  | 'accepted'
+  | 'rejected'
+  | 'partial_fill'
+  | 'filled'
+  | 'canceled';
+
+export interface OrderIntentExecutionReadinessPayload {
+  orderAdapter: {
+    provider: 'toss';
+    mode: 'dry_run_locked';
+    status: 'contract_ready';
+    liveMutationEnabled: false;
+    supportedMarkets: readonly OrderIntentMarket[];
+    supportedSides: readonly OrderIntentSide[];
+    supportedOrderTypes: readonly OrderIntentOrderType[];
+  };
+  lockedExecutor: {
+    status: 'ready_locked';
+    blockedBeforeNetwork: true;
+    liveMutationEnabled: false;
+    output: 'locked_execution_proof';
+    requires: readonly (
+      | 'fresh_approval'
+      | 'risk_policy'
+      | 'kill_switch_release'
+      | 'reconciliation_ready'
+    )[];
+  };
+  liveApprovalExecutor: {
+    status: 'ready_locked';
+    blockedBeforeAdapter: true;
+    liveMutationEnabled: false;
+    input: 'confirmed_approval_challenge';
+    output: 'locked_execution_proof';
+    requires: readonly (
+      | 'confirmed_approval_challenge'
+      | 'intent_hash_match'
+      | 'kill_switch_release'
+      | 'locked_order_adapter'
+    )[];
+  };
+  approvalGate: {
+    status: 'locked';
+    requiresFreshApproval: true;
+    confirmationChallenge: true;
+    liveExecutionLocked: true;
+  };
+  reconciliation: {
+    status: 'planned';
+    source: 'toss_account_readonly_snapshot';
+    requiredStates: readonly OrderIntentExecutionStatePayload[];
+    executor: {
+      status: 'read_only_ready';
+      requiredInputs: readonly (
+        | 'intent_hash'
+        | 'order_summary'
+        | 'read_only_account_snapshot'
+      )[];
+      matchKeys: readonly ('intent_hash' | 'ticker' | 'side')[];
+      liveMutationEnabled: false;
+    };
+    liveMutationEnabled: false;
+  };
+  dataFreshnessGate: {
+    status: 'ready_locked';
+    requiredSources: readonly (
+      | 'quote'
+      | 'chart'
+      | 'news_or_disclosure'
+      | 'watchlist_membership'
+    )[];
+    maxAgeMs: {
+      quote: 1000;
+      chart: 60000;
+      newsOrDisclosure: 300000;
+      watchlistMembership: 300000;
+    };
+    blocksLiveExecution: true;
+    liveMutationEnabled: false;
+  };
+}
+
+export interface OrderIntentRiskCheckPayload {
+  code: string;
+  status: 'pass' | 'warning' | 'blocked';
+  message: string;
+}
+
+export interface OrderIntentStrategyEvaluationPayload {
+  strategyId: 'araon-deterministic-preview-v1';
+  status: 'evaluated';
+  decision: OrderIntentSide;
+  confidence: 'guarded';
+  rationale: string;
+  signals: readonly string[];
+}
+
+export interface OrderIntentRiskPolicyEvaluationPayload {
+  policyId: 'araon-live-lock-risk-v1';
+  status: 'simulated_only';
+  liveBlocked: true;
+  maxOrderKrw: null;
+  maxDailyLossKrw: null;
+  checks: readonly OrderIntentRiskCheckPayload[];
+}
+
+export interface OrderIntentPaperLedgerPreviewPayload {
+  ledgerId: string;
+  status: 'preview_only';
+  booked: false;
+  positionDelta: number | null;
+  cashDeltaKrw: number | null;
+  note: string;
+}
+
+export interface OrderIntentPreviewImpactPayload {
+  status: 'estimated' | 'incomplete';
+  estimatedNotionalKrw: number | null;
+  positionImpact: string;
+  cashImpact: string;
+  pnlImpact: string;
+  liveExecutionImpact: string;
+}
+
+export interface OrderIntentPaperLedgerEntryPayload {
+  id: string;
+  intentId: string;
+  ticker: string;
+  side: OrderIntentSide;
+  market: OrderIntentMarket;
+  status: 'preview_only';
+  booked: false;
+  positionDelta: number | null;
+  cashDeltaKrw: number | null;
+  note: string;
+  createdAt: string;
+}
+
+export interface OrderIntentPaperLedgerTickerSummaryPayload {
+  ticker: string;
+  previewCount: number;
+  positionDelta: number;
+  cashDeltaKrw: number;
+  lastPreviewAt: string;
+}
+
+export interface OrderIntentPaperLedgerSummaryPayload {
+  entryCount: number;
+  bookedCount: 0;
+  previewOnlyCount: number;
+  cashDeltaKrw: number;
+  byTicker: readonly OrderIntentPaperLedgerTickerSummaryPayload[];
+}
+
+export interface OrderIntentPaperLedgerSnapshotPayload {
+  items: readonly OrderIntentPaperLedgerEntryPayload[];
+  returnedCount: number;
+  summary: OrderIntentPaperLedgerSummaryPayload;
+}
+
+export interface OrderIntentPerformanceReviewItemPayload {
+  id: string;
+  intentId: string;
+  ticker: string;
+  side: OrderIntentSide;
+  market: OrderIntentMarket;
+  outcomeStatus: 'pending_market_result';
+  booked: false;
+  liveMutationEnabled: false;
+  reviewLabel: string;
+  reason: string;
+  createdAt: string;
+  reviewedAt: string;
+}
+
+export interface OrderIntentPerformanceReviewSummaryPayload {
+  previewOnlyCount: number;
+  bookedCount: 0;
+  pendingReviewCount: number;
+  buyPreviewCount: number;
+  sellPreviewCount: number;
+  liveSubmittedCount: 0;
+  reviewedTickerCount: number;
+  latestPreviewAt: string | null;
+  reviewStatus: 'empty' | 'needs_market_result';
+}
+
+export interface OrderIntentPerformanceReviewSnapshotPayload {
+  items: readonly OrderIntentPerformanceReviewItemPayload[];
+  returnedCount: number;
+  liveMutationEnabled: false;
+  source: 'paper_ledger_preview_only';
+  generatedAt: string;
+  summary: OrderIntentPerformanceReviewSummaryPayload;
+}
+
+export type OrderIntentLifecycleStepCode =
+  | 'candidate_observed'
+  | 'evidence_collected'
+  | 'strategy_evaluated'
+  | 'risk_checked'
+  | 'preview_created'
+  | 'approval_required'
+  | 'execution_locked';
+
+export type OrderIntentLifecycleStepStatus =
+  | 'complete'
+  | 'pending'
+  | 'blocked'
+  | 'not_ready';
+
+export interface OrderIntentLifecycleStepPayload {
+  code: OrderIntentLifecycleStepCode;
+  status: OrderIntentLifecycleStepStatus;
+  label: string;
+  detail: string;
+}
+
+export interface OrderIntentPreviewPayload {
+  id: string;
+  ticker: string;
+  side: OrderIntentSide;
+  market: OrderIntentMarket;
+  requestedMode: Exclude<OrderIntentRequestedMode, 'live'>;
+  executionMode: Exclude<OrderIntentRequestedMode, 'live'>;
+  status: 'preview_ready';
+  liveExecutionLocked: true;
+  quantity: number | null;
+  cashAmount: number | null;
+  orderType: OrderIntentOrderType;
+  limitPrice: number | null;
+  triggerEventId: string | null;
+  agentId: string | null;
+  reason: string;
+  riskChecks: OrderIntentRiskCheckPayload[];
+  strategyEvaluation?: OrderIntentStrategyEvaluationPayload;
+  riskPolicy?: OrderIntentRiskPolicyEvaluationPayload;
+  paperLedgerPreview?: OrderIntentPaperLedgerPreviewPayload;
+  previewImpact?: OrderIntentPreviewImpactPayload;
+  lifecycle: readonly OrderIntentLifecycleStepPayload[];
+  createdAt: string;
+  expiresAt: string;
+  auditRef: string;
+}
+
+export interface OrderIntentAuditEntryPayload {
+  id: string;
+  intentId: string | null;
+  event:
+    | 'preview_created'
+    | 'live_execution_blocked'
+    | 'confirm_challenge_created'
+    | 'confirm_token_verified_live_locked'
+    | 'confirm_token_rejected'
+    | 'confirm_token_expired';
+  decision: 'allowed' | 'blocked';
+  ticker: string;
+  side: OrderIntentSide;
+  requestedMode: OrderIntentRequestedMode;
+  agentId: string | null;
+  triggerEventId: string | null;
+  reason: string;
+  createdAt: string;
+}
+
+export interface OrderIntentListPayload {
+  items: OrderIntentPreviewPayload[];
+  returnedCount: number;
+}
+
+export interface OrderIntentAuditListPayload {
+  items: OrderIntentAuditEntryPayload[];
+  returnedCount: number;
+}
+
+export type OrderIntentApprovalChallengeStatus =
+  | 'pending_confirmation'
+  | 'confirmed_live_locked'
+  | 'rejected'
+  | 'expired';
+
+export interface OrderIntentApprovalChallengePayload {
+  id: string;
+  intentId: string;
+  ticker: string;
+  side: OrderIntentSide;
+  requestedMode: 'live';
+  status: OrderIntentApprovalChallengeStatus;
+  confirmationText: string;
+  intentHash?: string;
+  orderSummary?: {
+    ticker: string;
+    side: OrderIntentSide;
+    market: OrderIntentMarket;
+    orderType: OrderIntentOrderType;
+    quantity: number | null;
+    cashAmount: number | null;
+    limitPrice: number | null;
+    liveExecutionLocked: true;
+  };
+  killSwitch?: 'engaged';
+  liveExecutionLocked: true;
+  operatorId: string | null;
+  createdAt: string;
+  expiresAt: string;
+  confirmedAt: string | null;
+  auditRef: string;
+}
+
+export interface OrderIntentApprovalChallengeListPayload {
+  items: OrderIntentApprovalChallengePayload[];
+  returnedCount: number;
+}
+
+export interface OrderIntentLivePolicyResponsePayload {
+  policy: OrderIntentLivePolicyPayload;
+}
+
+export interface CreateOrderIntentPreviewInput {
+  ticker: string;
+  side: OrderIntentSide;
+  market?: OrderIntentMarket;
+  quantity?: number | null;
+  cashAmount?: number | null;
+  orderType?: OrderIntentOrderType;
+  limitPrice?: number | null;
+  triggerEventId?: string | null;
+  agentId?: string | null;
+  reason: string;
+  requestedMode?: OrderIntentRequestedMode;
+}
+
+export interface CreateOrderIntentPreviewPayload {
+  preview: OrderIntentPreviewPayload;
+}
+
+export interface CreateOrderIntentApprovalChallengePayload {
+  challenge: OrderIntentApprovalChallengePayload;
+}
+
+export interface ConfirmOrderIntentApprovalChallengePayload {
+  challenge: OrderIntentApprovalChallengePayload;
+  liveExecutionLocked: true;
+  execution: null;
+  lockedExecutionProof: {
+    provider: 'toss';
+    mode: 'dry_run_locked';
+    status: 'blocked';
+    reason: 'live_execution_locked';
+    liveMutationEnabled: false;
+    challengeId: string;
+    intentId: string;
+    intentHash: string;
+    orderSummary: NonNullable<OrderIntentApprovalChallengePayload['orderSummary']>;
+    killSwitch: 'engaged';
+    checkedAt: string;
+  } | null;
+}
+
+export interface OrderIntentReconciliationItemPayload {
+  id: string;
+  intentId: string;
+  challengeId: string;
+  ticker: string;
+  side: OrderIntentSide;
+  status: 'not_submitted_live_locked';
+  reason: 'live_execution_locked';
+  liveMutationEnabled: false;
+  execution: null;
+  intentHash: string;
+  orderSummary: NonNullable<OrderIntentApprovalChallengePayload['orderSummary']>;
+  checkedAt: string;
+}
+
+export interface OrderIntentReconciliationSnapshotPayload {
+  items: OrderIntentReconciliationItemPayload[];
+  returnedCount: number;
+  liveMutationEnabled: false;
+  source: 'local_locked_execution_proof';
+  generatedAt: string;
+  summary: {
+    checkedCount: number;
+    liveSubmittedCount: 0;
+    blockedCount: number;
+    pendingAccountSnapshotCount: 0;
+  };
+}
+
+export async function createAgentOrderIntentPreview(
+  input: CreateOrderIntentPreviewInput,
+): Promise<CreateOrderIntentPreviewPayload> {
+  const res = await fetch('/agent/order-intents/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return unwrap<CreateOrderIntentPreviewPayload>(res);
+}
+
+export async function createAgentOrderIntentApprovalChallenge(
+  intentId: string,
+): Promise<CreateOrderIntentApprovalChallengePayload> {
+  const res = await fetch(
+    `/agent/order-intents/${encodeURIComponent(intentId)}/approval-challenge`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+  return unwrap<CreateOrderIntentApprovalChallengePayload>(res);
+}
+
+export async function confirmAgentOrderIntentApprovalChallenge(
+  challengeId: string,
+  confirmationText: string,
+): Promise<ConfirmOrderIntentApprovalChallengePayload> {
+  const res = await fetch(
+    `/agent/order-intents/approval-challenges/${encodeURIComponent(challengeId)}/confirm`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmationText }),
+    },
+  );
+  return unwrap<ConfirmOrderIntentApprovalChallengePayload>(res);
+}
+
+export async function getAgentOrderIntents(limit = 20): Promise<OrderIntentListPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents?${params.toString()}`);
+  return unwrap<OrderIntentListPayload>(res);
+}
+
+export async function getAgentOrderIntentAudit(limit = 20): Promise<OrderIntentAuditListPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents/audit?${params.toString()}`);
+  return unwrap<OrderIntentAuditListPayload>(res);
+}
+
+export async function getAgentOrderIntentApprovalChallenges(
+  limit = 20,
+): Promise<OrderIntentApprovalChallengeListPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents/approval-challenges?${params.toString()}`);
+  return unwrap<OrderIntentApprovalChallengeListPayload>(res);
+}
+
+export async function getAgentOrderIntentLivePolicy(): Promise<OrderIntentLivePolicyResponsePayload> {
+  const res = await fetch('/agent/order-intents/live-policy');
+  return unwrap<OrderIntentLivePolicyResponsePayload>(res);
+}
+
+export async function getAgentOrderIntentPaperLedger(
+  limit = 20,
+): Promise<OrderIntentPaperLedgerSnapshotPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents/paper-ledger?${params.toString()}`);
+  return unwrap<OrderIntentPaperLedgerSnapshotPayload>(res);
+}
+
+export async function getAgentOrderIntentPerformanceReview(
+  limit = 20,
+): Promise<OrderIntentPerformanceReviewSnapshotPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents/performance-review?${params.toString()}`);
+  return unwrap<OrderIntentPerformanceReviewSnapshotPayload>(res);
+}
+
+export async function getAgentOrderIntentReconciliation(
+  limit = 20,
+): Promise<OrderIntentReconciliationSnapshotPayload> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`/agent/order-intents/reconciliation?${params.toString()}`);
+  return unwrap<OrderIntentReconciliationSnapshotPayload>(res);
 }
 
 /**
@@ -170,6 +1743,17 @@ export async function refreshStockQuote(ticker: string): Promise<Price> {
   return unwrap<Price>(res);
 }
 
+export async function setTossFastQuoteCurrentTickers(
+  tickers: readonly string[],
+): Promise<{ tickers: string[] }> {
+  const res = await fetch('/market/toss/fast-quote/current', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tickers }),
+  });
+  return unwrap<{ tickers: string[] }>(res);
+}
+
 export type CandleRange = '1d' | '1w' | '1m' | '3m' | '6m' | '1y';
 export type DailyBackfillRange = '1m' | '3m' | '6m' | '1y';
 
@@ -183,6 +1767,9 @@ export interface ServerRuntimeSettings {
   applyTicksToPriceStore: boolean;
   backgroundDailyBackfillEnabled: boolean;
   backgroundDailyBackfillRange: DailyBackfillRange;
+  tossQuotePollingEnabled: boolean;
+  tossQuotePollingIntervalMs: number;
+  tossQuotePollingBatchSize: number;
 }
 
 export async function getStockCandles(
@@ -207,6 +1794,7 @@ export async function getStockPriceHistory(
     from?: string;
     to?: string;
     limit?: number;
+    includeCandleSeed?: boolean;
   } = {},
 ): Promise<PriceHistoryApiResponse> {
   const params = new URLSearchParams();
@@ -214,6 +1802,7 @@ export async function getStockPriceHistory(
   if (options.from !== undefined) params.set('from', options.from);
   if (options.to !== undefined) params.set('to', options.to);
   if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.includeCandleSeed === true) params.set('includeCandleSeed', 'true');
   const res = await fetch(
     `/stocks/${encodeURIComponent(ticker)}/price-history?${params.toString()}`,
   );
@@ -231,7 +1820,7 @@ export async function backfillStockCandles(
   requested: number;
   inserted: number;
   updated: number;
-  source: 'kis-daily';
+  source: 'kis-daily' | 'toss-daily' | 'mixed';
 }> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles/backfill`, {
     method: 'POST',
@@ -243,7 +1832,7 @@ export async function backfillStockCandles(
     requested: number;
     inserted: number;
     updated: number;
-    source: 'kis-daily';
+    source: 'kis-daily' | 'toss-daily' | 'mixed';
   }>(res);
 }
 
@@ -255,7 +1844,7 @@ export async function backfillTodayMinuteCandles(
   requested: number;
   inserted: number;
   updated: number;
-  source: 'kis-time-today';
+  source: 'kis-time-today' | 'toss-time-today' | 'mixed';
   pages: number;
 }> {
   const res = await fetch(`/stocks/${encodeURIComponent(ticker)}/candles/backfill-minute`, {
@@ -268,7 +1857,7 @@ export async function backfillTodayMinuteCandles(
     requested: number;
     inserted: number;
     updated: number;
-    source: 'kis-time-today';
+    source: 'kis-time-today' | 'toss-time-today' | 'mixed';
     pages: number;
   }>(res);
 }
@@ -283,7 +1872,15 @@ export async function ensureStockCandleCoverage(
 ): Promise<{
   state: 'backfilled' | 'current' | 'empty' | 'skipped';
   reason?: string;
-  source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | null;
+  source:
+    | 'kis-daily'
+    | 'kis-time-daily'
+    | 'kis-time-today'
+    | 'toss-daily'
+    | 'toss-time-daily'
+    | 'toss-time-today'
+    | 'mixed'
+    | null;
   requested: number;
   inserted: number;
   updated: number;
@@ -297,7 +1894,15 @@ export async function ensureStockCandleCoverage(
   return unwrap<{
     state: 'backfilled' | 'current' | 'empty' | 'skipped';
     reason?: string;
-    source: 'kis-daily' | 'kis-time-daily' | 'kis-time-today' | null;
+    source:
+      | 'kis-daily'
+      | 'kis-time-daily'
+      | 'kis-time-today'
+      | 'toss-daily'
+      | 'toss-time-daily'
+      | 'toss-time-today'
+      | 'mixed'
+      | null;
     requested: number;
     inserted: number;
     updated: number;
@@ -323,6 +1928,18 @@ export async function getCredentialProfiles(): Promise<CredentialProfileSummary[
   const res = await fetch('/credentials/profiles');
   const data = await unwrap<{ profiles: CredentialProfileSummary[] }>(res);
   return data.profiles;
+}
+
+export interface CredentialsStatusPayload {
+  configured: boolean;
+  isPaper: boolean | null;
+  runtime: 'unconfigured' | 'starting' | 'started' | 'failed';
+  error?: { code: string; message: string };
+}
+
+export async function getCredentialsStatus(): Promise<CredentialsStatusPayload> {
+  const res = await fetch('/credentials/status');
+  return unwrap<CredentialsStatusPayload>(res);
 }
 
 export async function addCredentialProfile(input: {
@@ -560,7 +2177,12 @@ export interface RealtimeSessionStatePayload {
 }
 
 export async function enableRealtimeSession(
-  request: { cap: SessionRealtimeCap; confirm: true; maxSessionMs?: number },
+  request: {
+    cap: SessionRealtimeCap;
+    confirm: true;
+    maxSessionMs?: number;
+    currentTicker?: string;
+  },
 ): Promise<RealtimeSessionStatePayload> {
   const res = await fetch('/runtime/realtime/session-enable', {
     method: 'POST',
@@ -628,6 +2250,33 @@ export async function sendPhoneNotificationTest(): Promise<{ sent: boolean; reas
   return unwrap<{ sent: boolean; reason?: string }>(res);
 }
 
+interface KisBudgetWindowPayload {
+  windowMs: number;
+  startedCount: number;
+  successCount: number;
+  failureCount: number;
+  throttleCount: number;
+  callPerSec: number;
+  successPerSec: number;
+  failurePerMin: number;
+  throttlePerMin: number;
+  byClass: Array<{
+    profileId: string;
+    endpointClass: string | null;
+    priorityClass: string;
+    startedCount: number;
+    successCount: number;
+    failureCount: number;
+    throttleCount: number;
+    callPerSec: number;
+    successPerSec: number;
+    failurePerMin: number;
+    throttlePerMin: number;
+    queueDepth: number;
+    currentAllowedRps: number | null;
+  }>;
+}
+
 export interface RuntimeDataHealthPayload {
   tracking: {
     trackedCount: number;
@@ -669,7 +2318,7 @@ export interface RuntimeDataHealthPayload {
       requested: number;
       inserted: number;
       updated: number;
-      source: 'kis-daily' | null;
+      source: 'kis-daily' | 'toss-daily' | 'mixed' | null;
       finishedAt: string;
       errorCode: string | null;
     }>;
@@ -680,6 +2329,7 @@ export interface RuntimeDataHealthPayload {
     ratePerSec: number | null;
     burst: number | null;
     tokens: number | null;
+    globalMinStartGapMs: number | null;
     queueDepth: number;
     queuedByPriority: Record<string, number>;
     currentAllowedRps: number | null;
@@ -690,6 +2340,16 @@ export interface RuntimeDataHealthPayload {
     circuitBreakerUntil: string | null;
     recentThrottleCount: number;
     recentSuccessCount: number;
+    budget: {
+      generatedAt: string | null;
+      riskState: 'idle' | 'safe' | 'busy' | 'recovering' | 'risky' | 'throttled';
+      riskLabel: string;
+      riskReason: string | null;
+      windows: {
+        tenSec: KisBudgetWindowPayload;
+        sixtySec: KisBudgetWindowPayload;
+      };
+    };
     aimd: {
       enabled: boolean;
       mode: 'observe_only' | 'active';
@@ -812,10 +2472,138 @@ export interface RuntimeDataHealthPayload {
       currentAllowedRps: number | null;
     }>;
   };
+  tossQuotePolling: {
+    configured: boolean;
+    running: boolean;
+    enabled: boolean;
+    source: 'toss-public' | null;
+    cycleCount: number;
+    lastCycleMs: number;
+    tickersInCycle: number;
+    requestedCount: number;
+    returnedCount: number;
+    missingCount: number;
+    errorCount: number;
+    consecutiveFailureCount: number;
+    lastSuccessAt: string | null;
+    lastFailureAt: string | null;
+    lastErrorCode: string | null;
+    lastMessage: string | null;
+    intervalMs: number | null;
+    batchSize: number | null;
+    suppressingKisPolling: boolean;
+  };
+  tossFastQuoteLane: {
+    configured: boolean;
+    running: boolean;
+    enabled: boolean;
+    source: 'toss-fast-quote' | null;
+    intervalMs: number | null;
+    targetCap: number | null;
+    hardCap: number | null;
+    candidateCount: number;
+    requestedCount: number;
+    returnedCount: number;
+    acceptedCount: number;
+    droppedUnchangedCount: number;
+    droppedStaleCount: number;
+    droppedInvalidCount: number;
+    skippedInFlightCount: number;
+    failureCount: number;
+    consecutiveFailureCount: number;
+    backoffUntil: string | null;
+    lastSuccessAt: string | null;
+    lastFailureAt: string | null;
+    lastErrorCode: string | null;
+    lastMessage: string | null;
+  };
+  kisLegacyRest: {
+    role: 'optional_fallback';
+    runtimeStatus: 'unconfigured' | 'starting' | 'started' | 'failed';
+    accountOrderTruthSource: boolean;
+    liveTradingTruthSource: boolean;
+    realtimeRail: 'kis-ws-only';
+    externalCallsWithoutCredentials: boolean;
+    surfaces: Array<{
+      id:
+        | 'foreground-quote-fallback'
+        | 'watchlist-polling-fallback'
+        | 'daily-chart-fallback'
+        | 'minute-chart-fallback'
+        | 'master-metadata-refresh'
+        | 'kis-watchlist-import';
+      label: string;
+      state: 'off' | 'available' | 'suppressed';
+      mode:
+        | 'credentials_required'
+        | 'suppressed_by_default'
+        | 'explicit_opt_in'
+        | 'conditional_fallback'
+        | 'manual_only';
+      automatic: boolean;
+      envGate:
+        | 'ARAON_KIS_QUOTE_FALLBACK_ENABLED'
+        | 'ARAON_KIS_POLLING_FALLBACK_ENABLED'
+        | 'ARAON_KIS_CHART_FALLBACK_ENABLED'
+        | 'ARAON_KIS_MASTER_AUTO_REFRESH'
+        | null;
+      primaryProvider: string;
+      reason: string;
+    }>;
+  };
+  marketDataProviders: Array<{
+    providerId: 'kis-legacy' | 'toss-public' | 'toss-authenticated';
+    label: string;
+    status: 'ready' | 'degraded' | 'unavailable';
+    requiresAuth: boolean;
+    authenticated: boolean;
+    capabilities: Array<
+      | 'top-movers'
+      | 'quote-batch'
+      | 'realtime-ranking'
+      | 'trade-subscribe'
+      | 'daily-candles'
+      | 'stock-metadata'
+      | 'search'
+    >;
+    lastErrorCode: string | null;
+    lastErrorAt: string | null;
+    message: string | null;
+  }>;
   marketTopMovers: {
     configured: boolean;
     status: string;
     source: string | null;
+    sourcePhase: string | null;
+    sourceLabel: string | null;
+    sourceReason: string | null;
+    frozen: boolean;
+    lastGoodAgeMs: number | null;
+    partialReason: string | null;
+    stopReason: string | null;
+    rankingDiagnostics: {
+      gainers: {
+        direction: 'gainers' | 'losers';
+        pagesAttempted: number;
+        rowsReceived: number;
+        rowsAccepted: number;
+        rowsPerPage: number[];
+        continuationValues: Array<string | null>;
+        stopReason: string;
+        durationMs: number | null;
+      } | null;
+      losers: {
+        direction: 'gainers' | 'losers';
+        pagesAttempted: number;
+        rowsReceived: number;
+        rowsAccepted: number;
+        rowsPerPage: number[];
+        continuationValues: Array<string | null>;
+        stopReason: string;
+        durationMs: number | null;
+      } | null;
+    } | null;
+    rankingRateLimited: boolean;
     lastFetchedAt: string | null;
     lastGeneratedAt: string | null;
     cacheAgeMs: number | null;
@@ -832,7 +2620,7 @@ export interface RuntimeDataHealthPayload {
       losersCount: number;
       gainersComplete: boolean;
       losersComplete: boolean;
-      marketUniverse: 'kis-full-market-ranking';
+      marketUniverse: 'kis-full-market-ranking' | 'toss-web-ranking';
       guaranteedTop100: boolean;
       includesLocalFallback: boolean;
     } | null;
@@ -915,6 +2703,9 @@ export interface KisWatchlistImportResult {
   imported: number;
   skipped: number;
   groups: string[];
+  source: 'kis-legacy-watchlist-import';
+  role: 'optional_migration_helper';
+  primaryWatchlistProvider: 'toss-watchlist';
 }
 
 // === Master catalog =======================================================
@@ -958,6 +2749,7 @@ export async function refreshMaster(): Promise<MasterRefreshStatus> {
 export interface FromMasterResult {
   stock: Stock;
   created: boolean;
+  source?: 'local' | 'toss-public-search';
 }
 
 export async function addStockFromMaster(
@@ -971,11 +2763,21 @@ export async function addStockFromMaster(
   return unwrap<FromMasterResult>(res);
 }
 
+export async function addStockFromTossSearch(
+  ticker: string,
+): Promise<FromMasterResult> {
+  const res = await fetch('/stocks/from-toss-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticker }),
+  });
+  return unwrap<FromMasterResult>(res);
+}
+
 /**
- * Pull the user's KIS HTS/MTS watchlist groups and merge new tickers into
- * the local catalog. The polling scheduler reads `stockRepo.findAll()` each
- * cycle, so imported tickers begin receiving price updates on the next
- * cycle without an explicit reload hook on the server.
+ * Pull the user's KIS HTS/MTS watchlist groups as a legacy migration helper
+ * and merge new tickers into the local catalog. Toss watchlist remains the
+ * primary account-aware watchlist provider after Toss login.
  */
 export async function importKisWatchlist(): Promise<KisWatchlistImportResult> {
   const res = await fetch('/import/kis-watchlist', { method: 'POST' });

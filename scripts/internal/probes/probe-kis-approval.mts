@@ -18,12 +18,12 @@ import { createHash } from 'node:crypto';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
-import { createFileCredentialStore } from '../src/server/credential-store.js';
-import { createKisRestClient } from '../src/server/kis/kis-rest-client.js';
+import { createFileCredentialStore } from '../../../src/server/credential-store.js';
+import { createKisRestClient } from '../../../src/server/kis/kis-rest-client.js';
 import {
   createApprovalIssuer,
   type ApprovalRequest,
-} from '../src/server/kis/kis-approval.js';
+} from '../../../src/server/kis/kis-approval.js';
 
 interface ProbeReport {
   probeRunAt: string;

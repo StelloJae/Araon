@@ -8,8 +8,8 @@
  *
  * Open state: a 280px panel anchored under the pill, listing the actual data
  * sources the dashboard is using:
- *   - WebSocket (즐겨찾기) — `realtimeCount` / 40 capacity
- *   - REST 폴링 — `pollingCount` 종목
+ *   - 실시간 추적 — `realtimeCount` / 40 capacity
+ *   - 비실시간 — `pollingCount` 종목
  *   - 마지막 이벤트 — relative time vs the last incoming SSE message
  *
  * The panel is intentionally light on numbers we can't actually measure: we
@@ -56,11 +56,11 @@ const RUNTIME_STATE_LABEL: Record<RealtimeStatusPayload['state'], string> = {
 };
 
 const APPROVAL_LABEL: Record<RealtimeStatusPayload['approvalKey']['status'], string> = {
-  none: 'key 없음',
-  issuing: 'key 발급',
-  ready: 'key 준비',
-  failed: 'key 실패',
-  unknown: 'key 미확인',
+  none: '승인 없음',
+  issuing: '승인 준비',
+  ready: '승인 준비됨',
+  failed: '승인 실패',
+  unknown: '승인 미확인',
 };
 
 interface SSEIndicatorProps {
@@ -126,7 +126,7 @@ export function SSEIndicator({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="SSE 연결 상태"
+        aria-label="실시간 연결 상태"
         aria-expanded={open}
         data-testid="sse-indicator-button"
         style={{
@@ -196,33 +196,33 @@ export function SSEIndicator({
               데이터 소스
             </div>
             <PanelRow
-              k="WebSocket (즐겨찾기)"
+              k="실시간 추적"
               v={`${realtimeCount} / 40 종목`}
               chip={wsChip}
               chipColor={cfg.dot}
             />
             <PanelRow
-              k="REST 폴링"
+              k="일반 가격 갱신"
               v={`${pollingCount} 종목`}
-              chip="활성"
+              chip="Toss 가격"
               chipColor="var(--text-muted)"
             />
             <PanelRow
               k="마지막 이벤트"
               v={ageLabel}
-              chip={status === 'connected' ? 'live' : '—'}
+              chip={status === 'connected' ? '정상' : '—'}
               chipColor={status === 'connected' ? cfg.dot : 'var(--text-muted)'}
             />
             <PanelRow
-              k="WS 런타임"
+              k="추적 런타임"
               v={runtimeStatusLabel(runtimeStatus, runtimeStatusError)}
               chip={runtimeSourceChip(runtimeStatus?.source)}
               chipColor="var(--text-muted)"
             />
             <PanelRow
-              k="적용 gate"
+              k="가격 반영"
               v={runtimeGateLabel(runtimeStatus)}
-              chip={runtimeStatus?.canApplyTicksToPriceStore ? 'on' : 'off'}
+              chip={runtimeStatus?.canApplyTicksToPriceStore ? '켜짐' : '꺼짐'}
               chipColor={
                 runtimeStatus?.canApplyTicksToPriceStore
                   ? 'var(--kr-down)'
@@ -230,12 +230,12 @@ export function SSEIndicator({
               }
             />
             <PanelRow
-              k="세션 gate"
+              k="세션 제한"
               v={runtimeSessionLabel(runtimeStatus)}
               chip={
                 runtimeStatus?.sessionRealtimeEnabled
-                  ? `cap ${runtimeStatus.sessionCap ?? '-'}`
-                  : 'off'
+                  ? `최대 ${runtimeStatus.sessionCap ?? '-'}`
+                  : '꺼짐'
               }
               chipColor={
                 runtimeStatus?.sessionRealtimeEnabled
@@ -252,11 +252,11 @@ export function SSEIndicator({
             <PanelRow
               k="커버리지"
               v={runtimeCoverageLabel(runtimeStatus)}
-              chip={runtimeStatus !== null ? `${runtimeStatus.coverage.profileCount} profiles` : 'profiles'}
+              chip={runtimeStatus !== null ? `${runtimeStatus.coverage.profileCount} 묶음` : '묶음'}
               chipColor="var(--gold-text)"
             />
             <PanelRow
-              k="최근 tick"
+              k="최근 가격"
               v={runtimeStatus?.lastTickAt !== undefined && runtimeStatus.lastTickAt !== null
                 ? fmtRelativeTime(new Date(runtimeStatus.lastTickAt), now)
                 : '없음'}
@@ -269,7 +269,7 @@ export function SSEIndicator({
               chip={
                 runtimeStatus !== null
                   ? APPROVAL_LABEL[runtimeStatus.approvalKey.status]
-                  : 'key 없음'
+                  : '승인 없음'
               }
               chipColor="var(--text-muted)"
             />
@@ -316,7 +316,7 @@ export function SSEIndicator({
               }}
             >
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                통합 실시간은 기본 상시 운영이며, REST 폴링은 fallback으로 계속 유지됩니다.
+                실시간 추적은 선택 종목 중심으로 운영하며, 이전 호환 경로는 명시적으로 열릴 때만 사용됩니다.
               </div>
             </div>
           </div>
@@ -343,8 +343,8 @@ function runtimeSourceChip(source: RealtimeStatusPayload['source'] | undefined):
 
 function runtimeGateLabel(status: RealtimeStatusPayload | null): string {
   if (status === null) return '대기';
-  return `${status.websocketEnabled ? 'WS on' : 'WS off'} / ${
-    status.applyTicksToPriceStore ? 'apply on' : 'apply off'
+  return `${status.websocketEnabled ? '실시간 연결 켜짐' : '실시간 연결 꺼짐'} / ${
+    status.applyTicksToPriceStore ? '가격 반영 켜짐' : '가격 반영 꺼짐'
   }`;
 }
 
@@ -371,7 +371,7 @@ function runtimeCountersLabel(status: RealtimeStatusPayload | null): string {
 
 function runtimeCoverageLabel(status: RealtimeStatusPayload | null): string {
   if (status === null) return '대기';
-  return `${status.coverage.assignedTickerCount}/${status.coverage.totalCapacity} · fallback ${status.coverage.fallbackTickerCount}`;
+  return `${status.coverage.assignedTickerCount}/${status.coverage.totalCapacity} · 대기 ${status.coverage.fallbackTickerCount}`;
 }
 
 function runtimeSessionLimitLabel(status: RealtimeStatusPayload | null): string {
@@ -388,7 +388,7 @@ function runtimeSessionEndReasonLabel(status: RealtimeStatusPayload | null): str
 
 function runtimeCap10ReadinessLabel(status: RealtimeStatusPayload | null): string {
   if (status === null) return '대기';
-  if (status.readiness.cap10UiHardLimitReady) return 'UI hard-limit 검증됨';
+  if (status.readiness.cap10UiHardLimitReady) return '화면 상한 검증됨';
   if (status.readiness.cap10UiHardLimitConditional) {
     return '버튼 확인 · 유동성 조건부';
   }

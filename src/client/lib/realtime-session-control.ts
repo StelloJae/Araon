@@ -4,12 +4,13 @@ export type SessionRealtimeCap = (typeof SESSION_REALTIME_CAP_OPTIONS)[number];
 export const REALTIME_CONTROL_BADGE_LABEL = '검증 완료';
 export const REALTIME_ADVANCED_RECHECK_LABEL = '운영자 재검증';
 export const REALTIME_STATUS_FETCH_ERROR_MESSAGE =
-  '실시간 상태를 불러오지 못했습니다. REST 폴링은 계속 유지됩니다.';
+  '실시간 상태를 불러오지 못했습니다. Toss 가격 갱신은 계속 유지됩니다.';
 
 export interface SessionEnableRequest {
   readonly cap: SessionRealtimeCap;
   readonly confirm: true;
   readonly maxSessionMs?: number;
+  readonly currentTicker?: string;
 }
 
 export type RealtimeSessionEndReason =
@@ -31,6 +32,7 @@ export async function requestRealtimeSessionEnable<T>(
     readonly cap: number;
     readonly confirmed: boolean;
     readonly maxSessionMs?: number;
+    readonly currentTicker?: string | null;
     readonly enable: (request: SessionEnableRequest) => Promise<T>;
   },
 ): Promise<SessionEnableControlResult<T>> {
@@ -47,6 +49,11 @@ export async function requestRealtimeSessionEnable<T>(
       confirm: true,
       ...(input.maxSessionMs !== undefined
         ? { maxSessionMs: input.maxSessionMs }
+        : {}),
+      ...(input.currentTicker !== undefined &&
+        input.currentTicker !== null &&
+        input.currentTicker.trim().length > 0
+        ? { currentTicker: input.currentTicker }
         : {}),
     }),
   };

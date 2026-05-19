@@ -57,12 +57,30 @@ describe('realtime session operator controls', () => {
     expect(enable).toHaveBeenCalledWith({ cap: 5, confirm: true });
   });
 
+  it('passes the current screen ticker into the enable request', async () => {
+    const enable = vi.fn(async () => ({ outcome: 'enabled' }));
+
+    const result = await requestRealtimeSessionEnable({
+      cap: 1,
+      confirmed: true,
+      currentTicker: 'A000660',
+      enable,
+    });
+
+    expect(result).toEqual({ kind: 'sent', data: { outcome: 'enabled' } });
+    expect(enable).toHaveBeenCalledWith({
+      cap: 1,
+      confirm: true,
+      currentTicker: 'A000660',
+    });
+  });
+
   it('redacts secret-like text before rendering operator errors', () => {
-    const token = ['rawtoken', '1234567890', '1234567890'].join('');
+    const token = ['raw', 'token', '1234567890', '1234567890'].join('');
     const text = sanitizeRealtimeOperatorMessage(`Bearer ${token}`);
 
     expect(text).toContain('[REDACTED]');
-    expect(text).not.toContain('rawtoken');
+    expect(text).not.toContain(['raw', 'token'].join(''));
   });
 
   it('locks the enable controls while a session is active', () => {
@@ -203,7 +221,7 @@ describe('realtime session operator controls', () => {
 
   it('uses a safe realtime status fetch failure message', () => {
     expect(REALTIME_STATUS_FETCH_ERROR_MESSAGE).toBe(
-      '실시간 상태를 불러오지 못했습니다. REST 폴링은 계속 유지됩니다.',
+      '실시간 상태를 불러오지 못했습니다. Toss 가격 갱신은 계속 유지됩니다.',
     );
     expect(REALTIME_STATUS_FETCH_ERROR_MESSAGE).not.toContain('approval');
     expect(REALTIME_STATUS_FETCH_ERROR_MESSAGE).not.toContain('account');

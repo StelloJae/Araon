@@ -1,8 +1,8 @@
 # Araon Install Acceptance
 
 This runbook is the lightweight checklist for validating a public Araon install.
-It avoids live KIS credentials, WebSocket sessions, cap tests, and raw secret
-capture unless a separate validation explicitly asks for them.
+It avoids Toss QR login, live KIS credentials, WebSocket sessions, cap tests,
+and raw secret capture unless a separate validation explicitly asks for them.
 
 Current public baseline: `v1.1.3`.
 
@@ -10,11 +10,11 @@ Current public baseline: `v1.1.3`.
 
 | Path | Required result |
 |---|---|
-| `npx @stellojae/araon@latest` | `--help` and `--version` work; clean startup reaches first-run credentials screen. |
+| `npx @stellojae/araon@latest` | `--help` and `--version` work; clean startup reaches the localhost dashboard without requiring brokerage credentials. |
 | `npm install -g @stellojae/araon@latest && araon` | Global CLI launches the local server and prints the local URL/data directory. |
 | GitHub Release source archive | Archive extracts cleanly; package metadata matches the release. |
-| macOS desktop app | App opens to first-run credentials screen; unsigned/notarization warnings are recorded honestly. |
-| Windows desktop app | Installer or portable EXE opens to first-run credentials screen; SmartScreen warnings are recorded honestly. |
+| macOS desktop app | App opens to the localhost dashboard or first-run shell without requiring credentials; unsigned/notarization warnings are recorded honestly. |
+| Windows desktop app | Installer or portable EXE opens to the localhost dashboard or first-run shell without requiring credentials; SmartScreen warnings are recorded honestly. |
 
 ## Clean DataDir Checks
 
@@ -22,15 +22,17 @@ Use a fresh temporary data directory.
 
 Expected:
 
-- credentials setup screen is shown.
+- dashboard shell is shown without requiring brokerage credentials.
 - `/credentials/status` returns `configured=false`.
 - runtime is `unconfigured`.
 - no `credentials.enc` is created before the user saves credentials.
-- no token, approval key, WebSocket, quote, master refresh, or backfill call is
-  made before credentials are configured.
+- no KIS token, approval key, WebSocket, KIS REST quote, KIS master refresh, or
+  KIS backfill call is made before KIS credentials are configured.
+- no authenticated Toss account/session call is made before user-assisted QR
+  login.
 - user copy explains Araon is read-only and does not place orders.
-- user copy explains that managed realtime/backfill starts only after credentials
-  are configured.
+- user copy explains that Toss QR login unlocks read-only account surfaces and
+  optional KIS credentials unlock the low-latency realtime rail.
 
 ## CLI Smoke Commands
 
@@ -57,7 +59,8 @@ Record the exact OS, asset name, checksum status, and result.
 
 ## Not Part Of Install Acceptance
 
-- live KIS credential save.
+- optional KIS credential entry.
+- Toss QR login acceptance.
 - WebSocket/cap smoke.
 - daily or minute backfill live run.
 - full watchlist backfill.

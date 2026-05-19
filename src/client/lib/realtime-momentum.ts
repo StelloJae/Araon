@@ -86,6 +86,7 @@ export interface EvaluateMomentumSignalInput {
   activeSignal?: ActiveMomentumSignal | null;
   cooldownMs?: number;
   allowInitialSignal?: boolean;
+  minimumMomentumPct?: number;
 }
 
 export interface MomentumSignalDecision {
@@ -266,13 +267,17 @@ function pickCrossingCandidate(input: EvaluateMomentumSignalInput): {
   for (const threshold of MOMENTUM_THRESHOLDS) {
     const reading = readingsByWindow.get(threshold.window);
     if (reading === undefined) continue;
-    if (reading.momentumPct < threshold.thresholdPct) continue;
+    const effectiveThresholdPct = Math.max(
+      threshold.thresholdPct,
+      input.minimumMomentumPct ?? 0,
+    );
+    if (reading.momentumPct < effectiveThresholdPct) continue;
 
     const previous = input.previousMomentumByWindow?.[threshold.window];
     const crossed =
       previous === undefined
         ? input.allowInitialSignal === true
-        : previous < threshold.thresholdPct;
+        : previous < effectiveThresholdPct;
     if (!crossed) continue;
 
     candidates.push({
@@ -280,7 +285,7 @@ function pickCrossingCandidate(input: EvaluateMomentumSignalInput): {
       reading,
       score:
         SIGNAL_PRIORITY[threshold.signalType] * 100 +
-        reading.momentumPct / threshold.thresholdPct,
+        reading.momentumPct / effectiveThresholdPct,
     });
   }
 

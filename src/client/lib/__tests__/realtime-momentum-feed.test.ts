@@ -27,8 +27,9 @@ const OPEN: MarketStatus = 'open';
 const CLOSED: MarketStatus = 'closed';
 
 describe('shouldProcessRealtimeMomentumPrice', () => {
-  it('accepts only ws-integrated live market price updates', () => {
+  it('accepts ws-integrated and Toss fast quote live market price updates only', () => {
     expect(shouldProcessRealtimeMomentumPrice(price(), OPEN)).toBe(true);
+    expect(shouldProcessRealtimeMomentumPrice(price({ source: 'toss-fast-quote' }), OPEN)).toBe(true);
     expect(shouldProcessRealtimeMomentumPrice(price({ source: 'rest' }), OPEN)).toBe(false);
     expect(shouldProcessRealtimeMomentumPrice(price({ isSnapshot: true }), OPEN)).toBe(false);
     expect(shouldProcessRealtimeMomentumPrice(price(), CLOSED)).toBe(false);
@@ -100,6 +101,43 @@ describe('evaluateRealtimeMomentumPrice', () => {
       signalType: 'scalp',
       momentumWindow: '10s',
       source: 'realtime-momentum',
+    });
+  });
+
+  it('uses the persisted surge threshold as the minimum realtime signal threshold', () => {
+    const state = createMomentumFeedState();
+    const now = 1_700_000_010_000;
+    const result = evaluateRealtimeMomentumPrice({
+      price: price({ price: 101_900 }),
+      marketStatus: OPEN,
+      name: '삼성전자',
+      buckets: [bucket(now - 10_000, 100_000), bucket(now, 101_900)],
+      now,
+      state,
+      minimumMomentumPct: 3,
+    });
+
+    expect(result.decision.kind).toBe('none');
+    expect(result.decision.signal).toBeNull();
+  });
+
+  it('creates a realtime signal after the persisted surge threshold is crossed', () => {
+    const state = createMomentumFeedState();
+    const now = 1_700_000_030_000;
+    const result = evaluateRealtimeMomentumPrice({
+      price: price({ price: 103_100 }),
+      marketStatus: OPEN,
+      name: '삼성전자',
+      buckets: [bucket(now - 30_000, 100_000), bucket(now, 103_100)],
+      now,
+      state,
+      minimumMomentumPct: 3,
+    });
+
+    expect(result.decision.kind).toBe('spawn');
+    expect(result.decision.signal).toMatchObject({
+      signalType: 'strong_scalp',
+      momentumWindow: '30s',
     });
   });
 

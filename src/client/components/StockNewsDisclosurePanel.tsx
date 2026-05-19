@@ -10,9 +10,11 @@ import {
 interface StockNewsDisclosurePanelProps {
   ticker: string;
   name: string;
+  mode?: 'combined' | 'news' | 'disclosures';
 }
 
 const FEED_PAGE_SIZE = 5;
+const FEED_AUTO_REFRESH_MS = 30_000;
 const EMPTY_PAGE = {
   limit: FEED_PAGE_SIZE,
   offset: 0,
@@ -24,6 +26,7 @@ const EMPTY_PAGE = {
 export function StockNewsDisclosurePanel({
   ticker,
   name,
+  mode = 'combined',
 }: StockNewsDisclosurePanelProps) {
   const [items, setItems] = useState<StockNewsItem[]>([]);
   const [disclosures, setDisclosures] = useState<StockDisclosureItem[]>([]);
@@ -35,34 +38,62 @@ export function StockNewsDisclosurePanel({
   const [disclosureLoading, setDisclosureLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const showNews = mode !== 'disclosures';
+  const showDisclosures = mode !== 'news';
   const encodedName = encodeURIComponent(name);
   const fallbackLinks = [
-    {
-      label: '네이버 금융 뉴스',
-      href: `https://finance.naver.com/item/news.naver?code=${encodeURIComponent(ticker)}`,
-    },
-    {
-      label: '네이버 금융 종목',
-      href: `https://finance.naver.com/item/main.naver?code=${encodeURIComponent(ticker)}`,
-    },
-    {
-      label: 'DART 공시 검색',
-      href: `https://dart.fss.or.kr/dsab007/main.do?option=corp&textCrpNm=${encodedName}`,
-    },
-    {
-      label: 'KIND 공시',
-      href: `https://kind.krx.co.kr/disclosure/disclosurebystocktype.do?method=searchDisclosureByStockTypeMain&searchCorpName=${encodedName}`,
-    },
+    ...(showNews
+      ? [
+          {
+            label: '네이버 금융 뉴스',
+            href: `https://finance.naver.com/item/news.naver?code=${encodeURIComponent(ticker)}`,
+          },
+          {
+            label: '네이버 금융 종목',
+            href: `https://finance.naver.com/item/main.naver?code=${encodeURIComponent(ticker)}`,
+          },
+        ]
+      : []),
+    ...(showDisclosures
+      ? [
+          {
+            label: 'DART 공시 검색',
+            href: `https://dart.fss.or.kr/dsab007/main.do?option=corp&textCrpNm=${encodedName}`,
+          },
+          {
+            label: 'KIND 공시',
+            href: `https://kind.krx.co.kr/disclosure/disclosurebystocktype.do?method=searchDisclosureByStockTypeMain&searchCorpName=${encodedName}`,
+          },
+        ]
+      : []),
   ];
   const showFallbackLinks =
     !loading &&
     !disclosureLoading &&
     error === null &&
-    items.length === 0 &&
-    disclosures.length === 0;
+    (!showNews || items.length === 0) &&
+    (!showDisclosures || disclosures.length === 0);
+  const title = mode === 'news'
+    ? '관련 뉴스'
+    : mode === 'disclosures'
+      ? '관련 공시'
+      : '관련 뉴스 · 공시';
+  const refreshLabel = mode === 'news'
+    ? '뉴스 갱신'
+    : mode === 'disclosures'
+      ? '공시 갱신'
+      : '뉴스·공시 갱신';
 
   useEffect(() => {
     let cancelled = false;
+    if (!showNews) {
+      setItems([]);
+      setNewsPage(EMPTY_PAGE);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     setLoading(true);
     setError(null);
     void getStockNews(ticker, { limit: FEED_PAGE_SIZE, offset: newsOffset })
@@ -81,10 +112,18 @@ export function StockNewsDisclosurePanel({
     return () => {
       cancelled = true;
     };
-  }, [ticker, newsOffset]);
+  }, [ticker, newsOffset, showNews]);
 
   useEffect(() => {
     let cancelled = false;
+    if (!showDisclosures) {
+      setDisclosures([]);
+      setDisclosurePage(EMPTY_PAGE);
+      setDisclosureLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     setDisclosureLoading(true);
     void getStockDisclosures(ticker, { limit: FEED_PAGE_SIZE, offset: disclosureOffset })
       .then((next) => {
@@ -102,29 +141,47 @@ export function StockNewsDisclosurePanel({
     return () => {
       cancelled = true;
     };
-  }, [ticker, disclosureOffset]);
+  }, [ticker, disclosureOffset, showDisclosures]);
 
   useEffect(() => {
     setNewsOffset(0);
     setDisclosureOffset(0);
   }, [ticker]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+    const refresh = () => {
+      if (!cancelled) void refreshFeed();
+    };
+    refresh();
+    timer = window.setInterval(refresh, FEED_AUTO_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, [ticker, mode]);
+
   async function refreshFeed() {
     setRefreshing(true);
     setError(null);
     try {
       const [next, nextDisclosures] = await Promise.all([
-        refreshStockNews(ticker),
-        refreshStockDisclosures(ticker),
+        showNews ? refreshStockNews(ticker) : Promise.resolve(null),
+        showDisclosures ? refreshStockDisclosures(ticker) : Promise.resolve(null),
       ]);
-      setNewsOffset(0);
-      setDisclosureOffset(0);
-      setItems(next.items);
-      setNewsPage(next.pagination);
-      setDisclosures(nextDisclosures.items);
-      setDisclosurePage(nextDisclosures.pagination);
+      if (next !== null) {
+        setNewsOffset(0);
+        setItems(next.items);
+        setNewsPage(next.pagination);
+      }
+      if (nextDisclosures !== null) {
+        setDisclosureOffset(0);
+        setDisclosures(nextDisclosures.items);
+        setDisclosurePage(nextDisclosures.pagination);
+      }
     } catch {
-      setError('뉴스·공시 피드를 갱신하지 못했습니다.');
+      setError(`${title} 피드를 갱신하지 못했습니다.`);
     } finally {
       setRefreshing(false);
     }
@@ -140,7 +197,7 @@ export function StockNewsDisclosurePanel({
             color: 'var(--text-primary)',
           }}
         >
-          관련 뉴스 · 공시
+          {title}
         </div>
         <button
           type="button"
@@ -158,39 +215,10 @@ export function StockNewsDisclosurePanel({
             cursor: refreshing ? 'not-allowed' : 'pointer',
           }}
         >
-          {refreshing ? '갱신 중' : '뉴스·공시 갱신'}
+          {refreshing ? '갱신 중' : refreshLabel}
         </button>
       </div>
-      <div
-        style={{
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          marginBottom: 10,
-          overflow: 'hidden',
-          background: 'var(--bg-card)',
-        }}
-      >
-        {error !== null ? (
-          <FeedState label={error} danger />
-        ) : loading ? (
-          <FeedState label="뉴스 피드를 불러오는 중" />
-        ) : items.length === 0 ? (
-          <FeedState label="저장된 뉴스 피드가 없습니다. 필요할 때 갱신해 주세요." />
-        ) : (
-          items.map((item, idx) => (
-            <NewsFeedItemLink key={item.id} item={item} first={idx === 0} />
-          ))
-        )}
-        {items.length > 0 && (
-          <PaginationBar
-            page={newsPage}
-            label="뉴스"
-            onPrev={() => setNewsOffset(Math.max(0, newsPage.offset - newsPage.limit))}
-            onNext={() => setNewsOffset(newsPage.offset + newsPage.limit)}
-          />
-        )}
-      </div>
-      {(disclosures.length > 0 || disclosureLoading) && (
+      {showNews && (
         <div
           style={{
             border: '1px solid var(--border)',
@@ -200,23 +228,57 @@ export function StockNewsDisclosurePanel({
             background: 'var(--bg-card)',
           }}
         >
-          {disclosureLoading ? (
-            <FeedState label="공시 항목을 불러오는 중" />
+          {error !== null ? (
+            <FeedState label={error} danger />
+          ) : loading ? (
+            <FeedState label="뉴스 피드를 불러오는 중" />
+          ) : items.length === 0 ? (
+            <FeedState label="저장된 뉴스 피드가 없습니다. 자동 갱신 대기 중입니다." />
           ) : (
-            disclosures.map((item, idx) => (
-              <DisclosureItemLink key={item.id} item={item} first={idx === 0} />
+            items.map((item, idx) => (
+              <NewsFeedItemLink key={item.id} item={item} first={idx === 0} />
             ))
           )}
-          {disclosures.length > 0 && (
+          {items.length > 0 && (
             <PaginationBar
-              page={disclosurePage}
-              label="공시"
-              onPrev={() => setDisclosureOffset(Math.max(0, disclosurePage.offset - disclosurePage.limit))}
-              onNext={() => setDisclosureOffset(disclosurePage.offset + disclosurePage.limit)}
+              page={newsPage}
+              label="뉴스"
+              onPrev={() => setNewsOffset(Math.max(0, newsPage.offset - newsPage.limit))}
+              onNext={() => setNewsOffset(newsPage.offset + newsPage.limit)}
             />
           )}
         </div>
       )}
+      {showDisclosures &&
+        (disclosures.length > 0 || disclosureLoading || mode === 'disclosures') && (
+          <div
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              marginBottom: 10,
+              overflow: 'hidden',
+              background: 'var(--bg-card)',
+            }}
+          >
+            {disclosureLoading ? (
+              <FeedState label="공시 항목을 불러오는 중" />
+            ) : disclosures.length === 0 ? (
+              <FeedState label="저장된 공시 항목이 없습니다. 자동 갱신 대기 중입니다." />
+            ) : (
+              disclosures.map((item, idx) => (
+                <DisclosureItemLink key={item.id} item={item} first={idx === 0} />
+              ))
+            )}
+            {disclosures.length > 0 && (
+              <PaginationBar
+                page={disclosurePage}
+                label="공시"
+                onPrev={() => setDisclosureOffset(Math.max(0, disclosurePage.offset - disclosurePage.limit))}
+                onNext={() => setDisclosureOffset(disclosurePage.offset + disclosurePage.limit)}
+              />
+            )}
+          </div>
+        )}
       {showFallbackLinks && (
         <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
           외부에서 확인:{' '}

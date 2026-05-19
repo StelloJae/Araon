@@ -2,6 +2,11 @@
 
 Last updated: 2026-04-29
 
+Current product role: this is an optional KIS realtime rail runbook. Araon's
+Toss-first dashboard, Toss QR login, account views, and Toss REST/SSE refresh
+paths do not require this runbook. Use it only when validating the capped KIS
+WebSocket acceleration path.
+
 ## Current Verification Scope
 
 Runtime WebSocket rollout has been validated through controlled smoke tests up
@@ -76,7 +81,7 @@ after credentials are configured:
   warmup 07:55 KST, open 08:00 KST, close 20:00 KST, shutdown 20:05 KST.
 - Warmup connects the WebSocket and subscribes the current realtime favorite
   assignment immediately, capped at `WS_MAX_SUBSCRIPTIONS=40`.
-- REST polling remains active as fallback.
+- Toss REST refresh remains active as the normal non-WS price lane.
 - The UI now shows real cumulative volume on stock rows and surge rows. It does
   not invent volume-multiple labels without a same-session/time-bucket
   cumulative-volume baseline. Until enough samples exist, the surge UI uses
@@ -137,7 +142,7 @@ Acceptance report: `docs/archive/research/araon-runtime-acceptance.md`.
   runtime also remains hard-capped at 40 favorite subscriptions.
 - Rollout cap has been smoke-tested through 40 candidates only.
 - Hard subscription cap never exceeds `WS_MAX_SUBSCRIPTIONS` (40).
-- REST polling is running and healthy before WS rollout.
+- Toss REST refresh is running and healthy before WS rollout.
 - `GET /runtime/realtime/status` returns a credential-safe status payload.
 - The header SSE indicator panel can display runtime WS state without opening an
   extra EventSource.
@@ -148,7 +153,7 @@ Acceptance report: `docs/archive/research/araon-runtime-acceptance.md`.
 
 ## Limited Rollout Procedure
 
-1. Confirm REST polling baseline is healthy.
+1. Confirm Toss REST refresh baseline is healthy.
 2. Confirm realtime candidate tickers are the oldest favorites only.
 3. Keep the next rollout cap at or below the explicitly approved target.
 4. For manual verification sessions, use the operator control route with
@@ -193,7 +198,7 @@ Acceptance report: `docs/archive/research/araon-runtime-acceptance.md`.
 - `applyErrorCount` remains zero.
 - Client-visible SSE frame count can be lower than `PriceStore` apply count
   because `SseManager` may throttle/coalesce same-ticker `price-update` events.
-- REST polling continues.
+- Toss REST refresh continues.
 - SSE stays connected.
 - Existing `priceStore` values are preserved.
 
@@ -208,7 +213,7 @@ Acceptance report: `docs/archive/research/araon-runtime-acceptance.md`.
   `degraded`.
 - Operator action requested: move WS to `manual-disabled`.
 
-These criteria must never stop REST polling.
+These criteria must never stop Toss REST refresh.
 
 ## Rollback Method
 
@@ -219,7 +224,7 @@ Internal stop:
   - pending reconnect timer is cleared by WS client disconnect
   - active subscriptions are cleared
   - state becomes `manual-disabled`
-  - REST polling remains running
+  - Toss REST refresh remains running
   - SSE connections remain open
   - existing `priceStore` values remain intact
 
@@ -243,7 +248,7 @@ Session disable:
 - Expected effect:
   - session gate becomes false
   - active subscriptions are cleared by the bridge
-  - REST polling remains running
+  - Toss REST refresh remains running
   - persisted `websocketEnabled` and `applyTicksToPriceStore` are unchanged
   - existing `priceStore` values remain intact
 
@@ -348,7 +353,7 @@ NXT7c session safety additions:
   safe range and computes tick limits from the selected cap.
 - When time, applied tick, or parsed tick limits are reached, the server
   disables the session gate and disconnects the realtime bridge.
-- Limit cleanup must not stop REST polling, close SSE, delete existing
+- Limit cleanup must not stop Toss REST refresh, close SSE, delete existing
   `priceStore` values, or persist settings.
 - SettingsModal locks the cap selector and enable button while a session is
   active, keeps the disable action visible, and shows last tick, session limit,
@@ -468,8 +473,8 @@ NXT7i operator UI polish evidence:
   - `no_live_tick_observed`: live tick 미관찰
   - `safe_error`: 안전 오류
   - `operator_disabled`: 사용자가 세션 해제
-- Status fetch failure copy is user-safe: "실시간 상태를 불러오지 못했습니다.
-  REST 폴링은 계속 유지됩니다."
+- Status fetch failure copy is user-safe and Toss-primary aligned: "실시간 상태를
+  불러오지 못했습니다. Toss refresh는 계속 유지되고, KIS WS는 선택 보조입니다."
 - The status panel still polls only while open, uses 5s while active and 15s
   when inactive, and does not create another EventSource.
 
@@ -669,7 +674,7 @@ Completion notes:
 - cap 1/3/5/10/20/40 controlled UI sessions now have exact hard-limit evidence.
 - status endpoint is reachable and credential-safe.
 - status panel shows state/gates/counts without extra EventSource.
-- REST polling fallback remains healthy.
+- Toss REST refresh remains healthy.
 - session-enable accepts cap20/cap40 only with explicit confirmation.
 - cap40 is the maximum controlled session cap.
 - no reconnect loop, parse-error spike, or apply-error spike was observed in the
@@ -685,7 +690,7 @@ Completion notes:
 - Do not expose realtime market-source UI before the rollout phase requests it.
 - Do not write raw live frames containing sensitive material.
 - Do not log or persist approval key, app key, app secret, or access token.
-- Do not let WS failure stop REST polling.
+- Do not let WS failure stop Toss REST refresh.
 
 ## Leak Checks
 

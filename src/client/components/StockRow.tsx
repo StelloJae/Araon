@@ -47,6 +47,7 @@ interface StockRowProps {
   onOpenDetail: (code: string) => void;
   flashSeed: number;
   isFirst: boolean;
+  compact?: boolean;
 }
 
 export function shouldPreloadRowPriceHistory(_input: { readonly isFav: boolean }): boolean {
@@ -62,6 +63,7 @@ export function areStockRowRenderPropsEqual(
     prev.isFav === next.isFav &&
     prev.flashSeed === next.flashSeed &&
     prev.isFirst === next.isFirst &&
+    prev.compact === next.compact &&
     prev.onToggleFav === next.onToggleFav &&
     prev.onOpenDetail === next.onOpenDetail &&
     areStockRowsEqual(prev.stock, next.stock)
@@ -89,6 +91,7 @@ function StockRowComponent({
   onOpenDetail,
   flashSeed,
   isFirst,
+  compact = false,
 }: StockRowProps) {
   const {
     code,
@@ -145,11 +148,15 @@ function StockRowComponent({
     display: 'grid',
     gridTemplateColumns:
       rank !== null
-        ? '20px 16px minmax(0, 1fr) auto auto'
-        : '16px minmax(0, 1fr) auto auto',
-    gap: 8,
+        ? compact
+          ? '16px 14px minmax(0,1fr) 58px minmax(54px,auto)'
+          : '20px 16px minmax(0, 1fr) 78px auto auto'
+        : compact
+          ? '14px minmax(0,1fr) 58px minmax(54px,auto)'
+          : '16px minmax(0, 1fr) 78px auto auto',
+    gap: compact ? 5 : 8,
     alignItems: 'center',
-    padding: '9px 12px',
+    padding: compact ? '6px 8px' : '9px 12px',
     borderTop: isFirst ? 'none' : '1px solid var(--border-soft)',
     cursor: 'pointer',
     viewTransitionName: `stock-${code}`,
@@ -251,97 +258,124 @@ function StockRowComponent({
           >
             {code}
           </span>
-          <span
-            style={{
-              fontSize: 8,
-              fontWeight: 700,
-              color: marketColor,
-              padding: '0 3px',
-              border: '1px solid var(--border)',
-              borderRadius: 3,
-              letterSpacing: 0.4,
-              lineHeight: 1.4,
-            }}
-          >
-            {market}
-          </span>
-          <span
-            title={describeSectorSource(effectiveSector.source)}
-            style={{
-              fontSize: 8,
-              fontWeight: 700,
-              color: sectorPillColor,
-              padding: '0 3px',
-              border: '1px solid var(--border-soft)',
-              borderRadius: 3,
-              letterSpacing: 0.4,
-              lineHeight: 1.4,
-              maxWidth: 80,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontStyle:
-                effectiveSector.source === 'kis-industry' ? 'italic' : 'normal',
-            }}
-          >
-            {effectiveSector.name}
-          </span>
+          {!compact && (
+            <>
+              <span
+                style={{
+                  fontSize: 8,
+                  fontWeight: 700,
+                  color: marketColor,
+                  padding: '0 3px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 3,
+                  letterSpacing: 0.4,
+                  lineHeight: 1.4,
+                }}
+              >
+                {market}
+              </span>
+              <span
+                title={describeSectorSource(effectiveSector.source)}
+                style={{
+                  fontSize: 8,
+                  fontWeight: 700,
+                  color: sectorPillColor,
+                  padding: '0 3px',
+                  border: '1px solid var(--border-soft)',
+                  borderRadius: 3,
+                  letterSpacing: 0.4,
+                  lineHeight: 1.4,
+                  maxWidth: 80,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontStyle:
+                    effectiveSector.source === 'kis-industry' ? 'italic' : 'normal',
+                }}
+              >
+                {effectiveSector.name}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
-      {history.length >= 2 && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 140,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            pointerEvents: 'none',
-            opacity: 0.85,
-          }}
-        >
+      <div
+        style={{
+          width: compact ? 58 : 78,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+          opacity: 0.85,
+        }}
+      >
+        {history.length >= 2 && (
           <Sparkline
             history={history}
-            width={70}
-            height={22}
+            width={compact ? 54 : 70}
+            height={compact ? 18 : 22}
             positive={changePct >= 0}
             mini
           />
+        )}
+      </div>
+
+      {compact ? (
+        <div
+          style={{
+            position: 'relative',
+            minWidth: 54,
+            textAlign: 'right',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            gap: 1,
+          }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+            {fmtPrice(price)}
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 800, color, lineHeight: 1.1 }}>
+            {fmtPct(changePct)}
+          </span>
         </div>
+      ) : (
+        <>
+          <div
+            style={{
+              position: 'relative',
+              fontSize: 12,
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              textAlign: 'right',
+              minWidth: 64,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {fmtPrice(price)}
+          </div>
+
+          <div
+            style={{
+              position: 'relative',
+              textAlign: 'right',
+              minWidth: 60,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              gap: 1,
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, color, lineHeight: 1.1 }}>
+              {fmtPct(changePct)}
+            </span>
+            <span style={{ fontSize: 9, fontWeight: 600, color, lineHeight: 1.1 }}>
+              {changeAbs === null ? '—' : fmtAbs(changeAbs)}
+            </span>
+          </div>
+        </>
       )}
-
-      <div
-        style={{
-          position: 'relative',
-          fontSize: 12,
-          fontWeight: 700,
-          color: 'var(--text-primary)',
-          textAlign: 'right',
-          minWidth: 64,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {fmtPrice(price)}
-      </div>
-
-      <div
-        style={{
-          position: 'relative',
-          textAlign: 'right',
-          minWidth: 60,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-end',
-          gap: 1,
-        }}
-      >
-        <span style={{ fontSize: 12, fontWeight: 700, color, lineHeight: 1.1 }}>
-          {fmtPct(changePct)}
-        </span>
-        <span style={{ fontSize: 9, fontWeight: 600, color, lineHeight: 1.1 }}>
-          {changeAbs === null ? '—' : fmtAbs(changeAbs)}
-        </span>
-      </div>
     </div>
   );
 }

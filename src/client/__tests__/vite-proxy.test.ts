@@ -9,6 +9,9 @@ describe('Vite dev proxy', () => {
 
     expect(proxy).toMatchObject({
       '/market': 'http://127.0.0.1:3000',
+      '/watchlist': 'http://127.0.0.1:3000',
+      '/toss': 'http://127.0.0.1:3000',
+      '/agent': 'http://127.0.0.1:3000',
     });
   });
 });

@@ -1,0 +1,185 @@
+{
+  "ok": true,
+  "marketEvidenceReady": true,
+  "completionReady": true,
+  "finalGoalCompletionReady": false,
+  "finalGoalRemainingNeed": "This report only proves read-only market data evidence. Final Araon goal completion still requires browser/Computer Use visual QA and the written completion audit.",
+  "evidenceScope": "read-only-market-data",
+  "targetUrl": "http://127.0.0.1:3000",
+  "startedAt": "2026-05-19T08:07:40.030Z",
+  "finishedAt": "2026-05-19T08:07:43.533Z",
+  "durationMs": 3500,
+  "intervalMs": 500,
+  "selectedTicker": "005930",
+  "quoteTickers": [
+    "005930"
+  ],
+  "sampleCount": 35,
+  "endpointSummaries": [
+    {
+      "endpoint": "top-movers",
+      "sampleCount": 7,
+      "okCount": 7,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 140,
+      "p95DurationMs": 234,
+      "maxDurationMs": 234
+    },
+    {
+      "endpoint": "realtime-ranking",
+      "sampleCount": 7,
+      "okCount": 7,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 66,
+      "p95DurationMs": 100,
+      "maxDurationMs": 100
+    },
+    {
+      "endpoint": "quote-batch",
+      "sampleCount": 7,
+      "okCount": 7,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 20,
+      "p95DurationMs": 22,
+      "maxDurationMs": 22
+    },
+    {
+      "endpoint": "candles",
+      "sampleCount": 7,
+      "okCount": 7,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 31,
+      "p95DurationMs": 56,
+      "maxDurationMs": 56
+    },
+    {
+      "endpoint": "runtime-health",
+      "sampleCount": 7,
+      "okCount": 7,
+      "httpErrorCount": 0,
+      "parseErrorCount": 0,
+      "avgDurationMs": 56,
+      "p95DurationMs": 71,
+      "maxDurationMs": 71
+    }
+  ],
+  "top100Cadence": {
+    "observed": true,
+    "rankOrderObserved": true,
+    "valueMovementObserved": true,
+    "distinctRankOrders": 3,
+    "distinctValueStates": 4,
+    "goodSamples": 7
+  },
+  "realtimeRankingCadence": {
+    "observed": true,
+    "rankOrderObserved": false,
+    "valueMovementObserved": true,
+    "distinctRankOrders": 1,
+    "distinctValueStates": 5,
+    "goodSamples": 7
+  },
+  "quoteSampleCadence": {
+    "observed": true,
+    "valueMovementObserved": true,
+    "distinctValueStates": 7,
+    "goodSamples": 7
+  },
+  "chartProgression": {
+    "observed": true,
+    "distinctLastCandles": 2,
+    "goodSamples": 7,
+    "newestBucketAt": "2026-05-19T08:07:00.000Z",
+    "latestSampleCount": 544
+  },
+  "sampleCadence": {
+    "ok": true,
+    "requestedIntervalMs": 500,
+    "p95AllowedGapMs": 1000,
+    "maxAllowedGapMs": 1750,
+    "p95GapMs": 733,
+    "maxGapMs": 741,
+    "gapCount": 30
+  },
+  "fastQuoteLane": {
+    "ok": true,
+    "observed": true,
+    "configured": true,
+    "running": true,
+    "sourceOk": true,
+    "intervalOk": true,
+    "capOk": true,
+    "minIntervalMs": 100,
+    "maxIntervalMs": 100,
+    "maxTargetCap": 200,
+    "maxHardCap": 400,
+    "maxCandidateCount": 39,
+    "maxRequestedCount": 39,
+    "maxAcceptedCount": 30,
+    "goodSamples": 7
+  },
+  "marketWindow": {
+    "kstStartedAt": "2026-05-19 17:07 KST",
+    "kstFinishedAt": "2026-05-19 17:07 KST",
+    "kstWeekday": true,
+    "regularMarketLikely": false,
+    "integratedLiveWindowLikely": true,
+    "note": "KST weekday integrated live window, but outside regular KRX market-hours evidence window. Official holiday calendar is not checked."
+  },
+  "latency": {
+    "ok": true,
+    "p95DurationMs": 215,
+    "maxDurationMs": 234
+  },
+  "marketHoursUseful": true,
+  "completionCriteria": [
+    {
+      "criterion": 12,
+      "label": "TOP100 updates/reorders at intended cadence without severe lag",
+      "status": "pass",
+      "evidence": "liveWindowOk=true; top100Observed=true; realtimeRankingObserved=true; top100RankReorderObserved=true; realtimeRankReorderObserved=false; sampleGapP95Ms=733; endpointP95Ms=215",
+      "remainingNeed": null
+    },
+    {
+      "criterion": 13,
+      "label": "Recent surge uses toss-fast-quote and ws-integrated, not generic REST",
+      "status": "supporting",
+      "evidence": "fastQuoteSourceOk=true; running=true; intervalMs=100-100; maxTargetCap=200; maxHardCap=400; maxAcceptedCount=30",
+      "remainingNeed": "Client surge tests still prove source filtering; market-hours UI must show realtime surge behavior from moving prices."
+    },
+    {
+      "criterion": 14,
+      "label": "Recent surge threshold/cooldown is correct",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; quoteMovementObserved=true; distinctValueStates=7; fastQuoteLaneOk=true",
+      "remainingNeed": "This harness only proves bounded quote movement input. Browser UI/toast observation must still prove threshold and cooldown behavior."
+    },
+    {
+      "criterion": 16,
+      "label": "Mini chart updates current candle from real samples without refresh",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; chartProgressionObserved=true; newestBucketAt=2026-05-19T08:07:00.000Z; latestSampleCount=544",
+      "remainingNeed": "Browser visual QA must still confirm mini chart renders the progression without refresh."
+    },
+    {
+      "criterion": 17,
+      "label": "Full chart updates current candle from real samples without refresh",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; chartProgressionObserved=true; newestBucketAt=2026-05-19T08:07:00.000Z; latestSampleCount=544",
+      "remainingNeed": "Browser visual QA must still confirm full chart renders the progression without refresh."
+    },
+    {
+      "criterion": 41,
+      "label": "Real browser visual QA passes",
+      "status": "supporting",
+      "evidence": "liveWindowOk=true; sampleGapP95Ms=733; endpointP95Ms=215; endpointMaxMs=234",
+      "remainingNeed": "Harness latency is supporting evidence only. Browser/Computer Use QA must still confirm no visible severe lag."
+    }
+  ],
+  "issues": [],
+  "blockers": []
+}

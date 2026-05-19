@@ -1,6 +1,9 @@
 import {
   createKisOutboundLimiter,
   type CreateKisOutboundLimiterOptions,
+  type KisBudgetMeterClassSnapshot,
+  type KisBudgetMeterSnapshot,
+  type KisBudgetMeterWindowSnapshot,
   type KisClassPolicyInput,
   type KisEndpointClass,
   type KisGovernorTelemetryEvent,
@@ -127,16 +130,25 @@ export function createKisMultiProfileOutboundLimiter(
         routed.limiter.snapshot(),
       );
       const queuedByPriority = mergeQueuedByPriority(snapshots);
-      return {
+      const merged: KisOutboundLimiterSnapshot = {
         ratePerSec: snapshots.reduce((sum, snapshot) => sum + snapshot.ratePerSec, 0),
         burst: snapshots.reduce((sum, snapshot) => sum + snapshot.burst, 0),
         tokens: snapshots.reduce((sum, snapshot) => sum + snapshot.tokens, 0),
+        globalMinStartGapMs: Math.max(
+          0,
+          ...snapshots.map((snapshot) => snapshot.globalMinStartGapMs),
+        ),
         queueDepth: snapshots.reduce((sum, snapshot) => sum + (snapshot.queueDepth ?? 0), 0),
         queuedByPriority,
         telemetry: mergeTelemetrySnapshots(),
         policies: snapshots[0]?.policies ?? [],
         profiles: snapshots.flatMap((snapshot) => snapshot.profiles),
       };
+      const budget = mergeBudgetSnapshots(snapshots);
+      if (budget !== undefined) {
+        return { ...merged, budget };
+      }
+      return merged;
     },
 
     setClassPolicyOverride(
@@ -148,6 +160,59 @@ export function createKisMultiProfileOutboundLimiter(
       }
     },
   };
+}
+
+function mergeBudgetSnapshots(
+  snapshots: readonly KisOutboundLimiterSnapshot[],
+): KisBudgetMeterSnapshot | undefined {
+  const budgets = snapshots
+    .map((snapshot) => snapshot.budget)
+    .filter((budget): budget is KisBudgetMeterSnapshot => budget !== undefined);
+  if (budgets.length === 0) return undefined;
+  return {
+    generatedAtMs: Math.max(...budgets.map((budget) => budget.generatedAtMs)),
+    windows: {
+      tenSec: mergeBudgetWindows(budgets.map((budget) => budget.windows.tenSec)),
+      sixtySec: mergeBudgetWindows(budgets.map((budget) => budget.windows.sixtySec)),
+    },
+  };
+}
+
+function mergeBudgetWindows(
+  windows: readonly KisBudgetMeterWindowSnapshot[],
+): KisBudgetMeterWindowSnapshot {
+  const windowMs = windows[0]?.windowMs ?? 60_000;
+  const byClass = new Map<string, KisBudgetMeterClassSnapshot>();
+  for (const window of windows) {
+    for (const item of window.byClass) {
+      const key = `${item.profileId}\u0000${item.endpointClass ?? ''}`;
+      byClass.set(key, item);
+    }
+  }
+  const startedCount = windows.reduce((sum, window) => sum + window.startedCount, 0);
+  const successCount = windows.reduce((sum, window) => sum + window.successCount, 0);
+  const failureCount = windows.reduce((sum, window) => sum + window.failureCount, 0);
+  const throttleCount = windows.reduce((sum, window) => sum + window.throttleCount, 0);
+  return {
+    windowMs,
+    startedCount,
+    successCount,
+    failureCount,
+    throttleCount,
+    callPerSec: roundRate(startedCount / Math.max(0.001, windowMs / 1000)),
+    successPerSec: roundRate(successCount / Math.max(0.001, windowMs / 1000)),
+    failurePerMin: roundRate(failureCount / Math.max(0.001, windowMs / 60_000)),
+    throttlePerMin: roundRate(throttleCount / Math.max(0.001, windowMs / 60_000)),
+    byClass: Array.from(byClass.values()).sort((a, b) => {
+      const profileOrder = a.profileId.localeCompare(b.profileId);
+      if (profileOrder !== 0) return profileOrder;
+      return String(a.endpointClass ?? '').localeCompare(String(b.endpointClass ?? ''));
+    }),
+  };
+}
+
+function roundRate(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function mergeQueuedByPriority(

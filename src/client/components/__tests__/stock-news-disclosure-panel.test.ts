@@ -26,6 +26,39 @@ describe('StockNewsDisclosurePanel', () => {
     expect(html).not.toContain('연동 예정');
   });
 
+  it('can render a news-only tab without disclosure links', () => {
+    const html = renderToStaticMarkup(
+      createElement(StockNewsDisclosurePanel, {
+        ticker: '005930',
+        name: '삼성전자',
+        mode: 'news',
+      }),
+    );
+
+    expect(html).toContain('관련 뉴스');
+    expect(html).toContain('뉴스 갱신');
+    expect(html).toContain('네이버 금융 뉴스');
+    expect(html).not.toContain('DART 공시 검색');
+    expect(html).not.toContain('관련 뉴스 · 공시');
+  });
+
+  it('can render a disclosure-only tab without news links', () => {
+    const html = renderToStaticMarkup(
+      createElement(StockNewsDisclosurePanel, {
+        ticker: '005930',
+        name: '삼성전자',
+        mode: 'disclosures',
+      }),
+    );
+
+    expect(html).toContain('관련 공시');
+    expect(html).toContain('공시 갱신');
+    expect(html).toContain('DART 공시 검색');
+    expect(html).toContain('저장된 공시 항목이 없습니다');
+    expect(html).not.toContain('네이버 금융 뉴스');
+    expect(html).not.toContain('관련 뉴스 · 공시');
+  });
+
   it('marks newly discovered news links without implying analysis', () => {
     const html = renderToStaticMarkup(
       createElement(NewsFeedItemLink, {

@@ -46,6 +46,7 @@ import type {
   PriceHistoryApiItem,
   StockDisclosureItem,
   StockDisclosurePage,
+  StockNewsItem,
   StockSignalEvent,
 } from '@shared/types.js';
 import type {
@@ -56,6 +57,8 @@ import type { TodayMinuteBackfillService } from '../chart/today-minute-backfill-
 import type { HistoricalMinuteBackfillService } from '../chart/historical-minute-backfill-service.js';
 import type { StockNewsFeedService } from '../news/news-feed-service.js';
 import type { DartDisclosureService } from '../disclosures/dart-disclosure-service.js';
+import { disclosureIdentityKeys } from '../disclosures/disclosure-identity.js';
+import type { AgentEventQueue } from '../agent/agent-event-queue.js';
 import {
   PRICE_HISTORY_POINT_BUCKET_MS,
   PRICE_HISTORY_RETENTION_HOURS,
@@ -83,8 +86,13 @@ export interface StockRoutesOptions extends FastifyPluginOptions {
   newsFeedService?: StockNewsFeedService;
   disclosureRepo?: StockDisclosureRepository;
   dartDisclosureService?: DartDisclosureService;
+  agentEventQueue?: AgentEventQueue;
   refreshQuote?: (ticker: string) => Promise<Price>;
-  isUpstreamCooldownActive?: () => boolean;
+  fetchSparklineSeedCandles?: (input: {
+    ticker: string;
+    window: { from: string; to: string };
+    now: Date;
+  }) => Promise<readonly PriceCandle[]>;
   now?: () => Date;
 }
 
@@ -133,6 +141,7 @@ const priceHistoryQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   limit: z.coerce.number().int().positive().max(20_000).default(20_000),
+  includeCandleSeed: z.preprocess((value) => value === true || value === 'true', z.boolean()).default(false),
 });
 
 const candleBackfillBodySchema = z.object({
@@ -261,6 +270,7 @@ export async function stockRoutes(
       volumeBaselineStatus: parsed.data.volumeBaselineStatus,
       now: (opts.now ?? (() => new Date()))(),
     });
+    enqueueSignalAgentEvent(opts.agentEventQueue, event);
     return reply.status(201).send({ success: true, data: event });
   });
 
@@ -316,7 +326,9 @@ export async function stockRoutes(
       && !existing.some((item) => item.source === 'dart' && item.kind === 'filing')
     ) {
       try {
-        await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+        const items = await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+        const existingDisclosureKeys = new Set(existing.flatMap((item) => disclosureIdentityKeys(item)));
+        enqueueDisclosureAgentEvents(opts.agentEventQueue, items, existingDisclosureKeys);
       } catch (err: unknown) {
         log.warn(
           { ticker, err: err instanceof Error ? err.message : String(err) },
@@ -368,9 +380,10 @@ export async function stockRoutes(
           now: (opts.now ?? (() => new Date()))(),
         };
         if (stockName !== undefined) refreshInput.name = stockName;
-        await opts.newsFeedService.refresh({
+        const items = await opts.newsFeedService.refresh({
           ...refreshInput,
         });
+        enqueueNewsAgentEvents(opts.agentEventQueue, items);
         return reply.send({
           success: true,
           data: opts.newsFeedService.page(ticker, { limit: 5, offset: 0 }),
@@ -406,8 +419,14 @@ export async function stockRoutes(
       }
       const fetchedAt = (opts.now ?? (() => new Date()))();
       try {
+        const existingDisclosureKeys = new Set(
+          opts.disclosureRepo
+            .listByTicker(ticker, 100)
+            .flatMap((item) => disclosureIdentityKeys(item)),
+        );
         if (opts.dartDisclosureService?.isConfigured() === true) {
-          await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+          const items = await opts.dartDisclosureService.refreshTicker({ ticker, now: fetchedAt });
+          enqueueDisclosureAgentEvents(opts.agentEventQueue, items, existingDisclosureKeys);
         }
         opts.disclosureRepo.upsertMany(buildDisclosureSearchLinks(ticker, fetchedAt.toISOString()));
         return reply.send({
@@ -508,7 +527,13 @@ export async function stockRoutes(
     }
 
     const now = (opts.now ?? (() => new Date()))();
-    const window = resolveCandleWindow(parsed.data.range, parsed.data.from, parsed.data.to);
+    const isIntradayChart = !dailyBaseInterval(parsed.data.interval);
+    const window = resolveCandleWindow(
+      parsed.data.range,
+      parsed.data.from,
+      parsed.data.to,
+      { intradayChart: isIntradayChart },
+    );
     if (window === null) {
       return reply.status(400).send({
         success: false,
@@ -519,20 +544,6 @@ export async function stockRoutes(
     const backfillAllowed = isBackfillAllowed(now, 'closed');
 
     if (dailyBaseInterval(parsed.data.interval)) {
-      if (opts.isUpstreamCooldownActive?.() === true) {
-        return reply.send({
-          success: true,
-          data: {
-            state: 'skipped',
-            reason: 'UPSTREAM_COOLDOWN',
-            source: null,
-            requested: 0,
-            inserted: 0,
-            updated: 0,
-            message: 'KIS 호출 제한 cooldown 중이라 일봉 자동 보강을 대기합니다.',
-          },
-        });
-      }
       if (!backfillAllowed) {
         return reply.send({
           success: true,
@@ -554,27 +565,26 @@ export async function stockRoutes(
         });
       }
       const range = dailyBackfillRangeForCandleRange(parsed.data.range);
+      const completeDailySource = completeDailyCoverageSource(
+        opts.candleCoverageRepo,
+        ticker,
+        window,
+      );
       if (
         parsed.data.force !== true &&
-        (opts.candleCoverageRepo?.hasCompleteCoverage({
-          ticker,
-          interval: '1d',
-          source: 'kis-daily',
-          from: window.from,
-          to: window.to,
-        }) === true ||
-        !shouldBackfillDailyTicker({
-          ticker,
-          range,
-          now,
-          repo: opts.candleRepo,
-        }))
+        (completeDailySource !== null ||
+          !shouldBackfillDailyTicker({
+            ticker,
+            range,
+            now,
+            repo: opts.candleRepo,
+          }))
       ) {
         return reply.send({
           success: true,
           data: {
             state: 'current',
-            source: 'kis-daily',
+            source: completeDailySource ?? 'mixed',
             requested: 0,
             inserted: 0,
             updated: 0,
@@ -628,21 +638,6 @@ export async function stockRoutes(
       }
     }
 
-    if (opts.isUpstreamCooldownActive?.() === true) {
-      return reply.send({
-        success: true,
-        data: {
-          state: 'skipped',
-          reason: 'UPSTREAM_COOLDOWN',
-          source: null,
-          requested: 0,
-          inserted: 0,
-          updated: 0,
-          message: 'KIS 호출 제한 cooldown 중이라 분봉 자동 보강을 대기합니다.',
-        },
-      });
-    }
-
     if (!backfillAllowed) {
       if (parsed.data.range !== '1d') {
         return reply.send({
@@ -658,12 +653,13 @@ export async function stockRoutes(
           },
         });
       }
-      if (parsed.data.force !== true && hasFreshTodayMinuteCoverage(opts.candleRepo, ticker, now)) {
+      const freshTodayMinuteSource = freshTodayMinuteCoverageSource(opts.candleRepo, ticker, now);
+      if (parsed.data.force !== true && freshTodayMinuteSource !== null) {
         return reply.send({
           success: true,
           data: {
             state: 'current',
-            source: 'kis-time-today',
+            source: freshTodayMinuteSource,
             requested: 0,
             inserted: 0,
             updated: 0,
@@ -730,15 +726,21 @@ export async function stockRoutes(
       });
     }
 
+    const completeMinuteSource = completeIntradayCoverageSource(
+      opts.candleRepo,
+      opts.candleCoverageRepo,
+      ticker,
+      window,
+    );
     if (
       parsed.data.force !== true &&
-      hasBackfilledIntradayInWindow(opts.candleRepo, opts.candleCoverageRepo, ticker, window)
+      completeMinuteSource !== null
     ) {
       return reply.send({
         success: true,
         data: {
           state: 'current',
-          source: 'kis-time-daily',
+          source: completeMinuteSource,
           requested: 0,
           inserted: 0,
           updated: 0,
@@ -894,7 +896,15 @@ export async function stockRoutes(
       limit: parsed.data.limit,
     });
     const displayPoints = filterRealtimePreferredPriceHistory(points);
-    const items = displayPoints.map(toPriceHistoryApiItem);
+    const seedPoints = shouldUseSparklineCandleSeed(displayPoints, parsed.data.includeCandleSeed)
+      ? await sparklineSeedPoints({
+          ticker,
+          window,
+          now: (opts.now ?? (() => new Date()))(),
+          fetchSparklineSeedCandles: opts.fetchSparklineSeedCandles,
+        })
+      : [];
+    const items = (seedPoints.length >= 2 ? seedPoints : displayPoints).map(toPriceHistoryApiItem);
     const first = items[0];
     const last = items[items.length - 1];
 
@@ -940,7 +950,13 @@ export async function stockRoutes(
       });
     }
 
-    const window = resolveCandleWindow(parsed.data.range, parsed.data.from, parsed.data.to);
+    const isIntradayChart = !dailyBaseInterval(parsed.data.interval);
+    const window = resolveCandleWindow(
+      parsed.data.range,
+      parsed.data.from,
+      parsed.data.to,
+      { intradayChart: isIntradayChart },
+    );
     if (window === null) {
       return reply.status(400).send({
         success: false,
@@ -948,7 +964,7 @@ export async function stockRoutes(
       });
     }
 
-    const baseInterval = dailyBaseInterval(parsed.data.interval) ? '1d' : '1m';
+    const baseInterval = isIntradayChart ? '1m' : '1d';
     const rawBase = opts.candleRepo.listCandles({
       ticker,
       interval: baseInterval,
@@ -1053,6 +1069,7 @@ function resolveCandleWindow(
   range: '1d' | '1w' | '1m' | '3m' | '6m' | '1y',
   from: string | undefined,
   to: string | undefined,
+  options: { intradayChart?: boolean } = {},
 ): { from: string; to: string } | null {
   const toDate = to !== undefined ? new Date(to) : new Date();
   if (Number.isNaN(toDate.getTime())) return null;
@@ -1063,10 +1080,71 @@ function resolveCandleWindow(
     return { from: fromDate.toISOString(), to: toDate.toISOString() };
   }
 
+  if (range === '1d' && options.intradayChart === true) {
+    return latestKstTradingSessionWindow(toDate);
+  }
+
   const durationMs = rangeDurationMs(range);
   return {
     from: new Date(toDate.getTime() - durationMs).toISOString(),
     to: toDate.toISOString(),
+  };
+}
+
+const KST_INTRADAY_START_MINUTE = 8 * 60;
+const KST_INTRADAY_END_MINUTE = 20 * 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function latestKstTradingSessionWindow(toDate: Date): { from: string; to: string } {
+  let startOfKstDay = kstStartOfDay(toDate);
+  const clock = kstClockFromDate(toDate);
+
+  if (!isWeekdayKst(toDate) || clock.minutes < KST_INTRADAY_START_MINUTE) {
+    startOfKstDay = previousWeekdayKstStart(startOfKstDay);
+  }
+
+  const sessionStartMs = startOfKstDay.getTime() + KST_INTRADAY_START_MINUTE * 60_000;
+  const sessionEndMs = startOfKstDay.getTime() + KST_INTRADAY_END_MINUTE * 60_000;
+  const effectiveToMs = Math.min(Math.max(toDate.getTime(), sessionStartMs), sessionEndMs);
+  return {
+    from: new Date(sessionStartMs).toISOString(),
+    to: new Date(effectiveToMs).toISOString(),
+  };
+}
+
+function kstStartOfDay(date: Date): Date {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  const utcMs =
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+      0,
+      0,
+      0,
+      0,
+    ) - KST_OFFSET_MS;
+  return new Date(utcMs);
+}
+
+function previousWeekdayKstStart(startOfKstDay: Date): Date {
+  let cursor = new Date(startOfKstDay.getTime() - DAY_MS);
+  while (!isWeekdayKst(cursor)) {
+    cursor = new Date(cursor.getTime() - DAY_MS);
+  }
+  return cursor;
+}
+
+function isWeekdayKst(date: Date): boolean {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  const day = shifted.getUTCDay();
+  return day >= 1 && day <= 5;
+}
+
+function kstClockFromDate(date: Date): { minutes: number } {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  return {
+    minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes(),
   };
 }
 
@@ -1084,7 +1162,7 @@ function resolvePriceHistoryWindow(
     return { from: fromDate.toISOString(), to: toDate.toISOString() };
   }
 
-  return { from: kstStartOfDayIso(now), to: toDate.toISOString() };
+  return latestKstTradingSessionWindow(toDate);
 }
 
 function toPriceHistoryApiItem(point: {
@@ -1104,6 +1182,54 @@ function toPriceHistoryApiItem(point: {
   };
 }
 
+async function sparklineSeedPoints(input: {
+  ticker: string;
+  window: { from: string; to: string };
+  now: Date;
+  fetchSparklineSeedCandles: StockRoutesOptions['fetchSparklineSeedCandles'];
+}): Promise<PriceHistoryPoint[]> {
+  if (input.fetchSparklineSeedCandles === undefined) return [];
+  try {
+    const candles = await input.fetchSparklineSeedCandles({
+      ticker: input.ticker,
+      window: input.window,
+      now: input.now,
+    });
+    return candlesToPriceHistorySeed(input.ticker, candles);
+  } catch (err: unknown) {
+    log.debug(
+      { ticker: input.ticker, err: err instanceof Error ? err.message : String(err) },
+      'sparkline candle seed unavailable',
+    );
+    return [];
+  }
+}
+
+function candlesToPriceHistorySeed(
+  ticker: string,
+  candles: readonly PriceCandle[],
+): PriceHistoryPoint[] {
+  return candles
+    .filter((candle) =>
+      candle.ticker === ticker
+      && candle.interval === '1m'
+      && Number.isFinite(candle.close)
+      && candle.close > 0
+      && !Number.isNaN(new Date(candle.bucketAt).getTime()),
+    )
+    .sort((a, b) => a.bucketAt.localeCompare(b.bucketAt))
+    .map((candle) => ({
+      ticker,
+      bucketAt: candle.bucketAt,
+      price: candle.close,
+      changeRate: 0,
+      sampleCount: candle.sampleCount,
+      source: candle.source,
+      createdAt: candle.createdAt,
+      updatedAt: candle.updatedAt,
+    }));
+}
+
 function filterRealtimePreferredPriceHistory<T extends { source: PriceCandleSource | null }>(
   points: readonly T[],
 ): T[] {
@@ -1114,6 +1240,15 @@ function filterRealtimePreferredPriceHistory<T extends { source: PriceCandleSour
   }
   if (liveCount < 2) return [...points];
   return points.filter((point) => isRealtimePriceSource(point.source));
+}
+
+function shouldUseSparklineCandleSeed(
+  points: readonly PriceHistoryPoint[],
+  includeCandleSeed: boolean,
+): boolean {
+  if (!includeCandleSeed) return false;
+  if (points.length < 2) return true;
+  return new Set(points.map((point) => point.price)).size <= 1;
 }
 
 function rangeDurationMs(range: '1d' | '1w' | '1m' | '3m' | '6m' | '1y'): number {
@@ -1152,24 +1287,26 @@ function dailyBackfillRangeForCandleRange(
   }
 }
 
-function hasBackfilledIntradayInWindow(
+function completeIntradayCoverageSource(
   repo: PriceCandleRepository,
   coverageRepo: CandleCoverageRepository | undefined,
   ticker: string,
   window: { from: string; to: string },
-): boolean {
-  if (
-    coverageRepo?.hasCompleteCoverage({
-      ticker,
-      interval: '1m',
-      source: 'kis-time-daily',
-      from: window.from,
-      to: window.to,
-    }) === true
-  ) {
-    return true;
+): Extract<PriceCandleSource, 'toss-time-daily' | 'kis-time-daily'> | null {
+  for (const source of ['toss-time-daily', 'kis-time-daily'] as const) {
+    if (
+      coverageRepo?.hasCompleteCoverage({
+        ticker,
+        interval: '1m',
+        source,
+        from: window.from,
+        to: window.to,
+      }) === true
+    ) {
+      return source;
+    }
   }
-  return repo
+  const candleSource = repo
     .listCandles({
       ticker,
       interval: '1m',
@@ -1177,14 +1314,39 @@ function hasBackfilledIntradayInWindow(
       to: window.to,
       limit: 200,
     })
-    .some((candle) => candle.source === 'kis-time-daily');
+    .find((candle) => candle.source === 'toss-time-daily' || candle.source === 'kis-time-daily')
+    ?.source;
+  return candleSource === 'toss-time-daily' || candleSource === 'kis-time-daily'
+    ? candleSource
+    : null;
 }
 
-function hasFreshTodayMinuteCoverage(
+function completeDailyCoverageSource(
+  coverageRepo: CandleCoverageRepository | undefined,
+  ticker: string,
+  window: { from: string; to: string },
+): Extract<PriceCandleSource, 'toss-daily' | 'kis-daily'> | null {
+  for (const source of ['toss-daily', 'kis-daily'] as const) {
+    if (
+      coverageRepo?.hasCompleteCoverage({
+        ticker,
+        interval: '1d',
+        source,
+        from: window.from,
+        to: window.to,
+      }) === true
+    ) {
+      return source;
+    }
+  }
+  return null;
+}
+
+function freshTodayMinuteCoverageSource(
   repo: PriceCandleRepository,
   ticker: string,
   now: Date,
-): boolean {
+): Extract<PriceCandleSource, 'kis-time-today' | 'toss-time-today' | 'mixed'> | null {
   const todayStart = kstStartOfDayIso(now);
   const rows = repo
     .listCandles({
@@ -1194,11 +1356,20 @@ function hasFreshTodayMinuteCoverage(
       to: now.toISOString(),
       limit: 2_000,
     })
-    .filter((candle) => candle.source === 'kis-time-today' && isDisplayableIntradayCandle(candle));
+    .filter((candle) =>
+      (candle.source === 'kis-time-today' || candle.source === 'toss-time-today') &&
+      isDisplayableIntradayCandle(candle),
+    );
   const newest = rows[rows.length - 1];
-  if (newest === undefined) return false;
+  if (newest === undefined) return null;
   const newestMs = Date.parse(newest.bucketAt);
-  return Number.isFinite(newestMs) && now.getTime() - newestMs <= FRESH_TODAY_MINUTE_COVERAGE_MS;
+  if (!Number.isFinite(newestMs) || now.getTime() - newestMs > FRESH_TODAY_MINUTE_COVERAGE_MS) {
+    return null;
+  }
+  const sources = new Set(rows.map((candle) => candle.source));
+  if (sources.size === 1 && sources.has('toss-time-today')) return 'toss-time-today';
+  if (sources.size === 1 && sources.has('kis-time-today')) return 'kis-time-today';
+  return 'mixed';
 }
 
 function kstStartOfDayIso(date: Date): string {
@@ -1231,17 +1402,14 @@ function mergeObservedPriceHistoryCandles(
   ticker: string,
 ): PriceCandle[] {
   const byBucket = new Map<string, PriceCandle>();
-  const storedBuckets = new Set<string>();
   for (const candle of candles) {
     byBucket.set(candle.bucketAt, candle);
-    storedBuckets.add(candle.bucketAt);
   }
 
   for (const point of points) {
     if (point.ticker !== ticker) continue;
     if (!isObservedPriceHistoryPoint(point)) continue;
     const bucketAt = bucketAtForInterval(point.bucketAt, '1m');
-    if (storedBuckets.has(bucketAt)) continue;
     const existing = byBucket.get(bucketAt);
     if (existing === undefined) {
       byBucket.set(bucketAt, {
@@ -1302,24 +1470,22 @@ function isKnownCandleSource(
   return (
     source === null ||
     source === 'rest' ||
+    source === 'toss-fast-quote' ||
     source === 'ws-krx' ||
     source === 'ws-integrated' ||
     source === 'ws-nxt' ||
     source === 'kis-daily' ||
     source === 'kis-time-today' ||
     source === 'kis-time-daily' ||
+    source === 'toss-daily' ||
+    source === 'toss-time-today' ||
+    source === 'toss-time-daily' ||
     source === 'mixed'
   );
 }
 
 function isSuspiciousRealtimeMinuteCandle(candle: PriceCandle): boolean {
-  if (
-    candle.source !== 'ws-krx' &&
-    candle.source !== 'ws-integrated' &&
-    candle.source !== 'ws-nxt'
-  ) {
-    return false;
-  }
+  if (!isRealtimePriceSource(candle.source)) return false;
   if (candle.interval !== '1m') return false;
   if (candle.volume < 0 || candle.close <= 0) return false;
   const tradeValue = candle.volume * candle.close;
@@ -1359,7 +1525,10 @@ function buildCoverage(
   const backfilled =
     sourceMix.includes('kis-daily') ||
     sourceMix.includes('kis-time-today') ||
-    sourceMix.includes('kis-time-daily');
+    sourceMix.includes('kis-time-daily') ||
+    sourceMix.includes('toss-daily') ||
+    sourceMix.includes('toss-time-today') ||
+    sourceMix.includes('toss-time-daily');
   const coverage: CandleApiCoverage = {
     from: first?.bucketAt ?? null,
     to: last?.bucketAt ?? null,
@@ -1474,6 +1643,121 @@ function toCandleApiItem(candle: {
     source: candle.source ?? null,
     isPartial: candle.isPartial,
   };
+}
+
+function enqueueNewsAgentEvents(
+  queue: AgentEventQueue | undefined,
+  items: readonly StockNewsItem[],
+): void {
+  if (queue === undefined) return;
+  for (const item of items) {
+    if (item.isNew !== true) continue;
+    queue.enqueue({
+      type: 'news_detected',
+      ticker: item.ticker,
+      source: item.source,
+      publishedAt: item.publishedAt,
+      firstSeenAt: item.fetchedAt,
+      relevance: 0.7,
+      confidence: 0.72,
+      reason: `New stock news detected: ${item.title}`,
+      dedupeKey: `news:${item.source}:${item.id}`,
+      payloadRef: `stock-news:${item.id}`,
+    });
+  }
+}
+
+function enqueueSignalAgentEvent(
+  queue: AgentEventQueue | undefined,
+  event: StockSignalEvent,
+): void {
+  if (queue === undefined) return;
+  queue.enqueue({
+    type: 'market_movement_detected',
+    ticker: event.ticker,
+    productCode: `A${event.ticker}`,
+    krTicker: event.ticker,
+    displayName: event.name,
+    source: event.source,
+    publishedAt: event.signalAt,
+    firstSeenAt: event.createdAt,
+    relevance: signalRelevance(event.signalType),
+    confidence: 0.9,
+    reason: `실시간 모멘텀 · ${signalTypeLabel(event.signalType)} · ${signalWindowLabel(event.momentumWindow)} · ${formatSignedPct(event.momentumPct)}`,
+    dedupeKey: `market-movement:${event.source}:${event.id}`,
+    payloadRef: `stock-signal:${event.id}`,
+  });
+}
+
+function enqueueDisclosureAgentEvents(
+  queue: AgentEventQueue | undefined,
+  items: readonly StockDisclosureItem[],
+  existingKeys: ReadonlySet<string>,
+): void {
+  if (queue === undefined) return;
+  for (const item of items) {
+    if (item.kind !== 'filing' || disclosureIdentityKeys(item).some((key) => existingKeys.has(key))) continue;
+    queue.enqueue({
+      type: 'disclosure_detected',
+      ticker: item.ticker,
+      source: item.source,
+      publishedAt: item.publishedAt,
+      firstSeenAt: item.fetchedAt,
+      relevance: 0.85,
+      confidence: 0.9,
+      reason: `New DART filing detected: ${item.title}`,
+      dedupeKey: `disclosure:${item.source}:${item.id}`,
+      payloadRef: `stock-disclosure:${item.id}`,
+    });
+  }
+}
+
+function signalRelevance(signalType: StockSignalEvent['signalType']): number {
+  switch (signalType) {
+    case 'overheat':
+      return 1;
+    case 'strong_scalp':
+      return 0.85;
+    case 'scalp':
+      return 0.72;
+    case 'trend':
+      return 0.55;
+  }
+}
+
+function signalTypeLabel(signalType: StockSignalEvent['signalType']): string {
+  switch (signalType) {
+    case 'overheat':
+      return '과열';
+    case 'strong_scalp':
+      return '강한 단기 급등';
+    case 'scalp':
+      return '단기 급등';
+    case 'trend':
+      return '추세 급등';
+  }
+}
+
+function signalWindowLabel(window: StockSignalEvent['momentumWindow']): string {
+  switch (window) {
+    case '10s':
+      return '10초';
+    case '20s':
+      return '20초';
+    case '30s':
+      return '30초';
+    case '1m':
+      return '1분';
+    case '3m':
+      return '3분';
+    case '5m':
+      return '5분';
+  }
+}
+
+function formatSignedPct(value: number): string {
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}${value.toFixed(2)}%`;
 }
 
 function buildDisclosureSearchLinks(

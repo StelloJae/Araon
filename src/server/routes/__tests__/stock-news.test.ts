@@ -12,6 +12,7 @@ import {
 } from '../../db/repositories.js';
 import { createStockService } from '../../services/stock-service.js';
 import { createStockNewsFeedService } from '../../news/news-feed-service.js';
+import { createAgentEventQueue } from '../../agent/agent-event-queue.js';
 import { stockRoutes } from '../stocks.js';
 
 function openMemoryDb(): Database.Database {
@@ -101,6 +102,53 @@ describe('stock news routes', () => {
       hasNext: false,
       hasPrev: false,
     });
+  });
+
+  it('enqueues newly detected news for agent consumers', async () => {
+    const stockRepo = new StockRepository(db);
+    const sectorRepo = new SectorRepository(db);
+    const masterRepo = new MasterStockRepository(db);
+    const newsRepo = new StockNewsRepository(db);
+    const service = createStockService({ stockRepo, sectorRepo, masterRepo });
+    const agentEventQueue = createAgentEventQueue({
+      idFactory: () => 'evt-news-1',
+      now: () => '2026-05-06T09:00:00.000Z',
+    });
+    stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
+    const newsFeedService = createStockNewsFeedService({
+      repo: newsRepo,
+      fetchHtml: vi.fn(async () =>
+        '<a href="/item/news_read.naver?article_id=2&office_id=001&code=005930">새 뉴스</a>',
+      ),
+    });
+    const agentApp = Fastify({ logger: false });
+    await agentApp.register(stockRoutes, {
+      service,
+      newsFeedService,
+      agentEventQueue,
+      now: () => new Date('2026-05-06T09:00:00.000Z'),
+    });
+
+    const res = await agentApp.inject({
+      method: 'POST',
+      url: '/stocks/005930/news/refresh',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(agentEventQueue.snapshot()).toEqual([
+      expect.objectContaining({
+        id: 'evt-news-1',
+        type: 'news_detected',
+        ticker: '005930',
+        source: 'naver-finance',
+        firstSeenAt: '2026-05-06T09:00:00.000Z',
+        publishedAt: null,
+        confidence: 0.72,
+        reason: 'New stock news detected: 새 뉴스',
+      }),
+    ]);
+    expect(JSON.stringify(agentEventQueue.snapshot())).not.toContain('article_id=2');
+    await agentApp.close();
   });
 
   it('paginates cached news feed items', async () => {
@@ -403,6 +451,121 @@ describe('stock news routes', () => {
       hasPrev: false,
     });
     await dartApp.close();
+  });
+
+  it('enqueues newly detected DART filings for agent consumers', async () => {
+    const stockRepo = new StockRepository(db);
+    const sectorRepo = new SectorRepository(db);
+    const masterRepo = new MasterStockRepository(db);
+    const disclosureRepo = new StockDisclosureRepository(db);
+    const service = createStockService({ stockRepo, sectorRepo, masterRepo });
+    const agentEventQueue = createAgentEventQueue({
+      idFactory: () => 'evt-disclosure-1',
+      now: () => '2026-05-07T04:00:00.000Z',
+    });
+    stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
+    const dartDisclosureService = {
+      isConfigured: vi.fn(() => true),
+      refreshTicker: vi.fn(async () =>
+        disclosureRepo.upsertMany([
+          {
+            ticker: '005930',
+            source: 'dart' as const,
+            kind: 'filing' as const,
+            title: '주요사항보고서',
+            url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260507000001',
+            publishedAt: '2026-05-06T15:00:00.000Z',
+            fetchedAt: '2026-05-07T04:00:00.000Z',
+          },
+        ]),
+      ),
+    };
+    const agentApp = Fastify({ logger: false });
+    await agentApp.register(stockRoutes, {
+      service,
+      disclosureRepo,
+      dartDisclosureService,
+      agentEventQueue,
+      now: () => new Date('2026-05-07T04:00:00.000Z'),
+    });
+
+    const res = await agentApp.inject({
+      method: 'POST',
+      url: '/stocks/005930/disclosures/refresh',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(agentEventQueue.snapshot()).toEqual([
+      expect.objectContaining({
+        id: 'evt-disclosure-1',
+        type: 'disclosure_detected',
+        ticker: '005930',
+        source: 'dart',
+        publishedAt: '2026-05-06T15:00:00.000Z',
+        firstSeenAt: '2026-05-07T04:00:00.000Z',
+        freshnessMs: 46_800_000,
+        confidence: 0.9,
+        reason: 'New DART filing detected: 주요사항보고서',
+      }),
+    ]);
+    expect(JSON.stringify(agentEventQueue.snapshot())).not.toContain('rcpNo=20260507000001');
+    await agentApp.close();
+  });
+
+  it('does not enqueue cached DART receipt URL variants for agent consumers', async () => {
+    const stockRepo = new StockRepository(db);
+    const sectorRepo = new SectorRepository(db);
+    const masterRepo = new MasterStockRepository(db);
+    const disclosureRepo = new StockDisclosureRepository(db);
+    const service = createStockService({ stockRepo, sectorRepo, masterRepo });
+    const agentEventQueue = createAgentEventQueue({
+      idFactory: () => 'evt-disclosure-duplicate',
+      now: () => '2026-05-07T04:00:00.000Z',
+    });
+    stockRepo.upsert({ ticker: '005930', name: '삼성전자', market: 'KOSPI' });
+    disclosureRepo.upsertMany([
+      {
+        ticker: '005930',
+        source: 'dart',
+        kind: 'filing',
+        title: '주요사항보고서',
+        url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260507000001&dcmNo=9876543',
+        publishedAt: '2026-05-06T15:00:00.000Z',
+        fetchedAt: '2026-05-07T03:59:00.000Z',
+      },
+    ]);
+    const dartDisclosureService = {
+      isConfigured: vi.fn(() => true),
+      refreshTicker: vi.fn(async () => [
+        {
+          id: 'filing-refreshed',
+          ticker: '005930',
+          source: 'dart' as const,
+          kind: 'filing' as const,
+          title: '주요사항보고서',
+          url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260507000001',
+          publishedAt: '2026-05-06T15:00:00.000Z',
+          fetchedAt: '2026-05-07T04:00:00.000Z',
+        },
+      ]),
+    };
+    const agentApp = Fastify({ logger: false });
+    await agentApp.register(stockRoutes, {
+      service,
+      disclosureRepo,
+      dartDisclosureService,
+      agentEventQueue,
+      now: () => new Date('2026-05-07T04:00:00.000Z'),
+    });
+
+    const res = await agentApp.inject({
+      method: 'POST',
+      url: '/stocks/005930/disclosures/refresh',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(agentEventQueue.snapshot()).toEqual([]);
+    await agentApp.close();
   });
 
   it('paginates disclosure items after fallback search links are stored', async () => {

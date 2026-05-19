@@ -556,6 +556,42 @@ describe('createKisOutboundLimiter', () => {
     expect(sleep).toHaveBeenCalledWith(80);
   });
 
+  it('exposes the global start gap in snapshots', () => {
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 20,
+      burst: 20,
+      globalMinStartGapMs: 200,
+    });
+
+    expect(limiter.snapshot()).toEqual(expect.objectContaining({
+      globalMinStartGapMs: 200,
+    }));
+  });
+
+  it('applies global start spacing across polling and ranking classes', async () => {
+    let now = 1_000;
+    const sleep = vi.fn(async (ms: number) => {
+      now += ms;
+    });
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 20,
+      burst: 20,
+      now: () => now,
+      sleep,
+      globalMinStartGapMs: 200,
+      classPolicies: {
+        polling: { minStartGapMs: 0 },
+        ranking: { minStartGapMs: 0 },
+      },
+    });
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'ranking' });
+
+    expect(sleep).toHaveBeenCalledWith(200);
+  });
+
   it('applies runtime class policy overrides to request start spacing', async () => {
     let now = 1_000;
     const sleep = vi.fn(async (ms: number) => {
@@ -722,6 +758,63 @@ describe('createKisOutboundLimiter', () => {
         background_backfill: 1,
       }),
     }));
+  });
+
+  it('records rolling KIS REST budget metrics by endpoint class', async () => {
+    let now = 10_000;
+    const limiter = createKisOutboundLimiter({
+      ratePerSec: 15,
+      burst: 15,
+      now: () => now,
+      sleep: vi.fn(async (ms: number) => {
+        now += ms;
+      }),
+      classPolicies: {
+        polling: { minStartGapMs: 0 },
+        ranking: { minStartGapMs: 0 },
+      },
+    });
+
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'polling' });
+    limiter.recordSuccess({ profileId: 'primary', endpointClass: 'polling' });
+    now += 1_000;
+    await limiter.acquire({ profileId: 'primary', endpointClass: 'ranking' });
+    limiter.recordFailure({
+      profileId: 'primary',
+      endpointClass: 'ranking',
+      error: new KisRestError('limited appSecret=SHOULD_NOT_APPEAR', 429, null, 'EGW00201', {
+        appKey: 'SHOULD_NOT_APPEAR',
+      }),
+    });
+
+    const budget = limiter.snapshot().budget;
+
+    expect(budget?.windows.sixtySec).toEqual(expect.objectContaining({
+      startedCount: 2,
+      successCount: 1,
+      failureCount: 1,
+      throttleCount: 1,
+      callPerSec: 0.03,
+      throttlePerMin: 1,
+    }));
+    expect(budget?.windows.sixtySec.byClass).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        endpointClass: 'polling',
+        priorityClass: 'polling',
+        startedCount: 1,
+        successCount: 1,
+        callPerSec: 0.02,
+      }),
+      expect.objectContaining({
+        endpointClass: 'ranking',
+        priorityClass: 'ranking',
+        startedCount: 1,
+        failureCount: 1,
+        throttleCount: 1,
+        throttlePerMin: 1,
+      }),
+    ]));
+    expect(JSON.stringify(budget)).not.toContain('SHOULD_NOT_APPEAR');
   });
 
   it('records throttle state before draining queued work for the same class', async () => {

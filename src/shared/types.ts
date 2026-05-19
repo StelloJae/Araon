@@ -136,7 +136,12 @@ export type Tier = 'realtime' | 'polling';
  */
 export type MarketStatus = 'pre-open' | 'open' | 'closed' | 'snapshot';
 
-export type PriceSource = 'rest' | 'ws-krx' | 'ws-integrated' | 'ws-nxt';
+export type PriceSource =
+  | 'rest'
+  | 'ws-krx'
+  | 'ws-integrated'
+  | 'ws-nxt'
+  | 'toss-fast-quote';
 
 export type MarketTapeIndicatorId = 'kospi' | 'kosdaq' | 'usdkrw' | 'wti';
 
@@ -157,6 +162,7 @@ export interface MarketTapeSummary {
 }
 
 export type MarketTopMoverDirection = 'gainers' | 'losers';
+export type MarketTopMoversMarket = 'kr' | 'us';
 
 export interface MarketTopMoverItem {
   rank: number;
@@ -168,13 +174,72 @@ export interface MarketTopMoverItem {
   volume: number | null;
 }
 
+export type MarketTopMoversSourcePhase =
+  | 'regular'
+  | 'premarket'
+  | 'opening_freeze'
+  | 'after_hours'
+  | 'stale_snapshot'
+  | 'unsupported';
+
+export type MarketTopMoversStopReason =
+  | 'complete'
+  | 'no_continuation'
+  | 'under_requested_limit'
+  | 'rate_limited'
+  | 'timeout'
+  | 'malformed_response'
+  | 'smaller_refresh_retained'
+  | 'unsupported_source'
+  | 'upstream_partial_limit_suspected';
+
+export interface MarketTopMoversRankingDiagnostic {
+  direction: MarketTopMoverDirection;
+  pagesAttempted: number;
+  rowsReceived: number;
+  rowsAccepted: number;
+  rowsPerPage: number[];
+  continuationValues: Array<string | null>;
+  stopReason: MarketTopMoversStopReason;
+  durationMs: number | null;
+}
+
 export interface MarketTopMoversResponse {
   generatedAt: string;
   fetchedAt: string | null;
   cacheTtlMs: number;
   refreshIntervalMs: number;
   staleAfterMs: number;
-  source: 'kis-ranking-auto' | 'kis-ranking-fluctuation' | 'kis-ranking-overtime-fluctuation';
+  source:
+    | 'kis-ranking-auto'
+    | 'kis-ranking-fluctuation'
+    | 'kis-ranking-premarket-expected'
+    | 'kis-ranking-overtime-fluctuation'
+    | 'kis-ranking-freeze'
+    | 'kis-ranking-stale-snapshot'
+    | 'kis-ranking-unsupported'
+    | 'toss-overview-ranking';
+  sourcePhase: MarketTopMoversSourcePhase;
+  sourceLabel: string;
+  sourceReason: string | null;
+  frozen: boolean;
+  lastGoodAgeMs: number | null;
+  partialReason:
+    | 'under_requested_limit'
+    | 'smaller_refresh_retained'
+    | 'rate_limited'
+    | 'source_unsupported'
+    | 'no_continuation'
+    | 'timeout'
+    | 'malformed_response'
+    | 'upstream_partial_limit_suspected'
+    | null;
+  stopReason: MarketTopMoversStopReason | null;
+  rankingDiagnostics: {
+    gainers: MarketTopMoversRankingDiagnostic | null;
+    losers: MarketTopMoversRankingDiagnostic | null;
+  };
+  rankingRateLimited: boolean;
   status: 'ready' | 'partial' | 'stale' | 'unconfigured' | 'cooldown' | 'error';
   message: string;
   cooldownUntil: string | null;
@@ -184,12 +249,47 @@ export interface MarketTopMoversResponse {
     losersCount: number;
     gainersComplete: boolean;
     losersComplete: boolean;
-    marketUniverse: 'kis-full-market-ranking';
+    marketUniverse: 'kis-full-market-ranking' | 'toss-web-ranking';
     guaranteedTop100: boolean;
     includesLocalFallback: boolean;
   };
   gainers: MarketTopMoverItem[];
   losers: MarketTopMoverItem[];
+}
+
+export type TossRealtimeRankingMarket = 'all' | 'kr' | 'us';
+export type TossRealtimeRankingTimestampStatus = 'fresh' | 'stale' | 'missing';
+
+export interface TossRealtimeRankingItem {
+  rank: number;
+  ticker: string;
+  productCode: string;
+  name: string;
+  market: string;
+  currency: string;
+  price: number | null;
+  changeAbs: number | null;
+  changePct: number | null;
+  volume: number | null;
+}
+
+export interface TossRealtimeRankingResponse {
+  generatedAt: string;
+  fetchedAt: string;
+  rankingDateTime: string | null;
+  rankingTimestampStatus: TossRealtimeRankingTimestampStatus;
+  source: 'toss-public-realtime-ranking';
+  sourceLabel: '토스 실시간 인기';
+  status: 'ready' | 'partial' | 'empty' | 'error';
+  message: string;
+  refreshIntervalMs: number;
+  coverage: {
+    requestedLimit: number;
+    returnedCount: number;
+    pricedCount: number;
+    market: TossRealtimeRankingMarket;
+  };
+  items: TossRealtimeRankingItem[];
 }
 
 export type VolumeBaselineStatus = 'collecting' | 'ready' | 'unavailable';
@@ -310,6 +410,9 @@ export type PriceCandleSource =
   | 'kis-daily'
   | 'kis-time-today'
   | 'kis-time-daily'
+  | 'toss-daily'
+  | 'toss-time-today'
+  | 'toss-time-daily'
   | 'mixed';
 
 /**
@@ -554,6 +657,152 @@ export interface ServerErrorEvent {
   retryable: boolean;
 }
 
+export type AgentEventNotificationType =
+  | 'news_detected'
+  | 'disclosure_detected'
+  | 'toss_signal_detected'
+  | 'market_movement_detected'
+  | 'watchlist_changed'
+  | 'position_changed'
+  | 'order_intent_created'
+  | 'order_intent_skipped'
+  | 'approval_requested'
+  | 'approval_granted'
+  | 'approval_denied'
+  | 'execution_locked'
+  | 'risk_check_completed'
+  | 'preview_created';
+
+export type AgentEventFreshness =
+  | 'unknown'
+  | 'near_realtime'
+  | 'recent'
+  | 'stale';
+
+export type AgentEventProductMarket =
+  | 'KOSPI'
+  | 'KOSDAQ'
+  | 'US'
+  | 'TOSS_ONLY'
+  | 'UNKNOWN';
+
+export interface AgentEventProductIdentityPayload {
+  productCode: string | null;
+  krTicker: string | null;
+  market: AgentEventProductMarket | null;
+  displayName: string | null;
+}
+
+export interface AgentEventRelatedIdsPayload {
+  watchlistId: string | null;
+  holdingId: string | null;
+  orderIntentId: string | null;
+  approvalId: string | null;
+}
+
+export type AgentEventDecision = 'buy' | 'sell' | 'observe' | 'ignore';
+
+export interface AgentEventDecisionSupportPayload {
+  decision: AgentEventDecision;
+  policyVersion: string;
+  score: number;
+  strategyLabel: string;
+  riskLabel: string;
+  evaluationLabels: string[];
+  readinessLabels: string[];
+  explanationLabels: string[];
+  liveExecutionLocked: true;
+}
+
+export interface AgentEventNotificationPayload {
+  id: string;
+  type: AgentEventNotificationType;
+  ticker: string;
+  product: AgentEventProductIdentityPayload;
+  source: string;
+  publishedAt: string | null;
+  firstSeenAt: string;
+  freshnessMs: number | null;
+  freshness: AgentEventFreshness;
+  relevance: number | null;
+  confidence: number;
+  reason: string;
+  payloadRef: string | null;
+  rawPayloadRedacted: true;
+  relatedIds: AgentEventRelatedIdsPayload;
+  skipReason: string | null;
+  createdAt: string;
+  decisionSupport?: AgentEventDecisionSupportPayload;
+}
+
+/**
+ * Agent-facing signal pushed to the browser after server-side dedupe.
+ * Provider dedupe keys and raw payloads are intentionally omitted.
+ */
+export interface AgentEventNotificationEvent {
+  type: 'agent-event';
+  id: number;
+  event: AgentEventNotificationPayload;
+}
+
+export type TossSseRefreshResource =
+  | 'quote'
+  | 'pending-orders'
+  | 'completed-orders'
+  | 'account-summary'
+  | 'portfolio-positions'
+  | 'user-notifications'
+  | 'preferences'
+  | 'icons';
+
+export type TossSseRefreshRecordedResult =
+  | 'refreshed'
+  | 'ignored'
+  | 'throttled'
+  | 'in_flight'
+  | 'failed';
+
+export interface TossSseRefreshResultPayload {
+  id: string;
+  resource: TossSseRefreshResource;
+  ticker: string | null;
+  sourceType: string;
+  receivedAt: string;
+  result: TossSseRefreshRecordedResult;
+  reason: string;
+  recordedAt: string;
+  error: string | null;
+}
+
+/**
+ * Sanitized Toss SSE -> REST refresh outcome pushed for operator UI refresh.
+ * Raw SSE keys, Toss session material, account identifiers, and provider
+ * responses are intentionally omitted.
+ */
+export interface TossSseRefreshResultEvent {
+  type: 'toss-refresh-result';
+  id: number;
+  result: TossSseRefreshResultPayload;
+}
+
+export interface TossUserNotificationPayload {
+  id: string;
+  ticker: string | null;
+  receivedAt: string;
+  sourceType: 'web-push';
+  reason: string;
+}
+
+/**
+ * Sanitized Toss user notification presence pushed to the browser.
+ * Raw web-push title/message/content identifiers are intentionally omitted.
+ */
+export interface TossUserNotificationEvent {
+  type: 'toss-user-notification';
+  id: number;
+  notification: TossUserNotificationPayload;
+}
+
 /**
  * Discriminated union over every event the server may emit on `/events`.
  * Narrow on `type` at the call site to get exhaustive handling.
@@ -562,4 +811,7 @@ export type SSEEvent =
   | PriceUpdateEvent
   | SnapshotEvent
   | HeartbeatEvent
-  | ServerErrorEvent;
+  | ServerErrorEvent
+  | AgentEventNotificationEvent
+  | TossSseRefreshResultEvent
+  | TossUserNotificationEvent;

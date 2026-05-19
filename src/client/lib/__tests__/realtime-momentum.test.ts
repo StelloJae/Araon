@@ -31,6 +31,7 @@ function evalSignal(opts: {
   lastSignalAt?: number | null;
   activeSignalType?: 'scalp' | 'strong_scalp' | 'overheat' | 'trend';
   dailyChangePct?: number;
+  minimumMomentumPct?: number;
 }) {
   return evaluateMomentumSignal({
     ticker: '005930',
@@ -54,6 +55,7 @@ function evalSignal(opts: {
             highSinceSignal: 101_000,
             signalAt: NOW - 10_000,
           },
+    minimumMomentumPct: opts.minimumMomentumPct,
   });
 }
 
@@ -89,6 +91,28 @@ describe('evaluateMomentumSignal', () => {
       momentumWindow: '10s',
     });
     expect(isPrimaryRealtimeSignal(got.signal!.signalType)).toBe(true);
+  });
+
+  it('respects the user surge threshold above the built-in scalp thresholds', () => {
+    const got = evalSignal({
+      readings: [reading('10s', 1.2), reading('30s', 2.4)],
+      previous: { '10s': 0.7, '30s': 1.7 },
+      minimumMomentumPct: 3,
+    });
+    expect(got).toMatchObject({ kind: 'none', reason: 'no_crossing' });
+  });
+
+  it('still creates a realtime signal once the user surge threshold is crossed', () => {
+    const got = evalSignal({
+      readings: [reading('30s', 3.1)],
+      previous: { '30s': 2.9 },
+      minimumMomentumPct: 3,
+    });
+    expect(got).toMatchObject({ kind: 'spawn' });
+    expect(got.signal).toMatchObject({
+      signalType: 'strong_scalp',
+      momentumWindow: '30s',
+    });
   });
 
   it('creates a scalp signal on a 20s +1.3% crossing', () => {

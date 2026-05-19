@@ -1,9 +1,13 @@
 # KIS OpenAPI Setup Guide
 
-Araon uses a **live KIS OpenAPI app key and app secret** from Korea Investment
-& Securities. Araon itself is read-only and does not place orders, but the key
-is still personal. Do not paste it into GitHub issues, screenshots, or shared
-documents.
+This guide is optional. Araon now starts with Toss-first market data and can be
+used without KIS credentials. Follow this only if you want to enable the
+low-latency KIS WebSocket realtime rail for Korean stocks.
+
+The optional KIS rail uses a **live KIS OpenAPI app key and app secret** from
+Korea Investment & Securities. Araon itself is read-only and does not place
+orders, but the key is still personal. Do not paste it into GitHub issues,
+screenshots, or shared documents.
 
 Official links:
 
@@ -19,17 +23,22 @@ Developers search box and look for `API신청`, `서비스 신청`, or `Open API
 2. Find the API/service application page.
 3. Apply for the live OpenAPI service.
 4. Copy the issued `App Key` and `App Secret`.
-5. Paste them into Araon's first-run setup screen.
+5. Paste them into Araon's Settings connection screen when enabling the optional
+   KIS realtime rail.
 
-Araon intentionally does not expose a paper-trading option in the public
-onboarding flow. Paper credentials can be more rate-limited and may behave
+Araon intentionally does not expose a paper-trading option in the public KIS
+setup flow. Paper credentials can be more rate-limited and may behave
 differently by endpoint, which makes the monitoring experience misleading.
 
 ## What Araon Uses
 
-Araon is an observation dashboard. It uses quote, watchlist, master catalog,
-WebSocket realtime, daily candle, and selected-ticker minute candle endpoints.
-It does not call order APIs.
+Araon is an observation dashboard. Toss is the primary path for market data and
+account-aware read-only surfaces. The optional KIS rail is used for capped
+WebSocket realtime ticks and selected fallback metadata/chart paths while the
+legacy fallback remains isolated. KIS REST polling fallback is disabled by
+default and only opens when `ARAON_KIS_POLLING_FALLBACK_ENABLED=1` is set and
+Toss quote polling is disabled or repeatedly failing. It does not call order
+APIs.
 
 ## After Setup
 

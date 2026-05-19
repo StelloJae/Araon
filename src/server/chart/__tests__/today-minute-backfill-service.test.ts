@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PriceCandle } from '@shared/types.js';
+import type { PriceCandle, PriceCandleSource } from '@shared/types.js';
 import { createTodayMinuteBackfillService } from '../today-minute-backfill-service';
 
-function candle(bucketAt: string, close = 70_000): PriceCandle {
+function candle(
+  bucketAt: string,
+  close = 70_000,
+  source: PriceCandleSource = 'kis-time-today',
+): PriceCandle {
   return {
     ticker: '005930',
     interval: '1m',
@@ -14,7 +18,7 @@ function candle(bucketAt: string, close = 70_000): PriceCandle {
     close,
     volume: 10,
     sampleCount: 1,
-    source: 'kis-time-today',
+    source,
     isPartial: false,
     createdAt: bucketAt,
     updatedAt: bucketAt,
@@ -107,5 +111,27 @@ describe('today minute backfill service', () => {
       inserted: 2,
       updated: 0,
     });
+  });
+
+  it('reports Toss today-minute source when Toss supplies the stored candles', async () => {
+    const fetchMinuteCandles = vi.fn().mockResolvedValueOnce([
+      candle('2026-05-06T06:29:00.000Z', 70_100, 'toss-time-today'),
+      candle('2026-05-06T06:30:00.000Z', 70_200, 'toss-time-today'),
+    ]);
+    const service = createTodayMinuteBackfillService({
+      repo: {
+        bulkUpsertCandles: vi.fn(async () => undefined),
+        countExistingCandles: vi.fn(() => 0),
+      },
+      fetchMinuteCandles,
+    });
+
+    const result = await service.backfillTodayMinuteCandles({
+      ticker: '005930',
+      now: new Date('2026-05-06T11:10:00.000Z'),
+      maxPages: 1,
+    });
+
+    expect(result.source).toBe('toss-time-today');
   });
 });

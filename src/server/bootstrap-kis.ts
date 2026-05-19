@@ -66,6 +66,9 @@ export interface KisRuntimeStaticDeps {
   snapshotStore: SnapshotStore;
   stockRepo: StockRepository;
   favoriteRepo: FavoriteRepository;
+  shouldSkipKisPolling?: (stock: Stock) => boolean;
+  shouldStartKisPollingScheduler?: () => boolean;
+  onRealtimePriceApplied?: (price: Price) => void;
 }
 
 export interface KisRuntimeRef {
@@ -164,6 +167,12 @@ export function createKisRuntimeRef(
   return { get: () => state, start, stop, reset };
 }
 
+export function shouldStartLegacyKisPollingScheduler(
+  deps: Pick<KisRuntimeStaticDeps, 'shouldStartKisPollingScheduler'>,
+): boolean {
+  return deps.shouldStartKisPollingScheduler?.() === true;
+}
+
 // === defaultActuallyStart =====================================================
 //
 // Production wiring. Not covered by unit tests here — Task 6 smoke-tests it
@@ -204,7 +213,7 @@ import {
   TOKEN_ENDPOINT_PATH,
   WS_MAX_SUBSCRIPTIONS,
 } from '@shared/kis-constraints.js';
-import type { Price } from '@shared/types.js';
+import type { Price, Stock } from '@shared/types.js';
 
 import { createKisAuth } from './kis/kis-auth.js';
 import { createKisRestClient } from './kis/kis-rest-client.js';
@@ -364,7 +373,7 @@ export function buildDefaultKisOutboundLimiterOptions(
   return {
     ratePerSec,
     burst: Math.ceil(ratePerSec),
-    globalMinStartGapMs: 25,
+    globalMinStartGapMs: 200,
     recoveryBackoffMs: [150, 300, 700, 1_500, 3_000, 5_000, 10_000],
     recoveryRatePerSec: Math.min(4, ratePerSec),
     recoveryStableMs: 30_000,
@@ -374,7 +383,7 @@ export function buildDefaultKisOutboundLimiterOptions(
       foreground: { minStartGapMs: 80, maxInFlight: 2 },
       polling: { minStartGapMs: 350, maxInFlight: 2, recoveryRatePerSec: 3 },
       ranking: {
-        minStartGapMs: 750,
+        minStartGapMs: 1_000,
         maxInFlight: 1,
         recoveryRatePerSec: 1,
         recoveryBackoffMs: [1_500, 3_000, 5_000, 10_000],
@@ -623,9 +632,10 @@ export async function defaultActuallyStart(
         ? null
         : 'apply_disabled';
     },
-    onPriceApplied: (_price, stats) => {
+    onPriceApplied: (price, stats) => {
       const limitReason = currentSessionLimitReason(stats);
       if (limitReason !== null) disableSessionForLimit(limitReason);
+      deps.onRealtimePriceApplied?.(price);
     },
   });
   bridgeForSessionCleanup = bridge;
@@ -687,7 +697,7 @@ export async function defaultActuallyStart(
         wsConnected: bridge.wsState() === 'connected',
         realtimeTickers: new Set(tierManager.getAssignment().realtimeTickers),
         currentPrice: deps.priceStore.getPrice(stock.ticker),
-      });
+      }) && deps.shouldSkipKisPolling?.(stock) !== true;
     },
   });
 
@@ -750,7 +760,11 @@ export async function defaultActuallyStart(
     outboundLimiter.setClassPolicyOverride?.('polling', null);
   }
 
-  pollingScheduler.start();
+  if (shouldStartLegacyKisPollingScheduler(deps)) {
+    pollingScheduler.start();
+  } else {
+    log.info('legacy KIS polling scheduler disabled by default');
+  }
   const stopSnapshotTimer = deps.snapshotStore.startPeriodicSave(deps.priceStore);
   marketHoursScheduler.start();
   const governorAimdTimer = setInterval(syncGovernorAimdRuntime, 60_000);

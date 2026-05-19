@@ -44,6 +44,9 @@ export const settingsSchema = z.object({
   applyTicksToPriceStore: z.boolean().default(true),
   backgroundDailyBackfillEnabled: z.boolean().default(true),
   backgroundDailyBackfillRange: z.enum(['1m', '3m', '6m', '1y']).default('3m'),
+  tossQuotePollingEnabled: z.boolean().default(true),
+  tossQuotePollingIntervalMs: z.number().int().min(1_000).max(60_000).default(3_000),
+  tossQuotePollingBatchSize: z.number().int().min(1).max(200).default(100),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -58,6 +61,9 @@ export const DEFAULT_SETTINGS: Settings = {
   applyTicksToPriceStore: true,
   backgroundDailyBackfillEnabled: true,
   backgroundDailyBackfillRange: '3m',
+  tossQuotePollingEnabled: true,
+  tossQuotePollingIntervalMs: 3_000,
+  tossQuotePollingBatchSize: 100,
 };
 
 export type SettingsListener = (settings: Settings) => void;

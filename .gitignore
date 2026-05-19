@@ -23,6 +23,7 @@ dist/
 .omc/project-memory.json
 .omc/notepad.md
 .claude/
+.superpowers/
 .playwright-mcp/
 
 # app runtime data (encrypted credentials, user settings, sqlite)

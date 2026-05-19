@@ -111,6 +111,15 @@ interface FavoriteRow {
   added_at: string;
 }
 
+interface WatchlistSyncProvenanceRow {
+  product_code: string;
+  kr_ticker: string | null;
+  source: string;
+  state: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface PriceSnapshotRow {
   ticker: string;
   price: number;
@@ -297,6 +306,29 @@ function rowToFavorite(row: FavoriteRow): Favorite {
     ticker: row.ticker,
     tier: row.tier as Tier,
     addedAt: row.added_at,
+  };
+}
+
+export type WatchlistSyncProvenanceSource = 'holding_auto';
+export type WatchlistSyncProvenanceState = 'active' | 'removed';
+
+export interface WatchlistSyncProvenance {
+  productCode: string;
+  krTicker: string | null;
+  source: WatchlistSyncProvenanceSource;
+  state: WatchlistSyncProvenanceState;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToWatchlistSyncProvenance(row: WatchlistSyncProvenanceRow): WatchlistSyncProvenance {
+  return {
+    productCode: row.product_code,
+    krTicker: row.kr_ticker,
+    source: row.source as WatchlistSyncProvenanceSource,
+    state: row.state as WatchlistSyncProvenanceState,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -630,6 +662,69 @@ export class FavoriteRepository {
 
   delete(ticker: string): void {
     this.db.prepare('DELETE FROM favorites WHERE ticker = ?').run(ticker);
+  }
+}
+
+// === WatchlistSyncProvenanceRepository =======================================
+
+export class WatchlistSyncProvenanceRepository {
+  private readonly db: Database.Database;
+
+  constructor(db: Database.Database) {
+    this.db = db;
+  }
+
+  findByProductCode(productCode: string): WatchlistSyncProvenance | null {
+    const row = this.db
+      .prepare<[string], WatchlistSyncProvenanceRow>(
+        `SELECT product_code, kr_ticker, source, state, created_at, updated_at
+         FROM watchlist_sync_provenance
+         WHERE product_code = ?`,
+      )
+      .get(productCode);
+    return row !== undefined ? rowToWatchlistSyncProvenance(row) : null;
+  }
+
+  findActiveHoldingAuto(): WatchlistSyncProvenance[] {
+    const rows = this.db
+      .prepare<[], WatchlistSyncProvenanceRow>(
+        `SELECT product_code, kr_ticker, source, state, created_at, updated_at
+         FROM watchlist_sync_provenance
+         WHERE source = 'holding_auto' AND state = 'active'
+         ORDER BY created_at`,
+      )
+      .all();
+    return rows.map(rowToWatchlistSyncProvenance);
+  }
+
+  markHoldingAutoActive(input: {
+    productCode: string;
+    krTicker: string | null;
+    now: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO watchlist_sync_provenance (
+           product_code, kr_ticker, source, state, created_at, updated_at
+         )
+         VALUES (?, ?, 'holding_auto', 'active', ?, ?)
+         ON CONFLICT(product_code) DO UPDATE SET
+           kr_ticker = excluded.kr_ticker,
+           source = 'holding_auto',
+           state = 'active',
+           updated_at = excluded.updated_at`,
+      )
+      .run(input.productCode, input.krTicker, input.now, input.now);
+  }
+
+  markRemoved(productCode: string, now: string): void {
+    this.db
+      .prepare(
+        `UPDATE watchlist_sync_provenance
+         SET state = 'removed', updated_at = ?
+         WHERE product_code = ? AND source = 'holding_auto'`,
+      )
+      .run(now, productCode);
   }
 }
 

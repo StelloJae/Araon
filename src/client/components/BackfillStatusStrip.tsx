@@ -181,7 +181,7 @@ export function describeDailyBackfillStatus(
   if (health.backfill.lastSkippedReason === 'no_stale_tickers') {
     return {
       label: '과거 일봉 자동 보강 최신 상태',
-      detail: `${latestDaily} · 보강 필요한 추적 종목이 없습니다`,
+      detail: `${latestDaily} · 보강 필요한 화면 종목이 없습니다`,
       compactLabel: '일봉 최신',
       compactDetail: formatCompactLatestDaily(daily?.newestBucketAt),
       tone: 'ok',
@@ -189,7 +189,7 @@ export function describeDailyBackfillStatus(
   }
   return {
     label: '과거 일봉 자동 보강 대기',
-    detail: `${latestDaily} · favorites와 추적 종목을 낮은 속도로 계속 보강 · 오늘 호출 ${calls}`,
+    detail: `${latestDaily} · 즐겨찾기와 화면 종목을 낮은 속도로 계속 보강 · 오늘 호출 ${calls}`,
     compactLabel: '일봉 대기',
     compactDetail: calls,
     tone: 'muted',

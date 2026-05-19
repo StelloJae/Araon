@@ -16,19 +16,19 @@
   ·
   <a href="INSTALL.md">Install guide</a>
   ·
-  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.3">v1.1.3 release</a>
+  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.2.0">v1.2.0 release</a>
 </p>
 
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933">
-  <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.3-111827">
+  <img alt="npm" src="https://img.shields.io/badge/npm-v1.2.0-111827">
 </p>
 
 Araon is a personal observation dashboard for Korean stock traders who want a
-quiet second screen. It runs on your own machine, connects to KIS OpenAPI with
-your credentials, and keeps the names you care about visible during the trading
-day.
+quiet second screen. It runs on your own machine, uses Toss-first market data
+and optional Toss login for account-aware read-only surfaces, and keeps the
+names you care about visible during the trading day.
 
 It is not a broker, trading bot, or advisory product. Araon never places orders
 and does not manage your account. The intent is simple: keep the important
@@ -56,30 +56,42 @@ Araon is built for people who:
 Araon keeps a local watchlist and combines the views that matter while you are
 watching the market:
 
-- realtime KIS integrated quotes for up to 40 tracked/favorite stocks
-- REST polling fallback when realtime data is quiet or unavailable
+- Toss public quotes, search, TOP100/movers, and chart candles as the primary
+  market-data path
+- optional Toss QR login for account summary, portfolio, watchlist, orders,
+  transactions, cash overview, and authenticated notification triggers
+- Toss realtime handling as SSE thin notifications plus REST refresh, not a
+  WebSocket price-tick feed
+- optional KIS realtime WebSocket rail for up to 40 high-priority Korean stocks
+  when KIS credentials are configured
 - intraday price movement and persisted local candle history
-- KIS daily candle backfill for 1D, 1W, and 1M chart views
+- Toss-first daily and selected-minute candle backfill for chart views
 - selected-ticker today-minute backfill when the guarded route allows it
+- compact product icons, Toss-watchlist-aware favorites, and portfolio-aware
+  account rail surfaces
+- agent decision-support views for detected candidates, simulated previews,
+  risk/audit context, and an explicit live-trading lock
 - news and disclosure links, with optional Naver Search and OpenDART enrichment
 - local, desktop, sound, and optional Telegram alerts
 - data-health diagnostics so you can see what Araon is collecting
 
 All runtime data stays local. Fresh installs do not contact KIS until you add
-credentials.
+KIS credentials. Toss account surfaces stay locked until you explicitly
+complete Toss QR login.
 
 ## First Five Minutes
 
 ```txt
 1. Run npx @stellojae/araon@latest
 2. Open the localhost page
-3. Enter your KIS app key and app secret
-4. Add your first stock from search
-5. Open the stock modal and check realtime, chart, news, and disclosures
+3. Add your first stock from search
+4. Optionally complete Toss QR login from Settings for account-aware read-only views
+5. Optionally add KIS credentials if you want the low-latency 40-slot realtime rail
 ```
 
-If you do not have a KIS key yet, start with the
-[KIS OpenAPI setup guide](docs/guides/kis-openapi-setup.md).
+If you want the optional KIS realtime rail, start with the
+[KIS OpenAPI setup guide](docs/guides/kis-openapi-setup.md). You can use the
+Toss-first dashboard without a KIS key.
 
 ## Install
 
@@ -101,25 +113,29 @@ npm install -g @stellojae/araon@latest
 araon
 ```
 
-On first launch, Araon asks for your live KIS OpenAPI app key and app secret.
-Until those are saved locally, KIS realtime, polling, master refresh, and
-backfill remain inactive.
+On first launch, Araon can run without brokerage credentials. Toss public market
+data is the default path. Settings lets you complete Toss QR login for
+account-aware read-only surfaces, and lets you add KIS credentials only if you
+want the optional low-latency realtime rail.
 
 ## First Setup
 
 1. Run `npx @stellojae/araon@latest`.
 2. Open the localhost URL if the browser does not open automatically.
-3. Enter your KIS OpenAPI credentials.
-4. Add stocks through search.
-5. Mark the names you care about as favorites.
-6. Leave Araon running while you monitor the market.
+3. Add stocks through search.
+4. Mark the names you care about as favorites.
+5. Complete Toss QR login if you want account, portfolio, watchlist, order, and
+   transaction views.
+6. Add KIS credentials only if you want the optional low-latency realtime rail.
+7. Leave Araon running while you monitor the market.
 
-After credentials are configured, Araon manages the normal monitoring workflow
-for you:
+Araon manages the normal monitoring workflow for you:
 
-- integrated realtime quotes are enabled
-- REST polling remains available as fallback
-- daily candle backfill runs outside market hours
+- Toss quote refresh is the primary price-refresh path
+- Toss SSE notifications act as refresh triggers when a Toss session exists
+- REST refresh remains available when realtime notifications are quiet
+- daily candle backfill runs through guarded Toss-first chart paths
+- KIS WebSocket slots are used only when optional KIS credentials are configured
 
 You can pause realtime or backfill from Settings if something looks wrong.
 
@@ -172,17 +188,18 @@ Linux:   ~/.local/share/araon
 
 When running from source, development data usually lives under `data/`.
 
-Do not commit or share `.env`, `data/`, `credentials.enc`, SQLite databases, KIS
-credentials, access tokens, or approval keys.
+Do not commit or share `.env`, `data/`, `credentials.enc`, SQLite databases,
+Toss session material, KIS credentials, access tokens, approval keys, or account
+and order identifiers.
 
 ## Desktop App
 
 Desktop artifacts are attached to the GitHub release:
 
-- `Araon-1.1.3-arm64.dmg`
-- `Araon-1.1.3-arm64-mac.zip`
-- `Araon-Setup-1.1.3-x64.exe`
-- `Araon-1.1.3-x64-portable.exe`
+- `Araon-1.2.0-arm64.dmg`
+- `Araon-1.2.0-arm64-mac.zip`
+- `Araon-Setup-1.2.0-x64.exe`
+- `Araon-1.2.0-x64-portable.exe`
 
 The desktop build is still unsigned for public distribution, so macOS may show
 a Gatekeeper warning. For now, the npm/CLI path is the most reliable way to run
@@ -191,12 +208,21 @@ Araon.
 ## Useful Commands
 
 ```bash
-araon --no-open          # start without opening a browser
-araon --port 3910        # use a specific port
-araon --data-dir ~/Araon # choose where local data is stored
+araon                                      # start Araon, serve the built UI, open a browser
+araon --no-open                            # start without opening a browser
+araon --port 3910                          # use a specific port
+araon --data-dir ~/Araon                   # choose where local data is stored
+araon doctor --no-live                     # check local install, build, data dir, and sessions
+araon status                               # show the last launched local URL/runtime state
+araon open                                 # open the last launched local UI
+araon reset --session                      # clear local Toss session/cache state only
+araon reset --data --confirm DELETE_LOCAL_ARAON_DATA
 ```
 
-Stop Araon with `Ctrl+C` in the terminal where it is running.
+`doctor` is local/no-live and does not call Toss, KIS, Naver, or OpenDART.
+`reset --data` removes the selected local Araon data directory, so it requires
+the explicit confirmation string shown above. Stop Araon with `Ctrl+C` in the
+terminal where it is running.
 
 ## Development
 
@@ -234,8 +260,8 @@ npm run build
 - Full-watchlist historical minute backfill is intentionally not automatic.
 - Daily backfill is guarded and does not run during the trading window.
 - Volume-surge ratios appear only after enough local baseline data exists.
-- KIS, Naver, OpenDART, and Telegram can each have their own quota and policy
-  limits.
+- Toss, KIS, Naver, OpenDART, and Telegram can each have their own quota and
+  policy limits.
 
 ## License
 

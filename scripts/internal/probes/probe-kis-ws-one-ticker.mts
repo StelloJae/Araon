@@ -14,17 +14,17 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
-import { createFileCredentialStore } from '../src/server/credential-store.js';
+import { createFileCredentialStore } from '../../../src/server/credential-store.js';
 import {
   createApprovalIssuer,
   type ApprovalRequest,
-} from '../src/server/kis/kis-approval.js';
-import { createKisRestClient } from '../src/server/kis/kis-rest-client.js';
+} from '../../../src/server/kis/kis-approval.js';
+import { createKisRestClient } from '../../../src/server/kis/kis-rest-client.js';
 import {
   parseKisTickFrame,
   type KisRealtimeTick,
-} from '../src/server/kis/kis-tick-parser.js';
-import { createKisWsClient } from '../src/server/kis/kis-ws-client.js';
+} from '../../../src/server/kis/kis-tick-parser.js';
+import { createKisWsClient } from '../../../src/server/kis/kis-ws-client.js';
 
 const TR_ID = 'H0UNCNT0';
 const TICKER = '005930';

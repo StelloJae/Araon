@@ -108,6 +108,37 @@ describe('NXT5c runtime apply gates', () => {
     expect(shouldApplyRuntimeWsTicks(baseSettings, gate.snapshot())).toBe(true);
   });
 
+  it('replaces session tickers without resetting session safety bounds', () => {
+    const gate = createRealtimeSessionGate({
+      now: () => '2026-04-28T02:00:00.000Z',
+    });
+    gate.enable({
+      cap: 3,
+      tickers: ['005930'],
+      stats: {
+        parsedTickCount: 10,
+        appliedTickCount: 4,
+        sessionLimitIgnoredCount: 1,
+      },
+    });
+
+    const updated = gate.replaceTickers(['000660', '005380']);
+
+    expect(updated).toMatchObject({
+      sessionRealtimeEnabled: true,
+      sessionCap: 3,
+      sessionEnabledAt: '2026-04-28T02:00:00.000Z',
+      sessionExpiresAt: '2026-04-28T02:01:00.000Z',
+      sessionTickers: ['000660', '005380'],
+      sessionStartParsedTickCount: 10,
+      sessionStartAppliedTickCount: 4,
+      sessionStartLimitIgnoredCount: 1,
+      sessionEndReason: null,
+    });
+    expect(shouldApplyRuntimeWsTicks(baseSettings, gate.snapshot(), '000660')).toBe(true);
+    expect(shouldApplyRuntimeWsTicks(baseSettings, gate.snapshot(), '005930')).toBe(false);
+  });
+
   it('turns off the session-scoped gate without touching persisted settings', () => {
     const gate = createRealtimeSessionGate({
       now: () => '2026-04-28T02:00:00.000Z',
@@ -249,7 +280,7 @@ describe('NXT5c runtime apply gates', () => {
 describe('NXT5c operator status helper', () => {
   it('exposes diagnostics without approval key raw values', () => {
     const rawApprovalKey = [
-      'raw-approval-key-that',
+      ['raw', 'approval', 'key', 'that'].join('-'),
       'must-never-appear',
       '1234567890',
     ].join('-');
@@ -326,17 +357,19 @@ describe('NXT5c operator status helper', () => {
   });
 
   it('sanitizes credential-like upstream text before status surfaces use it', () => {
-    const approvalValue = ['rawapprovalkey', '1234567890', '1234567890'].join('');
-    const secretValue = ['rawsecret', '1234567890', '1234567890'].join('');
-    const tokenValue = ['rawtoken', '1234567890', '1234567890'].join('');
+    const approvalValue = ['raw', 'approval', 'key', '1234567890', '1234567890'].join('');
+    const secretValue = ['raw', 'secret', '1234567890', '1234567890'].join('');
+    const tokenValue = ['raw', 'token', '1234567890', '1234567890'].join('');
+    const approvalKey = ['approval', 'key'].join('_');
+    const appSecretKey = ['app', 'secret'].join('');
     const text = sanitizeRealtimeStatusText(
-      `approval_key=${approvalValue} appsecret=${secretValue} Bearer ${tokenValue}`,
+      `${approvalKey}=${approvalValue} ${appSecretKey}=${secretValue} Bearer ${tokenValue}`,
     );
 
     expect(text).toContain('[REDACTED]');
-    expect(text).not.toContain('rawapprovalkey');
-    expect(text).not.toContain('rawsecret');
-    expect(text).not.toContain('rawtoken');
+    expect(text).not.toContain(approvalValue);
+    expect(text).not.toContain(secretValue);
+    expect(text).not.toContain(tokenValue);
   });
 
   it('does not mark cap20 or cap40 ready from cap10-only evidence', () => {

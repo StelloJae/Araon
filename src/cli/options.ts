@@ -23,7 +23,39 @@ export interface AraonCliVersion {
   version: string;
 }
 
-export type AraonCliOptions = AraonCliRunOptions | AraonCliHelp | AraonCliVersion;
+export interface AraonCliDoctorOptions {
+  kind: 'doctor';
+  dataDir: string | undefined;
+  json: boolean;
+  noLive: true;
+}
+
+export interface AraonCliStatusOptions {
+  kind: 'status';
+  dataDir: string | undefined;
+  json: boolean;
+}
+
+export interface AraonCliOpenOptions {
+  kind: 'open';
+  dataDir: string | undefined;
+}
+
+export interface AraonCliResetOptions {
+  kind: 'reset';
+  dataDir: string | undefined;
+  target: 'session' | 'data';
+  confirm: string | undefined;
+}
+
+export type AraonCliOptions =
+  | AraonCliRunOptions
+  | AraonCliHelp
+  | AraonCliVersion
+  | AraonCliDoctorOptions
+  | AraonCliStatusOptions
+  | AraonCliOpenOptions
+  | AraonCliResetOptions;
 
 interface ParseContext {
   version: string;
@@ -41,6 +73,11 @@ export function buildHelpText(version: string): string {
     '',
     'Usage:',
     '  araon [options]',
+    '  araon doctor [--no-live] [--json] [--data-dir <path>]',
+    '  araon status [--json] [--data-dir <path>]',
+    '  araon open [--data-dir <path>]',
+    '  araon reset --session [--data-dir <path>]',
+    '  araon reset --data --confirm DELETE_LOCAL_ARAON_DATA [--data-dir <path>]',
     '',
     'Options:',
     '  --no-open                         Start the server without opening a browser',
@@ -55,6 +92,16 @@ export function buildHelpText(version: string): string {
 }
 
 export function parseAraonCliArgs(args: string[], context: ParseContext): AraonCliOptions {
+  const command = args[0];
+  if (command === 'doctor' && isHelpOnly(args.slice(1))) return { kind: 'help', text: buildDoctorHelpText() };
+  if (command === 'status' && isHelpOnly(args.slice(1))) return { kind: 'help', text: buildStatusHelpText() };
+  if (command === 'open' && isHelpOnly(args.slice(1))) return { kind: 'help', text: buildOpenHelpText() };
+  if (command === 'reset' && isHelpOnly(args.slice(1))) return { kind: 'help', text: buildResetHelpText() };
+  if (command === 'doctor') return parseDoctorArgs(args.slice(1));
+  if (command === 'status') return parseStatusArgs(args.slice(1));
+  if (command === 'open') return parseOpenArgs(args.slice(1));
+  if (command === 'reset') return parseResetArgs(args.slice(1));
+
   const run: AraonCliRunOptions = {
     kind: 'run',
     host: '127.0.0.1',
@@ -112,6 +159,150 @@ export function parseAraonCliArgs(args: string[], context: ParseContext): AraonC
   }
 
   return run;
+}
+
+function buildDoctorHelpText(): string {
+  return [
+    'Usage:',
+    '  araon doctor [--no-live] [--json] [--data-dir <path>]',
+    '',
+    'Checks the local Node version, packaged frontend, CLI bundle, migrations,',
+    'data directory, Toss session presence, and launcher state without live',
+    'provider calls.',
+  ].join('\n');
+}
+
+function buildStatusHelpText(): string {
+  return [
+    'Usage:',
+    '  araon status [--json] [--data-dir <path>]',
+    '',
+    'Summarizes the last launched localhost URL, process state, data directory,',
+    'and launcher heartbeat status.',
+  ].join('\n');
+}
+
+function buildOpenHelpText(): string {
+  return [
+    'Usage:',
+    '  araon open [--data-dir <path>]',
+    '',
+    'Opens the last launched Araon localhost UI from launcher state.',
+  ].join('\n');
+}
+
+function buildResetHelpText(): string {
+  return [
+    'Usage:',
+    '  araon reset --session [--data-dir <path>]',
+    '  araon reset --data --confirm DELETE_LOCAL_ARAON_DATA [--data-dir <path>]',
+    '',
+    'Clears local session/cache state or, with explicit confirmation, removes',
+    'the selected local Araon data directory.',
+  ].join('\n');
+}
+
+function isHelpOnly(args: string[]): boolean {
+  return args.length === 1 && (args[0] === '--help' || args[0] === '-h');
+}
+
+function parseDoctorArgs(args: string[]): AraonCliDoctorOptions {
+  let dataDir: string | undefined;
+  let json = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--no-live') continue;
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
+    if (arg === '--data-dir') {
+      dataDir = readValue(args, i, arg);
+      i += 1;
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg ?? ''}`);
+  }
+
+  return { kind: 'doctor', dataDir, json, noLive: true };
+}
+
+function parseStatusArgs(args: string[]): AraonCliStatusOptions {
+  let dataDir: string | undefined;
+  let json = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
+    if (arg === '--data-dir') {
+      dataDir = readValue(args, i, arg);
+      i += 1;
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg ?? ''}`);
+  }
+
+  return { kind: 'status', dataDir, json };
+}
+
+function parseOpenArgs(args: string[]): AraonCliOpenOptions {
+  let dataDir: string | undefined;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--data-dir') {
+      dataDir = readValue(args, i, arg);
+      i += 1;
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg ?? ''}`);
+  }
+
+  return { kind: 'open', dataDir };
+}
+
+function parseResetArgs(args: string[]): AraonCliResetOptions {
+  let dataDir: string | undefined;
+  let session = false;
+  let data = false;
+  let confirm: string | undefined;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--session') {
+      session = true;
+      continue;
+    }
+    if (arg === '--data') {
+      data = true;
+      continue;
+    }
+    if (arg === '--confirm') {
+      confirm = readValue(args, i, arg);
+      i += 1;
+      continue;
+    }
+    if (arg === '--data-dir') {
+      dataDir = readValue(args, i, arg);
+      i += 1;
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg ?? ''}`);
+  }
+
+  if (session && data) throw new Error('Choose only one reset target');
+  if (!session && !data) throw new Error('reset requires --session or --data');
+
+  return {
+    kind: 'reset',
+    dataDir,
+    target: session ? 'session' : 'data',
+    confirm,
+  };
 }
 
 function readValue(args: string[], index: number, flag: string): string {

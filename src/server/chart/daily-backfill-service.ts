@@ -1,4 +1,5 @@
 import type { PriceCandle } from '@shared/types.js';
+import type { PriceCandleSource } from '@shared/types.js';
 import type { PriceCandleRepository } from '../db/repositories.js';
 
 export type DailyBackfillRange = '1m' | '3m' | '6m' | '1y';
@@ -14,7 +15,7 @@ export interface DailyBackfillResult {
   updated: number;
   from: string | null;
   to: string | null;
-  source: 'kis-daily';
+  source: Extract<PriceCandleSource, 'kis-daily' | 'toss-daily' | 'mixed'>;
   coverage: {
     backfilled: boolean;
     localOnly: boolean;
@@ -123,7 +124,7 @@ export function createDailyBackfillService(
       updated: existing,
       from: first?.bucketAt ?? null,
       to: last?.bucketAt ?? null,
-      source: 'kis-daily',
+      source: dailyBackfillSource(candles),
       coverage: {
         backfilled: candles.length > 0,
         localOnly: candles.length === 0,
@@ -132,4 +133,13 @@ export function createDailyBackfillService(
   }
 
   return { backfillDailyCandles };
+}
+
+function dailyBackfillSource(
+  candles: readonly PriceCandle[],
+): Extract<PriceCandleSource, 'kis-daily' | 'toss-daily' | 'mixed'> {
+  const sources = new Set(candles.map((candle) => candle.source));
+  if (sources.size === 1 && sources.has('toss-daily')) return 'toss-daily';
+  if (sources.size === 1 && sources.has('kis-daily')) return 'kis-daily';
+  return 'mixed';
 }

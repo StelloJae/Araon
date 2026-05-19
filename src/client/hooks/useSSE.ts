@@ -14,16 +14,20 @@
  */
 
 import { useEffect, useRef } from 'react';
-import type { Price, SSEEvent } from '@shared/types';
+import type { MarketStatus, Price, SSEEvent } from '@shared/types';
+import { isRealtimePriceSource } from '@shared/price-source.js';
 import { useMarketStore } from '../stores/market-store';
 import { useStocksStore } from '../stores/stocks-store';
 import { useErrorStore } from '../stores/error-store';
 import { useSurgeStore } from '../stores/surge-store';
 import { usePriceHistoryStore } from '../stores/price-history-store';
+import { useToastStore } from '../stores/toast-store';
+import { useProductDisplayNameStore } from '../stores/product-display-name-store';
 import {
   selectMomentumBuckets,
   useMomentumHistoryStore,
 } from '../stores/momentum-history-store';
+import { useSettingsStore } from '../stores/settings-store';
 import { isMarketLive } from '../lib/market-status';
 import {
   createMomentumFeedState,
@@ -32,6 +36,11 @@ import {
   shouldProcessRealtimeMomentumPrice,
 } from '../lib/realtime-momentum-feed';
 import { recordStockSignal } from '../lib/api-client';
+import { maybeAgentEventToToastSpec } from '../lib/agent-event-toast';
+import { dispatchAgentEventBrowserEvent } from '../lib/agent-event-browser-event';
+import { dispatchTossRefreshResultEvent } from '../lib/toss-refresh-result-event';
+import { maybeTossUserNotificationToToastSpec } from '../lib/toss-user-notification-toast';
+import { resolveProductDisplayName } from '../lib/product-display-name';
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
@@ -113,16 +122,7 @@ export function useSSE(url: string = '/events'): void {
           case 'price-update':
             queuePriceUpdate(e.price);
             const currentMarketStatus = useMarketStore.getState().marketStatus;
-            // History append is double-gated:
-            //   1. `isSnapshot === false` — never accept warm-snapshot ticks.
-            //   2. `isMarketLive` — closed/pre-open REST polling also emits
-            //      `price-update` frames; treating those as intraday motion
-            //      would make the hover sparkline lie about what happened
-            //      during the session.
-            if (
-              e.price.isSnapshot === false &&
-              isMarketLive(currentMarketStatus)
-            ) {
+            if (shouldAppendPriceHistoryPoint(e.price, currentMarketStatus)) {
               usePriceHistoryStore.getState().appendPoint(e.price.ticker, {
                 price: e.price.price,
                 changePct: e.price.changeRate,
@@ -146,13 +146,20 @@ export function useSSE(url: string = '/events'): void {
                 session,
               );
               const meta = useStocksStore.getState().catalog[e.price.ticker];
+              const displayName = resolveProductDisplayName(
+                e.price.ticker,
+                meta?.name,
+                useProductDisplayNameStore.getState().names,
+              );
               const result = evaluateRealtimeMomentumPrice({
                 price: e.price,
                 marketStatus: currentMarketStatus,
-                name: meta?.name ?? e.price.ticker,
+                name: displayName ?? e.price.ticker,
                 buckets,
                 now,
                 state: momentumFeedState,
+                minimumMomentumPct:
+                  useSettingsStore.getState().settings.surgeThreshold,
               });
               const signal = result.decision.signal;
               if (signal !== null) {
@@ -213,6 +220,49 @@ export function useSSE(url: string = '/events'): void {
           case 'heartbeat':
             // No-op: keepalive only; resets browser idle-close timer.
             break;
+          case 'agent-event': {
+            const meta = useStocksStore.getState().catalog[e.event.ticker];
+            const displayName = resolveProductDisplayName(
+              e.event.product?.krTicker ?? e.event.ticker,
+              e.event.product?.displayName ?? meta?.name,
+              useProductDisplayNameStore.getState().names,
+            );
+            const settings = useSettingsStore.getState().settings;
+            const toast = maybeAgentEventToToastSpec(
+              e,
+              displayName,
+              {
+                notificationsEnabled: settings.notifGlobalEnabled,
+                marketMovementThresholdPct: settings.surgeThreshold,
+              },
+            );
+            if (toast !== null) {
+              useToastStore.getState().push(toast);
+            }
+            dispatchAgentEventBrowserEvent(e.event);
+            break;
+          }
+          case 'toss-refresh-result':
+            dispatchTossRefreshResultEvent(e.result);
+            break;
+          case 'toss-user-notification': {
+            const ticker = e.notification.ticker;
+            const meta = ticker !== null ? useStocksStore.getState().catalog[ticker] : undefined;
+            const displayName = resolveProductDisplayName(
+              ticker,
+              meta?.name,
+              useProductDisplayNameStore.getState().names,
+            );
+            const toast = maybeTossUserNotificationToToastSpec(
+              e,
+              displayName,
+              useSettingsStore.getState().settings.notifGlobalEnabled,
+            );
+            if (toast !== null) {
+              useToastStore.getState().push(toast);
+            }
+            break;
+          }
           case 'error':
             errors.push({
               title: errorTitleFromCode(e.code),
@@ -229,6 +279,9 @@ export function useSSE(url: string = '/events'): void {
       es.addEventListener('snapshot', handleFrame as EventListener);
       es.addEventListener('price-update', handleFrame as EventListener);
       es.addEventListener('heartbeat', handleFrame as EventListener);
+      es.addEventListener('agent-event', handleFrame as EventListener);
+      es.addEventListener('toss-refresh-result', handleFrame as EventListener);
+      es.addEventListener('toss-user-notification', handleFrame as EventListener);
       es.addEventListener('error', handleFrame as EventListener);
       // Default `message` channel: kept as a fallback for un-named frames
       // so the dispatcher still works if the server stops setting `event:`.
@@ -272,6 +325,15 @@ export function useSSE(url: string = '/events'): void {
     // an unlikely requirement and would require resetting backoff state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+}
+
+export function shouldAppendPriceHistoryPoint(
+  price: Price,
+  marketStatus: MarketStatus,
+): boolean {
+  if (price.isSnapshot !== false) return false;
+  if (isMarketLive(marketStatus)) return true;
+  return isRealtimePriceSource(price.source ?? null);
 }
 
 function errorTitleFromCode(code: string): string {

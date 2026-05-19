@@ -66,6 +66,76 @@ describe('parseAraonCliArgs', () => {
       version: '1.2.3',
     });
   });
+
+  it('prints command-specific help', () => {
+    expect(parseAraonCliArgs(['doctor', '--help'], { version: '1.2.3' })).toMatchObject({
+      kind: 'help',
+      text: expect.stringContaining('araon doctor'),
+    });
+    expect(parseAraonCliArgs(['status', '--help'], { version: '1.2.3' })).toMatchObject({
+      kind: 'help',
+      text: expect.stringContaining('araon status'),
+    });
+    expect(parseAraonCliArgs(['open', '--help'], { version: '1.2.3' })).toMatchObject({
+      kind: 'help',
+      text: expect.stringContaining('araon open'),
+    });
+    expect(parseAraonCliArgs(['reset', '--help'], { version: '1.2.3' })).toMatchObject({
+      kind: 'help',
+      text: expect.stringContaining('araon reset'),
+    });
+  });
+
+  it('parses no-live operational subcommands', () => {
+    expect(parseAraonCliArgs(['doctor', '--no-live', '--json', '--data-dir', '/tmp/araon-data'], { version: '1.2.3' }))
+      .toEqual({
+        kind: 'doctor',
+        dataDir: '/tmp/araon-data',
+        json: true,
+        noLive: true,
+      });
+
+    expect(parseAraonCliArgs(['status', '--json'], { version: '1.2.3' })).toEqual({
+      kind: 'status',
+      dataDir: undefined,
+      json: true,
+    });
+
+    expect(parseAraonCliArgs(['open', '--data-dir', '/tmp/araon-data'], { version: '1.2.3' })).toEqual({
+      kind: 'open',
+      dataDir: '/tmp/araon-data',
+    });
+
+    expect(parseAraonCliArgs(['reset', '--session'], { version: '1.2.3' })).toEqual({
+      kind: 'reset',
+      dataDir: undefined,
+      target: 'session',
+      confirm: undefined,
+    });
+
+    expect(parseAraonCliArgs([
+      'reset',
+      '--data',
+      '--confirm',
+      'DELETE_LOCAL_ARAON_DATA',
+    ], { version: '1.2.3' })).toEqual({
+      kind: 'reset',
+      dataDir: undefined,
+      target: 'data',
+      confirm: 'DELETE_LOCAL_ARAON_DATA',
+    });
+  });
+
+  it('rejects invalid operational subcommand flags', () => {
+    expect(() => parseAraonCliArgs(['doctor', '--live'], { version: '1.2.3' }))
+      .toThrow(/Unknown option/);
+    expect(() => parseAraonCliArgs(['status', '--port', '3910'], { version: '1.2.3' }))
+      .toThrow(/Unknown option/);
+    expect(() => parseAraonCliArgs(['reset'], { version: '1.2.3' }))
+      .toThrow(/reset requires --session or --data/);
+    expect(() => parseAraonCliArgs(['reset', '--session', '--data'], { version: '1.2.3' }))
+      .toThrow(/Choose only one reset target/);
+  });
 });
 
 describe('resolveCliDataDir', () => {

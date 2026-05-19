@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { rankStockSearch } from '../stock-search';
+import {
+  mergeTossSearchResults,
+  rankStockSearch,
+  rankStockSearchCombined,
+} from '../stock-search';
 import type { StockViewModel } from '../view-models';
 
 function vm(code: string, name: string, market: 'KOSPI' | 'KOSDAQ' = 'KOSPI'): StockViewModel {
@@ -125,5 +129,176 @@ describe('rankStockSearch', () => {
     const r = rankStockSearch('ㅎ', stocks, 1);
     // Both 한미반도체 and SK하이닉스 (chosung "skㅎㅇㄴㅅ") and 현대차 contain ㅎ.
     expect(r).toHaveLength(1);
+  });
+});
+
+describe('rankStockSearchCombined', () => {
+  it('keeps non-six-digit master codes out of KIS registration', () => {
+    const results = rankStockSearchCombined('채비', [], [
+      {
+        ticker: '0011T0',
+        name: '채비',
+        market: 'KOSDAQ',
+        standardCode: null,
+        marketCapTier: null,
+      },
+    ]);
+
+    expect(results[0]).toMatchObject({
+      code: '0011T0',
+      productCode: '0011T0',
+      krTicker: null,
+      kisEligible: false,
+      origin: 'master',
+    });
+  });
+});
+
+describe('mergeTossSearchResults', () => {
+  it('dedupes Toss-only product aliases with and without the A prefix', () => {
+    const local = [
+      {
+        code: '0011T0',
+        productCode: '0011T0',
+        krTicker: null,
+        kisEligible: false,
+        name: '채비',
+        market: 'KOSDAQ' as const,
+        vm: null,
+        isTracked: false,
+        origin: 'master' as const,
+      },
+    ];
+
+    const merged = mergeTossSearchResults(local, [
+      {
+        ticker: 'A0011T0',
+        productCode: 'A0011T0',
+        krTicker: null,
+        name: '채비',
+        market: 'TOSS_ONLY',
+        tossEligible: true,
+        kisEligible: false,
+        chartEligible: false,
+        quoteEligible: true,
+        matchType: 'EXACT',
+        source: 'toss-public-search',
+      },
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      code: '0011T0',
+      productCode: '0011T0',
+      kisEligible: false,
+    });
+  });
+
+  it('appends Toss search hits without duplicating tracked or master results', () => {
+    const local = [
+      {
+        code: '005930',
+        productCode: 'A005930',
+        krTicker: '005930',
+        kisEligible: true,
+        name: '삼성전자',
+        market: 'KOSPI' as const,
+        vm: vm('005930', '삼성전자'),
+        isTracked: true,
+        origin: 'tracked' as const,
+      },
+      {
+        code: '000660',
+        productCode: 'A000660',
+        krTicker: '000660',
+        kisEligible: true,
+        name: 'SK하이닉스',
+        market: 'KOSPI' as const,
+        vm: null,
+        isTracked: false,
+        origin: 'master' as const,
+      },
+    ];
+
+    const merged = mergeTossSearchResults(local, [
+      {
+        ticker: '005930',
+        productCode: 'A005930',
+        krTicker: '005930',
+        name: '삼성전자',
+        market: 'KOSPI',
+        tossEligible: true,
+        kisEligible: true,
+        chartEligible: true,
+        quoteEligible: true,
+        matchType: 'EXACT',
+        source: 'toss-public-search',
+      },
+      {
+        ticker: '028260',
+        productCode: 'A028260',
+        krTicker: '028260',
+        name: '삼성물산',
+        market: 'KOSPI',
+        tossEligible: true,
+        kisEligible: true,
+        chartEligible: true,
+        quoteEligible: true,
+        matchType: 'AFFILIATE',
+        source: 'toss-public-search',
+      },
+      {
+        ticker: '0011T0',
+        productCode: '0011T0',
+        krTicker: null,
+        name: '채비',
+        market: 'TOSS_ONLY',
+        tossEligible: true,
+        kisEligible: false,
+        chartEligible: false,
+        quoteEligible: true,
+        matchType: 'AFFILIATE',
+        source: 'toss-public-search',
+      },
+    ], 8);
+
+    expect(merged.map((item) => [item.code, item.origin])).toEqual([
+      ['005930', 'tracked'],
+      ['000660', 'master'],
+      ['028260', 'toss'],
+      ['0011T0', 'toss'],
+    ]);
+    expect(merged[3]).toMatchObject({
+      productCode: '0011T0',
+      krTicker: null,
+      kisEligible: false,
+      market: 'TOSS_ONLY',
+    });
+  });
+
+  it('keeps Toss-only display code separate from Toss productCode', () => {
+    const merged = mergeTossSearchResults([], [
+      {
+        ticker: '0011T0',
+        productCode: 'A0011T0',
+        krTicker: null,
+        name: '채비',
+        market: 'TOSS_ONLY',
+        tossEligible: true,
+        kisEligible: false,
+        chartEligible: false,
+        quoteEligible: true,
+        matchType: 'EXACT',
+        source: 'toss-public-search',
+      },
+    ]);
+
+    expect(merged[0]).toMatchObject({
+      code: '0011T0',
+      productCode: 'A0011T0',
+      krTicker: null,
+      kisEligible: false,
+      market: 'TOSS_ONLY',
+    });
   });
 });

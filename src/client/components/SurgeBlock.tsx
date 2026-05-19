@@ -7,7 +7,7 @@
  *   [시총 전체] [대형] [중형] [소형]            ← KIS marketCapSize filter
  *
  * Filter semantics (defined in `lib/surge-aggregator.ts`):
- *   - 최근 급상승 — 10s/20s/30s momentum signals.
+ *   - 최근 급상승 — 0s~30s momentum signals.
  *   - 오늘 강세 — every catalog stock with changePct ≥ threshold; works in any
  *              market status.
  *   - 전체 — live first, then today's deduped by ticker.
@@ -47,6 +47,7 @@ import {
   type SurgeFilter,
   type SurgeMarketCapFilter,
 } from '../stores/settings-store';
+import { useProductDisplayNameStore } from '../stores/product-display-name-store';
 import { isMarketLive, isPreOpen } from '../lib/market-status';
 import type { StockViewModel } from '../lib/view-models';
 import type { MarketStatus } from '@shared/types';
@@ -76,7 +77,8 @@ export function SurgeBlock({
   );
   const surgeThreshold = useSettingsStore((s) => s.settings.surgeThreshold);
   const updateSettings = useSettingsStore((s) => s.update);
-  const favorites = useWatchlistStore((s) => s.favorites);
+  const favorites = useWatchlistStore((s) => s.watchlistMembers);
+  const displayNames = useProductDisplayNameStore((s) => s.names);
 
   const preOpen = isPreOpen(marketStatus);
   const sessionLive = isMarketLive(marketStatus);
@@ -103,6 +105,7 @@ export function SurgeBlock({
         now,
         SURGE_MAX_ROWS,
         marketCapFilter,
+        displayNames,
       ),
     [
       feed,
@@ -112,6 +115,7 @@ export function SurgeBlock({
       surgeThreshold,
       now,
       marketCapFilter,
+      displayNames,
     ],
   );
 
@@ -142,7 +146,7 @@ export function SurgeBlock({
     >
       <div
         style={{
-          padding: '12px 16px 8px',
+          padding: '10px 12px 7px',
           display: 'flex',
           alignItems: 'center',
           gap: 8,
@@ -164,8 +168,8 @@ export function SurgeBlock({
         />
         <div
           style={{
-            fontSize: 14,
-            fontWeight: 700,
+            fontSize: 13,
+            fontWeight: 800,
             color: 'var(--text-primary)',
             letterSpacing: -0.1,
           }}
@@ -174,17 +178,17 @@ export function SurgeBlock({
         </div>
         <span
           style={{
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: 600,
             color: 'var(--text-muted)',
             letterSpacing: 0.4,
           }}
         >
-          10~30초
+          {sessionLive ? `0~30초 · ≥${surgeThreshold}%` : '장외 대기'}
         </span>
         <span
           style={{
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 600,
             color: 'var(--text-muted)',
             marginLeft: 'auto',
@@ -289,8 +293,8 @@ function FilterChrome({
       l: '최근 급상승',
       disabled: !sessionLive,
       title: sessionLive
-        ? '최근 10초~30초 기준'
-        : '장 시간 외 — 실시간 이벤트 없음',
+        ? '최근 0~30초 기준'
+        : '장 시간 외 · 최근 급상승은 장중만 표시',
     },
     {
       v: 'today',
@@ -307,15 +311,15 @@ function FilterChrome({
     title: string;
   }> = [
     { v: 'all', l: '시총 전체', title: '전체 시총 규모' },
-    { v: 'large', l: '대형', title: 'KIS 시총규모 1' },
-    { v: 'mid', l: '중형', title: 'KIS 시총규모 2' },
-    { v: 'small', l: '소형', title: 'KIS 시총규모 3' },
+    { v: 'large', l: '대형', title: '시총 규모 대형' },
+    { v: 'mid', l: '중형', title: '시총 규모 중형' },
+    { v: 'small', l: '소형', title: '시총 규모 소형' },
   ];
 
   return (
     <div
       style={{
-        padding: '8px 16px 10px',
+        padding: '7px 10px 8px',
         borderBottom: '1px solid var(--border)',
         flexShrink: 0,
         display: 'flex',
@@ -323,7 +327,7 @@ function FilterChrome({
         gap: 6,
       }}
     >
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
         {filterOpts.map((o) => {
           const active = filter === o.v;
           const disabled = o.disabled;
@@ -337,9 +341,9 @@ function FilterChrome({
               disabled={disabled}
               {...(o.title !== null ? { title: o.title } : {})}
               style={{
-                padding: '4px 10px',
-                fontSize: 11,
-                fontWeight: 700,
+                padding: '3px 8px',
+                fontSize: 10,
+                fontWeight: 800,
                 cursor: disabled ? 'not-allowed' : 'pointer',
                 background: active
                   ? 'var(--accent)'
@@ -360,6 +364,8 @@ function FilterChrome({
                 }`,
                 borderRadius: 6,
                 opacity: disabled ? 0.6 : 1,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               {o.l}
@@ -367,7 +373,7 @@ function FilterChrome({
           );
         })}
       </div>
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
         {capOpts.map((o) => {
           const active = marketCapFilter === o.v;
           return (
@@ -377,9 +383,9 @@ function FilterChrome({
               title={o.title}
               onClick={() => onMarketCapFilterChange(o.v)}
               style={{
-                padding: '3px 8px',
+                padding: '3px 7px',
                 fontSize: 10,
-                fontWeight: 700,
+                fontWeight: 800,
                 cursor: 'pointer',
                 background: active ? 'var(--accent)' : 'var(--bg-tint)',
                 color: active ? '#fff' : 'var(--text-secondary)',
@@ -387,6 +393,8 @@ function FilterChrome({
                   active ? 'var(--accent)' : 'var(--border)'
                 }`,
                 borderRadius: 5,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               {o.l}
@@ -415,11 +423,11 @@ function EmptyState({
 }: EmptyStateProps) {
   let message = '현재 조건에 맞는 종목 없음';
   if (liveDisabledByMarket) {
-    message = '장 시간 외 — 실시간 이벤트 없음';
+    message = '장 시간 외 · 최근 급상승은 장중 0~30초 실시간 변화만 표시';
   } else if (filter === 'today') {
     message = `오늘 강세 ≥${surgeThreshold}% 종목 없음`;
   } else if (filter === 'live') {
-    message = '최근 10~30초 급상승 종목 없음';
+    message = `최근 0~30초 ≥${surgeThreshold}% 급상승 없음`;
   } else {
     message = `급상승 종목 없음`;
   }
@@ -507,10 +515,10 @@ export function SurgeRow({
       onClick={() => onOpenDetail(item.code)}
       style={{
         position: 'relative',
-        padding: '8px 16px',
+        padding: '7px 10px',
         display: 'grid',
-        gridTemplateColumns: '1fr auto auto',
-        gap: 10,
+        gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+        gap: 8,
         alignItems: 'center',
         fontSize: 12,
         borderTop: isFirst ? 'none' : '1px solid var(--border-soft)',
@@ -554,7 +562,8 @@ export function SurgeRow({
           />
           <span
             style={{
-              fontWeight: 700,
+              fontSize: 13,
+              fontWeight: 800,
               color: 'var(--text-primary)',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
@@ -566,11 +575,17 @@ export function SurgeRow({
         </div>
         <span
           style={{
-            fontSize: 10,
-            fontWeight: 600,
+            fontSize: 11,
+            fontWeight: 700,
             color: 'var(--text-muted)',
             letterSpacing: 0.3,
             marginLeft: 11,
+            display: 'block',
+            minWidth: 0,
+            maxWidth: '100%',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
         >
           {subLabel}
@@ -582,8 +597,10 @@ export function SurgeRow({
       <div
         style={{
           position: 'relative',
-          fontWeight: 600,
+          fontSize: 13,
+          fontWeight: 800,
           color: 'var(--text-secondary)',
+          whiteSpace: 'nowrap',
         }}
       >
         {fmtPrice(item.price)}
@@ -601,7 +618,7 @@ export function SurgeRow({
           style={{
             fontWeight: 700,
             color: 'var(--kr-up)',
-            fontSize: 13,
+            fontSize: 12,
             lineHeight: 1.1,
           }}
         >

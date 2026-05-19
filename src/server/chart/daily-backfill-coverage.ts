@@ -2,17 +2,19 @@ import type { PriceCandle } from '@shared/types.js';
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DAILY_BACKFILL_SOURCES = ['toss-daily', 'kis-daily'] as const;
+type DailyBackfillSource = typeof DAILY_BACKFILL_SOURCES[number];
 
 export interface DailyCandleCoverageReader {
   findNewestCandle(query: {
     ticker: string;
     interval: '1d';
-    source: 'kis-daily';
+    source: DailyBackfillSource;
   }): PriceCandle | null;
   findOldestCandle(query: {
     ticker: string;
     interval: '1d';
-    source: 'kis-daily';
+    source: DailyBackfillSource;
   }): PriceCandle | null;
 }
 
@@ -24,21 +26,33 @@ export function shouldBackfillDailyTicker(input: {
   now: Date;
   repo: DailyCandleCoverageReader;
 }): boolean {
-  const newest = input.repo.findNewestCandle({
-    ticker: input.ticker,
-    interval: '1d',
-    source: 'kis-daily',
-  });
+  const newest = newestDailyCandle(input.repo, input.ticker);
   if (newest === null) return true;
   if (newest.bucketAt < latestExpectedKisDailyBucketAt(input.now)) return true;
 
-  const oldest = input.repo.findOldestCandle({
-    ticker: input.ticker,
-    interval: '1d',
-    source: 'kis-daily',
-  });
+  const oldest = oldestDailyCandle(input.repo, input.ticker);
   if (oldest === null) return true;
   return oldest.bucketAt > earliestExpectedKisDailyBucketAt(input.now, input.range);
+}
+
+function newestDailyCandle(
+  repo: DailyCandleCoverageReader,
+  ticker: string,
+): PriceCandle | null {
+  return DAILY_BACKFILL_SOURCES
+    .map((source) => repo.findNewestCandle({ ticker, interval: '1d', source }))
+    .filter((candle): candle is PriceCandle => candle !== null)
+    .sort((a, b) => b.bucketAt.localeCompare(a.bucketAt))[0] ?? null;
+}
+
+function oldestDailyCandle(
+  repo: DailyCandleCoverageReader,
+  ticker: string,
+): PriceCandle | null {
+  return DAILY_BACKFILL_SOURCES
+    .map((source) => repo.findOldestCandle({ ticker, interval: '1d', source }))
+    .filter((candle): candle is PriceCandle => candle !== null)
+    .sort((a, b) => a.bucketAt.localeCompare(b.bucketAt))[0] ?? null;
 }
 
 export function latestExpectedKisDailyBucketAt(now: Date): string {

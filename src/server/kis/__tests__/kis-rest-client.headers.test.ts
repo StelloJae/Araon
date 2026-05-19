@@ -119,7 +119,14 @@ describe('createKisRestClient — authenticated header contract', () => {
         acquire,
         recordFailure,
         recordSuccess,
-        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
+        snapshot: () => ({
+          ratePerSec: 1,
+          burst: 1,
+          tokens: 1,
+          globalMinStartGapMs: 0,
+          policies: [],
+          profiles: [],
+        }),
       },
     });
 
@@ -150,7 +157,14 @@ describe('createKisRestClient — authenticated header contract', () => {
         acquire,
         recordFailure,
         recordSuccess,
-        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
+        snapshot: () => ({
+          ratePerSec: 1,
+          burst: 1,
+          tokens: 1,
+          globalMinStartGapMs: 0,
+          policies: [],
+          profiles: [],
+        }),
       },
     });
 
@@ -189,7 +203,14 @@ describe('createKisRestClient — authenticated header contract', () => {
       outboundLimiter: {
         acquire,
         recordFailure,
-        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 0, profiles: [] }),
+        snapshot: () => ({
+          ratePerSec: 1,
+          burst: 1,
+          tokens: 0,
+          globalMinStartGapMs: 0,
+          policies: [],
+          profiles: [],
+        }),
       },
     });
 
@@ -223,7 +244,14 @@ describe('createKisRestClient — authenticated header contract', () => {
       outboundLimiter: {
         acquire,
         recordFailure,
-        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
+        snapshot: () => ({
+          ratePerSec: 1,
+          burst: 1,
+          tokens: 1,
+          globalMinStartGapMs: 0,
+          policies: [],
+          profiles: [],
+        }),
       },
     });
 
@@ -259,7 +287,14 @@ describe('createKisRestClient — authenticated header contract', () => {
       outboundLimiter: {
         acquire,
         recordFailure,
-        snapshot: () => ({ ratePerSec: 1, burst: 1, tokens: 1, profiles: [] }),
+        snapshot: () => ({
+          ratePerSec: 1,
+          burst: 1,
+          tokens: 1,
+          globalMinStartGapMs: 0,
+          policies: [],
+          profiles: [],
+        }),
       },
     });
 

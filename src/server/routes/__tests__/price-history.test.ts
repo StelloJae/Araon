@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import Fastify from 'fastify';
 import Database from 'better-sqlite3';
 import { migrateUp } from '../../db/migrator.js';
@@ -8,7 +8,7 @@ import {
 } from '../../db/repositories.js';
 import { stockRoutes } from '../stocks.js';
 import type { StockService } from '../../services/stock-service.js';
-import type { PriceHistoryPoint } from '@shared/types.js';
+import type { PriceCandle, PriceHistoryPoint } from '@shared/types.js';
 
 function openMemoryDb(): Database.Database {
   const db = new Database(':memory:');
@@ -56,6 +56,25 @@ function sourcedPoint(
   return {
     ...point(bucketAt, price),
     source,
+  };
+}
+
+function minuteCandle(bucketAt: string, close: number): PriceCandle {
+  return {
+    ticker: '298380',
+    interval: '1m',
+    bucketAt,
+    session: 'regular',
+    open: close - 10,
+    high: close + 20,
+    low: close - 20,
+    close,
+    volume: 100,
+    sampleCount: 1,
+    source: 'toss-time-today',
+    isPartial: false,
+    createdAt: bucketAt,
+    updatedAt: bucketAt,
   };
 }
 
@@ -193,6 +212,150 @@ describe('GET /stocks/:ticker/price-history', () => {
     expect(body.data.items.map((item: { source: string }) => item.source)).toEqual([
       'rest',
       'rest',
+    ]);
+  });
+
+  it('uses real Toss minute candle closes as sparkline seed when persisted history is empty', async () => {
+    const repo = new PriceHistoryPointRepository(db);
+    const fetchSparklineSeedCandles = vi.fn(async () => [
+      minuteCandle('2026-05-18T00:00:00.000Z', 111_500),
+      minuteCandle('2026-05-18T00:01:00.000Z', 111_800),
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      priceHistoryRepo: repo,
+      fetchSparklineSeedCandles,
+      now: () => new Date('2026-05-18T09:20:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/298380/price-history?range=1d&includeCandleSeed=true',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchSparklineSeedCandles).toHaveBeenCalledWith({
+      ticker: '298380',
+      window: {
+        from: '2026-05-17T23:00:00.000Z',
+        to: '2026-05-18T09:20:00.000Z',
+      },
+      now: new Date('2026-05-18T09:20:00.000Z'),
+    });
+    const body = JSON.parse(res.body);
+    expect(body.data.items).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-18T00:00:00.000Z',
+        price: 111_500,
+        source: 'toss-time-today',
+      }),
+      expect.objectContaining({
+        bucketAt: '2026-05-18T00:01:00.000Z',
+        price: 111_800,
+        source: 'toss-time-today',
+      }),
+    ]);
+    expect(body.data.coverage.count).toBe(2);
+  });
+
+  it('keeps the previous KST trading session available before market opens', async () => {
+    const repo = new PriceHistoryPointRepository(db);
+    const fetchSparklineSeedCandles = vi.fn(async () => [
+      { ...minuteCandle('2026-05-18T00:00:00.000Z', 9_470), ticker: '129920' },
+      { ...minuteCandle('2026-05-18T00:01:00.000Z', 9_520), ticker: '129920' },
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      priceHistoryRepo: repo,
+      fetchSparklineSeedCandles,
+      now: () => new Date('2026-05-18T16:20:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/129920/price-history?range=1d&includeCandleSeed=true',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchSparklineSeedCandles).toHaveBeenCalledWith({
+      ticker: '129920',
+      window: {
+        from: '2026-05-17T23:00:00.000Z',
+        to: '2026-05-18T11:00:00.000Z',
+      },
+      now: new Date('2026-05-18T16:20:00.000Z'),
+    });
+    const body = JSON.parse(res.body);
+    expect(body.data.items).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-18T00:00:00.000Z',
+        price: 9_470,
+      }),
+      expect.objectContaining({
+        bucketAt: '2026-05-18T00:01:00.000Z',
+        price: 9_520,
+      }),
+    ]);
+  });
+
+  it('uses real Toss minute candle seed when persisted realtime-like history is flat', async () => {
+    new StockRepository(db).upsert({
+      ticker: '129920',
+      name: '대성하이텍',
+      market: 'KOSDAQ',
+    });
+    const repo = new PriceHistoryPointRepository(db);
+    await repo.bulkUpsertPoints([
+      {
+        ...sourcedPoint('2026-05-18T15:00:00.000Z', 9_200, 'rest'),
+        ticker: '129920',
+      },
+      {
+        ...sourcedPoint('2026-05-18T15:00:05.000Z', 9_200, 'rest'),
+        ticker: '129920',
+      },
+      {
+        ...sourcedPoint('2026-05-18T15:00:10.000Z', 9_200, 'rest'),
+        ticker: '129920',
+      },
+      {
+        ...sourcedPoint('2026-05-18T15:00:15.000Z', 9_200, 'toss-fast-quote'),
+        ticker: '129920',
+      },
+    ]);
+    const fetchSparklineSeedCandles = vi.fn(async () => [
+      { ...minuteCandle('2026-05-18T00:00:00.000Z', 9_470), ticker: '129920' },
+      { ...minuteCandle('2026-05-18T00:01:00.000Z', 9_520), ticker: '129920' },
+    ]);
+    const app = Fastify({ logger: false });
+    await app.register(stockRoutes, {
+      service: serviceStub(),
+      priceHistoryRepo: repo,
+      fetchSparklineSeedCandles,
+      now: () => new Date('2026-05-18T16:30:00.000Z'),
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/stocks/129920/price-history?from=2026-05-18T15:00:00.000Z&to=2026-05-18T16:30:00.000Z&includeCandleSeed=true',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(fetchSparklineSeedCandles).toHaveBeenCalledOnce();
+    expect(body.data.items).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-18T00:00:00.000Z',
+        price: 9_470,
+        source: 'toss-time-today',
+      }),
+      expect.objectContaining({
+        bucketAt: '2026-05-18T00:01:00.000Z',
+        price: 9_520,
+        source: 'toss-time-today',
+      }),
     ]);
   });
 });

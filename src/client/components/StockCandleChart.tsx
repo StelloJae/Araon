@@ -2,10 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CandlestickData,
   HistogramData,
+  IChartApi,
+  ISeriesApi,
   MouseEventParams,
+  Time,
   UTCTimestamp,
 } from 'lightweight-charts';
-import type { CandleApiCoverage, CandleApiItem, CandleInterval } from '@shared/types';
+import type {
+  CandleApiCoverage,
+  CandleApiItem,
+  CandleInterval,
+  PriceCandleSource,
+  PriceSource,
+} from '@shared/types';
 import { fmtPrice, fmtVolMan } from '../lib/format';
 import {
   ensureStockCandleCoverage,
@@ -41,6 +50,20 @@ const REPAIR_COVERAGE_TIMEOUT_MS = 10_000;
 
 interface StockCandleChartProps {
   ticker: string;
+  height?: number;
+  compact?: boolean;
+  diagnostics?: boolean;
+  fillHeight?: boolean;
+  liveQuote?: LiveQuoteCandleInput | null;
+}
+
+export interface LiveQuoteCandleInput {
+  ticker: string;
+  price: number;
+  volume: number;
+  updatedAt: string;
+  isSnapshot: boolean;
+  source?: PriceSource | null;
 }
 
 export function resolveWithTimeout<T>(
@@ -72,7 +95,14 @@ export function resolveWithTimeout<T>(
   });
 }
 
-export function StockCandleChart({ ticker }: StockCandleChartProps) {
+export function StockCandleChart({
+  ticker,
+  height = 320,
+  compact = false,
+  diagnostics = false,
+  fillHeight = false,
+  liveQuote = null,
+}: StockCandleChartProps) {
   const chartColorScheme = useSettingsStore((s) => s.settings.chartColorScheme);
   const [interval, setInterval] = useState<CandleInterval>('1m');
   const [range, setRange] = useState<CandleRange>('1d');
@@ -83,29 +113,50 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
   const [repairPending, setRepairPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [dataSourceText, setDataSourceText] = useState('로컬 저장 candle');
+  const [liveOverlayItems, setLiveOverlayItems] = useState<CandleApiItem[]>([]);
+
+  useEffect(() => {
+    setLiveOverlayItems([]);
+  }, [ticker, interval]);
+
+  useEffect(() => {
+    setLiveOverlayItems((current) =>
+      pruneLiveOverlayItems(
+        mergeLiveQuoteIntoCandleItems(current, liveQuote, interval),
+        interval,
+      ),
+    );
+  }, [interval, liveQuote]);
+
+  const displayBaseItems = useMemo(
+    () => mergeCandleItemOverlays(items, liveOverlayItems),
+    [items, liveOverlayItems],
+  );
+  const displayItems = useMemo(
+    () => hasLiveQuoteApplied(displayBaseItems, liveQuote, interval)
+      ? displayBaseItems
+      : mergeLiveQuoteIntoCandleItems(displayBaseItems, liveQuote, interval),
+    [displayBaseItems, liveQuote, interval],
+  );
+  const displayStatus =
+    status === 'empty' && displayItems.length > 0 ? 'ready' : status;
 
   const applyCandleData = (data: Awaited<ReturnType<typeof getStockCandles>>) => {
-    setItems(data.items);
+    const displayItems = compactNonTradingCandles(data.items);
+    setItems(displayItems);
     setCoverage(data.coverage);
-    setStatus(data.items.length === 0 ? 'empty' : 'ready');
+    setStatus(displayItems.length === 0 ? 'empty' : 'ready');
     const sources = data.coverage.sourceMix;
-    setDataSourceText(
-      sources.includes('kis-time-daily')
-        ? 'KIS 과거 분봉 포함'
-        : sources.includes('kis-time-today')
-          ? 'KIS 당일분봉 포함'
-        : data.coverage.backfilled
-          ? 'KIS 일봉 백필 포함'
-          : '로컬 저장 candle',
-    );
+    setDataSourceText(candleSourceStatusText(sources, data.coverage.backfilled));
+    return displayItems;
   };
 
   const refetchCandles = (options: { showLoading?: boolean } = {}) => {
     if (options.showLoading ?? true) setStatus('loading');
     return getStockCandles(ticker, { interval, range })
       .then((data) => {
-        applyCandleData(data);
-        if (data.items.length === 0) setMessage(data.status.message);
+        const displayItems = applyCandleData(data);
+        if (displayItems.length === 0) setMessage(data.status.message);
       })
       .catch(() => {
         setItems([]);
@@ -130,10 +181,10 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       getStockCandles(ticker, { interval, range })
         .then((data) => {
           if (cancelled) return;
-          loadedItemCount = data.items.length;
-          if (showLoading) setStatus(data.items.length === 0 ? 'empty' : 'ready');
-          applyCandleData(data);
-          if (data.items.length === 0) setMessage(coverageMessage ?? data.status.message);
+          const displayItems = applyCandleData(data);
+          loadedItemCount = displayItems.length;
+          if (showLoading) setStatus(displayItems.length === 0 ? 'empty' : 'ready');
+          if (displayItems.length === 0) setMessage(coverageMessage ?? data.status.message);
         })
         .catch(() => {
           if (cancelled) return;
@@ -155,7 +206,9 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
         if (coverage === null) {
           coverageMessage = chartCoverageTimeoutMessage(loadedItemCount > 0);
         } else if (coverage.state === 'backfilled') {
-          const label = coverage.source === 'kis-daily' ? '일봉' : '분봉';
+          const label = coverage.source === 'kis-daily' || coverage.source === 'toss-daily'
+            ? '일봉'
+            : '분봉';
           coverageMessage = `${label} 자동 보강 완료: ${coverage.inserted + coverage.updated}개 candle 반영`;
           void loadStoredCandles(false);
         } else if (coverage.state === 'current') {
@@ -169,7 +222,7 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
       })
       .catch(() => {
         if (cancelled) return;
-        coverageMessage = 'KIS credentials 준비 후 차트 과거 데이터를 자동 보강합니다.';
+        coverageMessage = '데이터 연결 준비 후 차트 과거 데이터를 자동 보강합니다.';
         setMessage(coverageMessage);
       })
       .finally(() => {
@@ -207,57 +260,81 @@ export function StockCandleChart({ ticker }: StockCandleChartProps) {
   };
 
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-          marginBottom: 10,
-        }}
-      >
-        <SegmentedSelect
-          label="봉"
-          value={interval}
-          values={INTERVALS}
-          onChange={(value) => {
-            const nextInterval = value as CandleInterval;
-            setInterval(nextInterval);
-            setRange((currentRange) =>
-              normalizeCandleRangeForInterval(nextInterval, currentRange),
-            );
+    <div
+      style={
+        fillHeight
+          ? {
+              height: '100%',
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+            }
+          : undefined
+      }
+    >
+      {!compact && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            marginBottom: 10,
+            flexShrink: 0,
           }}
-        />
-        <SegmentedSelect
-          label="범위"
-          value={range}
-          values={RANGES}
-          onChange={(value) => setRange(value as CandleRange)}
-        />
-        <ChartAutoBackfillStatus
-          interval={interval}
-          pending={coveragePending || repairPending}
-          message={message}
-        />
-        <ChartRepairButton running={repairPending} onRepair={handleRepair} />
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          {dataSourceText}
-        </span>
-      </div>
-      {message !== null && !coveragePending && (
+        >
+          <SegmentedButtonGroup
+            label="봉"
+            value={interval}
+            values={INTERVALS}
+            onChange={(value) => {
+              const nextInterval = value as CandleInterval;
+              setInterval(nextInterval);
+              setRange((currentRange) =>
+                normalizeCandleRangeForInterval(nextInterval, currentRange),
+              );
+            }}
+          />
+          <SegmentedButtonGroup
+            label="범위"
+            value={range}
+            values={RANGES}
+            onChange={(value) => setRange(value as CandleRange)}
+          />
+          {diagnostics && (
+            <>
+              <ChartAutoBackfillStatus
+                interval={interval}
+                pending={coveragePending || repairPending}
+                message={message}
+              />
+              <ChartRepairButton running={repairPending} onRepair={handleRepair} />
+            </>
+          )}
+          <div style={{ flex: 1 }} />
+          {diagnostics && (
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {dataSourceText}
+            </span>
+          )}
+        </div>
+      )}
+      {!compact && diagnostics && message !== null && !coveragePending && (
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
           {message}
         </div>
       )}
       <CandleChartView
-        status={status}
-        items={items}
+        status={displayStatus}
+        items={displayItems}
         coverage={coverage}
         interval={interval}
         range={range}
         colorScheme={chartColorScheme}
+        height={height}
+        compact={compact}
+        showDiagnostics={diagnostics}
+        fillHeight={fillHeight}
       />
     </div>
   );
@@ -339,6 +416,203 @@ function rangeRank(range: CandleRange): number {
   return RANGES.indexOf(range);
 }
 
+export function mergeLiveQuoteIntoCandleItems(
+  items: readonly CandleApiItem[],
+  liveQuote: LiveQuoteCandleInput | null | undefined,
+  interval: CandleInterval,
+): CandleApiItem[] {
+  if (liveQuote === null || liveQuote === undefined) return [...items];
+  if (liveQuote.isSnapshot || dailyInterval(interval)) return [...items];
+  if (!Number.isFinite(liveQuote.price) || liveQuote.price <= 0) return [...items];
+
+  const bucketAt = bucketAtForKstInterval(liveQuote.updatedAt, interval);
+  if (bucketAt === null) return [...items];
+  const time = Math.trunc(Date.parse(bucketAt) / 1000);
+  if (!Number.isFinite(time)) return [...items];
+
+  const next = [...items];
+  const index = next.findIndex((item) => item.time === time);
+  if (index >= 0) {
+    const existing = next[index];
+    if (existing === undefined) return next;
+    next[index] = {
+      ...existing,
+      high: Math.max(existing.high, liveQuote.price),
+      low: Math.min(existing.low, liveQuote.price),
+      close: liveQuote.price,
+      volume: Math.max(existing.volume, liveQuote.volume),
+      sampleCount: existing.sampleCount + 1,
+      source: mergeLiveCandleSource(existing.source ?? null, liveQuote.source ?? null),
+      isPartial: true,
+    };
+    return next;
+  }
+
+  if (!canAppendLiveQuoteCandle(items, bucketAt)) return next;
+
+  next.push({
+    time,
+    bucketAt,
+    open: liveQuote.price,
+    high: liveQuote.price,
+    low: liveQuote.price,
+    close: liveQuote.price,
+    volume: 0,
+    sampleCount: 1,
+    source: liveQuote.source ?? null,
+    isPartial: true,
+  });
+  next.sort((a, b) => a.time - b.time);
+  return next;
+}
+
+function hasLiveQuoteApplied(
+  items: readonly CandleApiItem[],
+  liveQuote: LiveQuoteCandleInput | null | undefined,
+  interval: CandleInterval,
+): boolean {
+  if (liveQuote === null || liveQuote === undefined) return true;
+  if (liveQuote.isSnapshot || dailyInterval(interval)) return true;
+  if (!Number.isFinite(liveQuote.price) || liveQuote.price <= 0) return true;
+  const bucketAt = bucketAtForKstInterval(liveQuote.updatedAt, interval);
+  if (bucketAt === null) return true;
+  const time = Math.trunc(Date.parse(bucketAt) / 1000);
+  if (!Number.isFinite(time)) return true;
+  const existing = items.find((item) => item.time === time);
+  return existing !== undefined && existing.close === liveQuote.price;
+}
+
+function canAppendLiveQuoteCandle(
+  items: readonly CandleApiItem[],
+  bucketAt: string,
+): boolean {
+  if (isKstClosedNightMinute(bucketAt)) return false;
+  if (items.length === 0) return true;
+  const latest = items[items.length - 1];
+  if (latest === undefined) return true;
+  const latestKey = kstDateKey(latest.bucketAt);
+  const liveKey = kstDateKey(bucketAt);
+  return latestKey !== null && latestKey === liveKey;
+}
+
+function kstDateKey(iso: string): string | null {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  const shifted = new Date(ms + KST_OFFSET_MS);
+  return [
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth() + 1,
+    shifted.getUTCDate(),
+  ].join('-');
+}
+
+export function mergeCandleItemOverlays(
+  items: readonly CandleApiItem[],
+  overlays: readonly CandleApiItem[],
+): CandleApiItem[] {
+  if (overlays.length === 0) return [...items];
+  const byTime = new Map<number, CandleApiItem>();
+  for (const item of items) {
+    byTime.set(item.time, { ...item });
+  }
+  for (const overlay of overlays) {
+    const existing = byTime.get(overlay.time);
+    byTime.set(
+      overlay.time,
+      existing === undefined ? { ...overlay } : mergeCandleItem(existing, overlay),
+    );
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
+}
+
+function mergeCandleItem(
+  base: CandleApiItem,
+  overlay: CandleApiItem,
+): CandleApiItem {
+  return {
+    ...base,
+    high: Math.max(base.high, overlay.high),
+    low: Math.min(base.low, overlay.low),
+    close: overlay.close,
+    volume: Math.max(base.volume, overlay.volume),
+    sampleCount: Math.max(base.sampleCount, overlay.sampleCount),
+    source: mergeLiveCandleSource(base.source ?? null, overlay.source ?? null),
+    isPartial: base.isPartial || overlay.isPartial,
+  };
+}
+
+function pruneLiveOverlayItems(
+  items: readonly CandleApiItem[],
+  interval: CandleInterval,
+): CandleApiItem[] {
+  const maxCount = dailyInterval(interval) ? 0 : 720;
+  if (maxCount === 0 || items.length <= maxCount) return [...items];
+  return items.slice(items.length - maxCount);
+}
+
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function bucketAtForKstInterval(input: string, interval: CandleInterval): string | null {
+  const ms = Date.parse(input);
+  if (!Number.isFinite(ms)) return null;
+  const shifted = new Date(ms + KST_OFFSET_MS);
+  const minutes = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+  const step = intervalMinutes(interval);
+  if (step === null) return null;
+  const bucketMinute = Math.floor(minutes / step) * step;
+  const bucketUtcMs =
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+      Math.floor(bucketMinute / 60),
+      bucketMinute % 60,
+      0,
+      0,
+    ) - KST_OFFSET_MS;
+  return new Date(bucketUtcMs).toISOString();
+}
+
+function intervalMinutes(interval: CandleInterval): number | null {
+  switch (interval) {
+    case '1m':
+      return 1;
+    case '3m':
+      return 3;
+    case '5m':
+      return 5;
+    case '10m':
+      return 10;
+    case '15m':
+      return 15;
+    case '30m':
+      return 30;
+    case '1h':
+      return 60;
+    case '2h':
+      return 120;
+    case '4h':
+      return 240;
+    case '6h':
+      return 360;
+    case '12h':
+      return 720;
+    case '1D':
+    case '1W':
+    case '1M':
+      return null;
+  }
+}
+
+function mergeLiveCandleSource(
+  previous: CandleApiItem['source'] | null,
+  next: PriceCandleSource | null,
+): PriceCandleSource | null {
+  if (previous === null || previous === undefined) return next;
+  if (next === null) return previous;
+  return previous === next ? previous : 'mixed';
+}
+
 export function ChartAutoBackfillStatus({
   interval,
   pending,
@@ -387,7 +661,7 @@ export function ChartAutoBackfillStatus({
   );
 }
 
-function SegmentedSelect({
+function SegmentedButtonGroup({
   label,
   value,
   values,
@@ -399,7 +673,7 @@ function SegmentedSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label
+    <div
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -409,28 +683,43 @@ function SegmentedSelect({
         color: 'var(--text-muted)',
       }}
     >
-      {label}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.currentTarget.value)}
+      <span>{label}</span>
+      <span
         style={{
-          height: 30,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 2,
           border: '1px solid var(--border)',
           borderRadius: 8,
-          background: 'var(--bg-card)',
-          color: 'var(--text-primary)',
-          fontSize: 12,
-          fontWeight: 700,
-          padding: '0 8px',
+          background: 'var(--bg-tint)',
+          padding: 2,
         }}
       >
         {values.map((v) => (
-          <option key={v} value={v}>
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            aria-pressed={value === v}
+            style={{
+              height: 24,
+              border: 'none',
+              borderRadius: 6,
+              background: value === v ? 'var(--bg-card)' : 'transparent',
+              color: value === v ? 'var(--text-primary)' : 'var(--text-muted)',
+              boxShadow: value === v ? '0 1px 3px rgba(15, 23, 42, 0.08)' : 'none',
+              fontSize: 11,
+              fontWeight: 900,
+              fontFamily: 'inherit',
+              padding: '0 8px',
+              cursor: 'pointer',
+            }}
+          >
             {v}
-          </option>
+          </button>
         ))}
-      </select>
-    </label>
+      </span>
+    </div>
   );
 }
 
@@ -441,6 +730,10 @@ export function CandleChartView({
   interval,
   range,
   colorScheme = 'kr',
+  height = 320,
+  compact = false,
+  showDiagnostics = false,
+  fillHeight = false,
 }: {
   status: ChartStatus;
   items: readonly CandleApiItem[];
@@ -448,18 +741,23 @@ export function CandleChartView({
   interval: CandleInterval;
   range: CandleRange;
   colorScheme?: ChartColorScheme;
+  height?: number;
+  compact?: boolean;
+  showDiagnostics?: boolean;
+  fillHeight?: boolean;
 }) {
   if (status === 'loading') {
-    return <ChartMessage title="차트 불러오는 중" detail="로컬 candle 저장소를 확인하고 있습니다." />;
+    return <ChartMessage title="차트 불러오는 중" detail="로컬 candle 저장소를 확인하고 있습니다." fillHeight={fillHeight} />;
   }
   if (status === 'error') {
-    return <ChartMessage title="차트를 불러오지 못했습니다" detail="잠시 후 다시 시도해 주세요." />;
+    return <ChartMessage title="차트를 불러오지 못했습니다" detail="잠시 후 다시 시도해 주세요." fillHeight={fillHeight} />;
   }
   if (status === 'empty' || items.length === 0) {
     return (
       <ChartMessage
         title="차트 데이터 수집 중"
-        detail="이 종목의 저장된 candle이 아직 부족합니다. 장중에는 현재 선택 종목의 오늘 분봉부터 보강합니다. 1D/1W/1M은 KIS 일봉 백필 후 표시됩니다."
+        detail="이 종목의 저장된 candle이 아직 부족합니다. 장중에는 현재 선택 종목의 오늘 분봉부터 보강합니다. 1D/1W/1M은 Toss 차트 데이터를 우선 보강합니다."
+        fillHeight={fillHeight}
       />
     );
   }
@@ -471,30 +769,45 @@ export function CandleChartView({
         borderRadius: 10,
         overflow: 'hidden',
         background: 'var(--bg-card)',
+        ...(fillHeight
+          ? {
+              flex: '1 1 0',
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column' as const,
+            }
+          : {}),
       }}
     >
-      <div
-        style={{
-          padding: '8px 10px',
-          borderBottom: '1px solid var(--border-soft)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 10,
-          fontSize: 11,
-          color: 'var(--text-muted)',
-        }}
-      >
-        <span>
-          {interval} · {range}
-        </span>
-        <span>
-          {items.length} candles · 마우스를 올리면 OHLCV 표시 · 클릭하면 봉 고정
-        </span>
-      </div>
-      {coverage !== undefined && coverage !== null && (
+      {!compact && (
+        <div
+          style={{
+            padding: '8px 10px',
+            borderBottom: '1px solid var(--border-soft)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 10,
+            fontSize: 11,
+            color: 'var(--text-muted)',
+          }}
+        >
+          <span>
+            {interval} · {range}
+          </span>
+          <span>
+            {items.length} candles · 마우스를 올리면 OHLCV 표시 · 클릭하면 봉 고정
+          </span>
+        </div>
+      )}
+      {!compact && showDiagnostics && coverage !== undefined && coverage !== null && (
         <CandleDataInspector coverage={coverage} />
       )}
-      <LightweightCandleCanvas items={items} colorScheme={colorScheme} />
+      <LightweightCandleCanvas
+        items={items}
+        colorScheme={colorScheme}
+        height={height}
+        fillHeight={fillHeight}
+      />
     </div>
   );
 }
@@ -527,14 +840,82 @@ export function CandleDataInspector({ coverage }: { coverage: CandleApiCoverage 
 }
 
 function sourceMixLabel(sources: readonly string[]): string {
+  if (sources.includes('toss-time-daily')) return '토스 과거 분봉';
+  if (sources.includes('toss-time-today')) return '토스 당일분봉';
   if (sources.includes('kis-time-daily')) return 'KIS 과거 분봉';
   if (sources.includes('kis-time-today')) return 'KIS 당일분봉';
-  if (sources.includes('kis-daily')) return 'KIS 일봉';
+  if (sources.includes('toss-daily')) return '토스 일봉';
+  if (sources.includes('kis-daily')) return 'legacy KIS 일봉';
   if (sources.length === 0) return '저장 데이터 없음';
   return sources.join(', ');
 }
 
-function ChartMessage({ title, detail }: { title: string; detail: string }) {
+export function candleSourceStatusText(sources: readonly string[], backfilled: boolean): string {
+  if (sources.includes('toss-time-daily')) return '토스 과거 분봉 포함';
+  if (sources.includes('toss-time-today')) return '토스 당일분봉 포함';
+  if (sources.includes('kis-time-daily')) return 'KIS 과거 분봉 포함';
+  if (sources.includes('kis-time-today')) return 'KIS 당일분봉 포함';
+  if (sources.includes('toss-daily')) return '토스 일봉 백필 포함';
+  if (sources.includes('kis-daily')) return 'legacy KIS 일봉 포함';
+  if (backfilled) return '자동 차트 백필 포함';
+  return '로컬 저장 candle';
+}
+
+export function trimNonTradingEdgeCandles(
+  items: readonly CandleApiItem[],
+): CandleApiItem[] {
+  let first = 0;
+  let last = items.length - 1;
+
+  while (first <= last && isNonTradingEdgePlaceholder(items[first])) {
+    first += 1;
+  }
+  while (last >= first && isNonTradingEdgePlaceholder(items[last])) {
+    last -= 1;
+  }
+  return items.slice(first, last + 1);
+}
+
+export function compactNonTradingCandles(
+  items: readonly CandleApiItem[],
+): CandleApiItem[] {
+  return trimNonTradingEdgeCandles(items).filter(
+    (item) => !isNonTradingGapPlaceholder(item),
+  );
+}
+
+function isNonTradingEdgePlaceholder(item: CandleApiItem | undefined): boolean {
+  if (item === undefined) return false;
+  return (
+    item.source === 'rest' &&
+    item.volume === 0 &&
+    item.open === item.high &&
+    item.high === item.low &&
+    item.low === item.close
+  );
+}
+
+function isNonTradingGapPlaceholder(item: CandleApiItem): boolean {
+  return isNonTradingEdgePlaceholder(item) && isKstClosedNightMinute(item.bucketAt);
+}
+
+function isKstClosedNightMinute(iso: string): boolean {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return false;
+  const shifted = new Date(ms + KST_OFFSET_MS);
+  const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+  return minuteOfDay >= 20 * 60 || minuteOfDay < 8 * 60;
+}
+
+function ChartMessage({
+  title,
+  detail,
+  fillHeight = false,
+}: {
+  title: string;
+  detail: string;
+  fillHeight?: boolean;
+}) {
   return (
     <div
       style={{
@@ -544,6 +925,16 @@ function ChartMessage({ title, detail }: { title: string; detail: string }) {
         textAlign: 'center',
         color: 'var(--text-muted)',
         lineHeight: 1.6,
+        ...(fillHeight
+          ? {
+              flex: '1 1 0',
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }
+          : {}),
       }}
     >
       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
@@ -583,15 +974,28 @@ export function shouldReplaceCandleTooltipRows(
 function LightweightCandleCanvas({
   items,
   colorScheme,
+  height,
+  fillHeight,
 }: {
   items: readonly CandleApiItem[];
   colorScheme: ChartColorScheme;
+  height: number;
+  fillHeight: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const tooltipTimeRef = useRef<number | null>(null);
   const tooltipVisibleRef = useRef(false);
   const tooltipPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const latestDataRef = useRef<{
+    candleData: CandlestickData[];
+    volumeData: HistogramData[];
+  }>({ candleData: [], volumeData: [] });
+  const itemByTimeRef = useRef<Map<number, CandleApiItem>>(new Map());
+  const visibleRangeKeyRef = useRef<string | null>(null);
   const palette = getChartPalette(colorScheme);
   const [tooltipRows, setTooltipRows] = useState<CandleTooltipRows | null>(null);
   const [pinnedRows, setPinnedRows] = useState<CandleTooltipRows | null>(null);
@@ -625,10 +1029,29 @@ function LightweightCandleCanvas({
     }
     return map;
   }, [items]);
+  const latestItem = items.length === 0 ? null : items[items.length - 1];
+
+  useEffect(() => {
+    latestDataRef.current = { candleData, volumeData };
+    itemByTimeRef.current = itemByTime;
+
+    const candleSeries = candleSeriesRef.current;
+    const volumeSeries = volumeSeriesRef.current;
+    if (candleSeries === null || volumeSeries === null) return;
+
+    candleSeries.setData(candleData);
+    volumeSeries.setData(volumeData);
+
+    const nextRangeKey = chartVisibleRangeKey(items);
+    if (nextRangeKey !== null && nextRangeKey !== visibleRangeKeyRef.current) {
+      visibleRangeKeyRef.current = nextRangeKey;
+      chartRef.current?.timeScale().fitContent();
+    }
+  }, [candleData, itemByTime, items, volumeData]);
 
   useEffect(() => {
     const host = hostRef.current;
-    if (host === null || candleData.length === 0) return;
+    if (host === null) return;
 
     let disposed = false;
     let removeChart: (() => void) | null = null;
@@ -667,16 +1090,25 @@ function LightweightCandleCanvas({
     tooltipVisibleRef.current = false;
     tooltipPositionRef.current = null;
     setPinnedRows(null);
+    visibleRangeKeyRef.current = null;
 
     void import('lightweight-charts').then(
       ({ CandlestickSeries, HistogramSeries, createChart }) => {
         if (disposed) return;
+        const initialHeight = fillHeight
+          ? Math.max(180, host.clientHeight || height)
+          : height;
         const chart = createChart(host, {
           autoSize: true,
-          height: 320,
+          height: initialHeight,
           layout: {
             background: { color: 'transparent' },
             textColor: '#848E9C',
+          },
+          localization: {
+            locale: 'ko-KR',
+            dateFormat: 'yyyy-MM-dd',
+            timeFormatter: formatKstChartTime,
           },
           grid: {
             vertLines: { color: 'rgba(132, 142, 156, 0.12)' },
@@ -688,6 +1120,7 @@ function LightweightCandleCanvas({
           timeScale: {
             borderColor: 'rgba(132, 142, 156, 0.25)',
             timeVisible: true,
+            tickMarkFormatter: formatKstTickMark,
           },
         });
         const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -697,7 +1130,8 @@ function LightweightCandleCanvas({
           wickUpColor: palette.upColor,
           wickDownColor: palette.downColor,
         });
-        candleSeries.setData(candleData);
+        candleSeriesRef.current = candleSeries;
+        candleSeries.setData(latestDataRef.current.candleData);
 
         const volumeSeries = chart.addSeries(HistogramSeries, {
           priceFormat: { type: 'volume' },
@@ -706,7 +1140,9 @@ function LightweightCandleCanvas({
         volumeSeries.priceScale().applyOptions({
           scaleMargins: { top: 0.78, bottom: 0 },
         });
-        volumeSeries.setData(volumeData);
+        volumeSeriesRef.current = volumeSeries;
+        volumeSeries.setData(latestDataRef.current.volumeData);
+        chartRef.current = chart;
         const handleCrosshairMove = (param: MouseEventParams) => {
           const point = param.point;
           if (
@@ -721,7 +1157,7 @@ function LightweightCandleCanvas({
             return;
           }
           const tooltipTime = Number(param.time);
-          const item = itemByTime.get(tooltipTime);
+          const item = itemByTimeRef.current.get(tooltipTime);
           if (item === undefined) {
             hideTooltip();
             return;
@@ -745,16 +1181,22 @@ function LightweightCandleCanvas({
             setPinnedRows(null);
             return;
           }
-          const item = itemByTime.get(Number(param.time));
+          const item = itemByTimeRef.current.get(Number(param.time));
           setPinnedRows(item === undefined ? null : formatCandleTooltipRows(item));
         };
         chart.subscribeCrosshairMove(handleCrosshairMove);
         chart.subscribeClick(handleClick);
         chart.timeScale().fitContent();
+        visibleRangeKeyRef.current = chartVisibleRangeKeyFromCandles(
+          latestDataRef.current.candleData,
+        );
         removeChart = () => {
           chart.unsubscribeCrosshairMove(handleCrosshairMove);
           chart.unsubscribeClick(handleClick);
           chart.remove();
+          chartRef.current = null;
+          candleSeriesRef.current = null;
+          volumeSeriesRef.current = null;
         };
       },
     );
@@ -767,7 +1209,14 @@ function LightweightCandleCanvas({
       }
       removeChart?.();
     };
-  }, [candleData, itemByTime, palette.downColor, palette.upColor, volumeData]);
+  }, [
+    fillHeight,
+    height,
+    palette.downColor,
+    palette.upColor,
+    palette.volumeDownColor,
+    palette.volumeUpColor,
+  ]);
 
   const tooltipTransform =
     tooltipPositionRef.current === null
@@ -775,7 +1224,17 @@ function LightweightCandleCanvas({
       : `translate(${tooltipPositionRef.current.x}px, ${tooltipPositionRef.current.y}px)`;
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div
+      style={{
+        position: 'relative',
+        ...(fillHeight
+          ? {
+              flex: '1 1 0',
+              minHeight: 0,
+            }
+          : {}),
+      }}
+    >
       {pinnedRows !== null && (
         <PinnedCandlePanel
           rows={pinnedRows}
@@ -785,8 +1244,15 @@ function LightweightCandleCanvas({
       <div
         ref={hostRef}
         data-testid="stock-candle-chart-host"
+        data-candle-count={items.length}
+        data-latest-candle-time={latestItem?.bucketAt ?? ''}
+        data-latest-candle-close={latestItem?.close ?? ''}
+        data-latest-candle-sample-count={latestItem?.sampleCount ?? ''}
+        data-latest-candle-source={latestItem?.source ?? ''}
+        data-latest-candle-partial={latestItem?.isPartial === true ? 'true' : 'false'}
         style={{
-          height: 320,
+          height: fillHeight ? '100%' : height,
+          minHeight: fillHeight ? 180 : undefined,
           width: '100%',
         }}
       />
@@ -917,4 +1383,57 @@ function formatKstMinute(iso: string): string {
   const hour = String(shifted.getUTCHours()).padStart(2, '0');
   const minute = String(shifted.getUTCMinutes()).padStart(2, '0');
   return `${year}. ${month}. ${day}. ${hour}:${minute}`;
+}
+
+export function formatKstChartTime(time: Time): string {
+  const ms = chartTimeToMs(time);
+  if (ms === null) return String(time);
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(ms));
+}
+
+export function formatKstTickMark(time: Time): string | null {
+  const ms = chartTimeToMs(time);
+  if (ms === null) return null;
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(ms));
+}
+
+function chartTimeToMs(time: Time): number | null {
+  if (typeof time === 'number') return time * 1000;
+  if (typeof time === 'string') {
+    const parsed = Date.parse(time);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const date = Date.UTC(time.year, time.month - 1, time.day, 0, 0, 0, 0);
+  return Number.isFinite(date) ? date : null;
+}
+
+function chartVisibleRangeKey(items: readonly CandleApiItem[]): string | null {
+  if (items.length === 0) return null;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (first === undefined || last === undefined) return null;
+  return `${first.time}:${last.time}:${items.length}`;
+}
+
+function chartVisibleRangeKeyFromCandles(
+  candles: readonly CandlestickData[],
+): string | null {
+  if (candles.length === 0) return null;
+  const first = candles[0];
+  const last = candles[candles.length - 1];
+  if (first === undefined || last === undefined) return null;
+  return `${String(first.time)}:${String(last.time)}:${candles.length}`;
 }

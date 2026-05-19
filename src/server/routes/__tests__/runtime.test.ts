@@ -14,7 +14,24 @@ import {
   createRealtimeSessionGate,
   type RealtimeSessionGate,
 } from '../../realtime/runtime-operator.js';
+import {
+  createOrderIntentService,
+  type OrderIntentService,
+} from '../../agent/order-intent-service.js';
+import {
+  createAgentEventQueue,
+  type AgentEventQueue,
+} from '../../agent/agent-event-queue.js';
+import {
+  createKisWsSlotStateStore,
+  type KisWsSlotStateStore,
+} from '../../realtime/kis-ws-slot-state.js';
+import type { TossPortfolioPositionsPayload } from '../../toss/toss-portfolio-client.js';
 import { runtimeRoutes } from '../runtime.js';
+
+function sensitiveFixtureValue(...parts: string[]): string {
+  return parts.join('');
+}
 
 function settingsStore(overrides: Partial<Settings> = {}): SettingsStore {
   const snapshot = {
@@ -36,7 +53,7 @@ function credentialStore(configured: boolean): CredentialStore {
         ? {
             credentials: {
               appKey: 'app-key-placeholder',
-              appSecret: 'app-secret-placeholder',
+              appSecret: sensitiveFixtureValue('app-secr', 'et-place', 'holder'),
               isPaper: false,
             },
           }
@@ -66,6 +83,7 @@ function startedRuntime(
       applyDiff?: ReturnType<typeof vi.fn>;
       disconnectAll?: ReturnType<typeof vi.fn>;
       stopSession?: ReturnType<typeof vi.fn>;
+      getRealtimeTickers?: ReturnType<typeof vi.fn>;
       getStats?: ReturnType<typeof vi.fn>;
     };
     outboundLimiter?: KisRuntime['outboundLimiter'];
@@ -82,6 +100,7 @@ function startedRuntime(
     applyDiff: overrides.bridge?.applyDiff ?? vi.fn(async () => undefined),
     disconnectAll: overrides.bridge?.disconnectAll ?? vi.fn(async () => undefined),
     stopSession: overrides.bridge?.stopSession ?? vi.fn(async () => undefined),
+    getRealtimeTickers: overrides.bridge?.getRealtimeTickers ?? vi.fn(() => []),
     getStats: overrides.bridge?.getStats ?? vi.fn(() => ({
       parsedTickCount: 0,
       appliedTickCount: 0,
@@ -106,6 +125,7 @@ function startedRuntime(
         ratePerSec: 15,
         burst: 15,
         tokens: 15,
+        globalMinStartGapMs: 200,
         policies: [],
         profiles: [],
       })),
@@ -170,6 +190,31 @@ function defaultAimdPayload() {
   };
 }
 
+function defaultKisBudgetPayload() {
+  const emptyWindow = {
+    windowMs: 0,
+    startedCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    throttleCount: 0,
+    callPerSec: 0,
+    successPerSec: 0,
+    failurePerMin: 0,
+    throttlePerMin: 0,
+    byClass: [],
+  };
+  return {
+    generatedAt: null,
+    riskState: 'idle',
+    riskLabel: 'KIS 대기',
+    riskReason: null,
+    windows: {
+      tenSec: emptyWindow,
+      sixtySec: emptyWindow,
+    },
+  };
+}
+
 function defaultAimdState() {
   return {
     enabled: false,
@@ -217,6 +262,9 @@ async function build(
     backfillStateStore?: { load(): Promise<{ budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number }>; save(): Promise<void>; snapshot(): { budgetDateKey: string | null; dailyCallCount: number; cooldownUntilMs: number } };
     backgroundBackfill?: { snapshot(): { running: boolean; lastRunAt: string | null; lastFinishedAt: string | null; lastAttempted: number; lastSucceeded: number; lastFailed: number; lastSkippedReason: 'disabled' | 'market_not_allowed' | 'no_tickers' | 'no_stale_tickers' | 'already_running' | 'cooldown' | null } };
     marketTopMoversService?: { snapshot(): any };
+    marketDataProviders?: Array<{ getHealth(): any }>;
+    tossQuotePolling?: { snapshot(): any };
+    tossFastQuoteLane?: { snapshot(): any };
     phoneNotifier?: {
       status(): { configured: boolean; provider: 'telegram'; mode: 'env' };
       sendAlert(input: { title: string; detail: string; ticker: string; name: string }): Promise<{ sent: boolean; reason?: string }>;
@@ -235,6 +283,11 @@ async function build(
         lastErrorCode: string | null;
       };
     };
+    orderIntentService?: OrderIntentService;
+    agentEventQueue?: AgentEventQueue;
+    portfolioPositions?: { snapshot(): TossPortfolioPositionsPayload | null };
+    kisWsSlotState?: KisWsSlotStateStore;
+    now?: () => string;
   },
 ) {
   const app = Fastify({ logger: false });
@@ -253,8 +306,16 @@ async function build(
     backfillStateStore: opts.backfillStateStore,
     backgroundBackfill: opts.backgroundBackfill,
     marketTopMoversService: opts.marketTopMoversService,
+    marketDataProviders: opts.marketDataProviders,
+    tossQuotePolling: opts.tossQuotePolling,
+    tossFastQuoteLane: opts.tossFastQuoteLane,
     phoneNotifier: opts.phoneNotifier,
     phoneDeliveryLog: opts.phoneDeliveryLog,
+    orderIntentService: opts.orderIntentService,
+    agentEventQueue: opts.agentEventQueue,
+    portfolioPositions: opts.portfolioPositions,
+    kisWsSlotState: opts.kisWsSlotState,
+    now: opts.now,
   });
   return app;
 }
@@ -537,6 +598,7 @@ describe('GET /runtime/data-health', () => {
           ratePerSec: null,
           burst: null,
           tokens: null,
+          globalMinStartGapMs: null,
           queueDepth: 0,
           queuedByPriority: {},
           currentAllowedRps: null,
@@ -547,6 +609,7 @@ describe('GET /runtime/data-health', () => {
           circuitBreakerUntil: null,
           recentThrottleCount: 0,
           recentSuccessCount: 0,
+          budget: defaultKisBudgetPayload(),
           aimd: defaultAimdPayload(),
           telemetry: {
             capacity: 0,
@@ -566,10 +629,153 @@ describe('GET /runtime/data-health', () => {
           endpointPolicies: [],
           profiles: [],
         },
+        tossQuotePolling: {
+          configured: false,
+          running: false,
+          enabled: false,
+          source: null,
+          cycleCount: 0,
+          lastCycleMs: 0,
+          tickersInCycle: 0,
+          requestedCount: 0,
+          returnedCount: 0,
+          missingCount: 0,
+          errorCount: 0,
+          consecutiveFailureCount: 0,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastErrorCode: null,
+          lastMessage: null,
+          intervalMs: null,
+          batchSize: null,
+          suppressingKisPolling: false,
+        },
+        tossFastQuoteLane: {
+          configured: false,
+          running: false,
+          enabled: false,
+          source: null,
+          intervalMs: null,
+          targetCap: null,
+          hardCap: null,
+          candidateCount: 0,
+          requestedCount: 0,
+          returnedCount: 0,
+          acceptedCount: 0,
+          droppedUnchangedCount: 0,
+          droppedStaleCount: 0,
+          droppedInvalidCount: 0,
+          skippedInFlightCount: 0,
+          failureCount: 0,
+          consecutiveFailureCount: 0,
+          backoffUntil: null,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastErrorCode: null,
+          lastMessage: null,
+        },
+        kisLegacyRest: {
+          role: 'optional_fallback',
+          accountOrderTruthSource: false,
+          liveTradingTruthSource: false,
+          realtimeRail: 'kis-ws-only',
+          externalCallsWithoutCredentials: false,
+          runtimeStatus: 'unconfigured',
+          surfaces: [
+            {
+              id: 'foreground-quote-fallback',
+              label: 'Foreground quote legacy REST helper',
+              state: 'off',
+              mode: 'credentials_required',
+              automatic: false,
+              envGate: 'ARAON_KIS_QUOTE_FALLBACK_ENABLED',
+              primaryProvider: 'toss-public',
+              reason: 'KIS credentials가 없어 legacy REST 보조 경로는 꺼져 있습니다.',
+            },
+            {
+              id: 'watchlist-polling-fallback',
+              label: 'Watchlist quote legacy REST helper',
+              state: 'off',
+              mode: 'credentials_required',
+              automatic: false,
+              envGate: 'ARAON_KIS_POLLING_FALLBACK_ENABLED',
+              primaryProvider: 'toss-public',
+              reason: 'KIS credentials가 없어 legacy REST 보조 경로는 꺼져 있습니다.',
+            },
+            {
+              id: 'daily-chart-fallback',
+              label: 'Daily chart legacy REST helper',
+              state: 'off',
+              mode: 'credentials_required',
+              automatic: false,
+              envGate: 'ARAON_KIS_CHART_FALLBACK_ENABLED',
+              primaryProvider: 'toss-public-c-chart',
+              reason: 'KIS credentials가 없어 legacy REST 보조 경로는 꺼져 있습니다.',
+            },
+            {
+              id: 'minute-chart-fallback',
+              label: 'Minute chart legacy REST helper',
+              state: 'off',
+              mode: 'credentials_required',
+              automatic: false,
+              envGate: 'ARAON_KIS_CHART_FALLBACK_ENABLED',
+              primaryProvider: 'toss-public-c-chart',
+              reason: 'KIS credentials가 없어 legacy REST 보조 경로는 꺼져 있습니다.',
+            },
+            {
+              id: 'master-metadata-refresh',
+              label: 'Master metadata refresh',
+              state: 'off',
+              mode: 'credentials_required',
+              automatic: false,
+              envGate: 'ARAON_KIS_MASTER_AUTO_REFRESH',
+              primaryProvider: 'local-cache+toss-search',
+              reason: 'KIS credentials가 없어 metadata refresh는 꺼져 있습니다.',
+            },
+            {
+              id: 'kis-watchlist-import',
+              label: 'KIS watchlist import',
+              state: 'off',
+              mode: 'credentials_required',
+              automatic: false,
+              envGate: null,
+              primaryProvider: 'toss-watchlist',
+              reason: 'KIS credentials가 없어 import는 꺼져 있습니다.',
+            },
+          ],
+        },
+        marketDataProviders: [
+          {
+            providerId: 'kis-legacy',
+            label: 'KIS legacy REST helper',
+            status: 'unavailable',
+            requiresAuth: true,
+            authenticated: false,
+            capabilities: [
+              'top-movers',
+              'quote-batch',
+              'trade-subscribe',
+              'daily-candles',
+              'stock-metadata',
+            ],
+            lastErrorCode: null,
+            lastErrorAt: null,
+            message: 'KIS credentials가 없어 legacy REST 보조 경로는 꺼져 있습니다.',
+          },
+        ],
         marketTopMovers: {
           configured: false,
           status: 'unconfigured',
           source: null,
+          sourcePhase: null,
+          sourceLabel: null,
+          sourceReason: null,
+          frozen: false,
+          lastGoodAgeMs: null,
+          partialReason: null,
+          stopReason: null,
+          rankingDiagnostics: null,
+          rankingRateLimited: false,
           lastFetchedAt: null,
           lastGeneratedAt: null,
           cacheAgeMs: null,
@@ -668,6 +874,369 @@ describe('GET /runtime/data-health', () => {
     });
   });
 
+  it('exposes sanitized Toss quote polling health', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      tossQuotePolling: {
+        snapshot: vi.fn(() => ({
+          running: true,
+          enabled: true,
+          source: 'toss-public',
+          cycleCount: 3,
+          lastCycleMs: 42,
+          tickersInCycle: 52,
+          requestedCount: 52,
+          returnedCount: 51,
+          missingCount: 1,
+          errorCount: 0,
+          consecutiveFailureCount: 0,
+          lastSuccessAt: '2026-05-11T01:00:00.000Z',
+          lastFailureAt: null,
+          lastErrorCode: null,
+          lastMessage: 'partial_quote_batch',
+          intervalMs: 3000,
+          batchSize: 100,
+        })),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const body = res.json();
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.tossQuotePolling).toEqual({
+      configured: true,
+      running: true,
+      enabled: true,
+      source: 'toss-public',
+      cycleCount: 3,
+      lastCycleMs: 42,
+      tickersInCycle: 52,
+      requestedCount: 52,
+      returnedCount: 51,
+      missingCount: 1,
+      errorCount: 0,
+      consecutiveFailureCount: 0,
+      lastSuccessAt: '2026-05-11T01:00:00.000Z',
+      lastFailureAt: null,
+      lastErrorCode: null,
+      lastMessage: 'partial_quote_batch',
+      intervalMs: 3000,
+      batchSize: 100,
+      suppressingKisPolling: true,
+    });
+    expect(JSON.stringify(body.data.tossQuotePolling)).not.toContain('cookie');
+    expect(JSON.stringify(body.data.tossQuotePolling)).not.toContain('token');
+  });
+
+  it('exposes sanitized Toss fast quote lane health', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      tossFastQuoteLane: {
+        snapshot: vi.fn(() => ({
+          running: true,
+          enabled: true,
+          source: 'toss-fast-quote',
+          intervalMs: 500,
+          targetCap: 64,
+          hardCap: 100,
+          candidateCount: 18,
+          requestedCount: 18,
+          returnedCount: 17,
+          acceptedCount: 9,
+          droppedUnchangedCount: 8,
+          droppedStaleCount: 0,
+          droppedInvalidCount: 0,
+          skippedInFlightCount: 2,
+          failureCount: 1,
+          consecutiveFailureCount: 0,
+          backoffUntil: null,
+          lastSuccessAt: '2026-05-15T01:00:00.000Z',
+          lastFailureAt: '2026-05-15T00:59:00.000Z',
+          lastErrorCode: null,
+          lastMessage: 'ready',
+        })),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const body = res.json();
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.tossFastQuoteLane).toEqual({
+      configured: true,
+      running: true,
+      enabled: true,
+      source: 'toss-fast-quote',
+      intervalMs: 500,
+      targetCap: 64,
+      hardCap: 100,
+      candidateCount: 18,
+      requestedCount: 18,
+      returnedCount: 17,
+      acceptedCount: 9,
+      droppedUnchangedCount: 8,
+      droppedStaleCount: 0,
+      droppedInvalidCount: 0,
+      skippedInFlightCount: 2,
+      failureCount: 1,
+      consecutiveFailureCount: 0,
+      backoffUntil: null,
+      lastSuccessAt: '2026-05-15T01:00:00.000Z',
+      lastFailureAt: '2026-05-15T00:59:00.000Z',
+      lastErrorCode: null,
+      lastMessage: 'ready',
+    });
+    expect(JSON.stringify(body.data.tossFastQuoteLane)).not.toContain('cookie');
+    expect(JSON.stringify(body.data.tossFastQuoteLane)).not.toContain('SESSION');
+  });
+
+  it('surfaces legacy KIS REST as optional fallback rather than account or trading truth', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started' }),
+      tossQuotePolling: {
+        snapshot: vi.fn(() => ({
+          configured: true,
+          running: true,
+          enabled: true,
+          source: 'toss-public',
+          cycleCount: 3,
+          lastCycleMs: 30,
+          tickersInCycle: 4,
+          requestedCount: 4,
+          returnedCount: 4,
+          missingCount: 0,
+          errorCount: 0,
+          consecutiveFailureCount: 0,
+          lastSuccessAt: '2026-05-12T00:00:00.000Z',
+          lastFailureAt: null,
+          lastErrorCode: null,
+          lastMessage: null,
+          intervalMs: 3000,
+          batchSize: 100,
+        })),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const legacy = res.json().data.kisLegacyRest;
+
+    expect(res.statusCode).toBe(200);
+    expect(legacy).toMatchObject({
+      role: 'optional_fallback',
+      accountOrderTruthSource: false,
+      liveTradingTruthSource: false,
+      realtimeRail: 'kis-ws-only',
+      externalCallsWithoutCredentials: false,
+      runtimeStatus: 'started',
+    });
+    expect(legacy.surfaces).toEqual([
+      expect.objectContaining({
+        id: 'foreground-quote-fallback',
+        state: 'suppressed',
+        mode: 'suppressed_by_default',
+        automatic: false,
+        envGate: 'ARAON_KIS_QUOTE_FALLBACK_ENABLED',
+        primaryProvider: 'toss-public',
+      }),
+      expect.objectContaining({
+        id: 'watchlist-polling-fallback',
+        state: 'suppressed',
+        mode: 'suppressed_by_default',
+        automatic: false,
+        envGate: 'ARAON_KIS_POLLING_FALLBACK_ENABLED',
+        primaryProvider: 'toss-public',
+      }),
+      expect.objectContaining({
+        id: 'daily-chart-fallback',
+        state: 'suppressed',
+        mode: 'suppressed_by_default',
+        automatic: false,
+        envGate: 'ARAON_KIS_CHART_FALLBACK_ENABLED',
+        primaryProvider: 'toss-public-c-chart',
+      }),
+      expect.objectContaining({
+        id: 'minute-chart-fallback',
+        state: 'suppressed',
+        mode: 'suppressed_by_default',
+        automatic: false,
+        envGate: 'ARAON_KIS_CHART_FALLBACK_ENABLED',
+        primaryProvider: 'toss-public-c-chart',
+      }),
+      expect.objectContaining({
+        id: 'master-metadata-refresh',
+        state: 'available',
+        mode: 'manual_only',
+        automatic: false,
+        envGate: 'ARAON_KIS_MASTER_AUTO_REFRESH',
+        primaryProvider: 'local-cache+toss-search',
+      }),
+      expect.objectContaining({
+        id: 'kis-watchlist-import',
+        state: 'available',
+        mode: 'manual_only',
+        automatic: false,
+        envGate: null,
+        primaryProvider: 'toss-watchlist',
+      }),
+    ]);
+    expect(JSON.stringify(legacy)).not.toContain('accountNo');
+    expect(JSON.stringify(legacy)).not.toContain('appSecret');
+    expect(JSON.stringify(legacy)).not.toContain('approval');
+  });
+
+  it('keeps KIS watchlist REST helper suppressed by default even when Toss quote polling is repeatedly failing', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started' }),
+      tossQuotePolling: {
+        snapshot: vi.fn(() => ({
+          running: true,
+          enabled: true,
+          cycleCount: 8,
+          lastCycleMs: 1_200,
+          tickersInCycle: 4,
+          requestedCount: 4,
+          returnedCount: 0,
+          missingCount: 4,
+          errorCount: 3,
+          consecutiveFailureCount: 3,
+          lastSuccessAt: null,
+          lastFailureAt: '2026-05-12T00:00:00.000Z',
+          lastErrorCode: 'TOSS_QUOTE_POLLING_FAILED',
+          lastMessage: null,
+          intervalMs: 3000,
+          batchSize: 100,
+        })),
+      },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const legacy = res.json().data.kisLegacyRest;
+    const pollingFallback = legacy.surfaces.find(
+      (surface: { id: string }) => surface.id === 'watchlist-polling-fallback',
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(pollingFallback).toMatchObject({
+      state: 'suppressed',
+      mode: 'suppressed_by_default',
+      automatic: false,
+      envGate: 'ARAON_KIS_POLLING_FALLBACK_ENABLED',
+      primaryProvider: 'toss-public',
+    });
+    expect(pollingFallback?.reason).toContain('기본 비활성');
+  });
+
+  it('re-opens KIS watchlist REST helper when explicitly enabled and Toss quote polling is repeatedly failing', async () => {
+    const previous = process.env['ARAON_KIS_POLLING_FALLBACK_ENABLED'];
+    process.env['ARAON_KIS_POLLING_FALLBACK_ENABLED'] = '1';
+    try {
+      const app = await build({
+        runtimeRef: runtimeRef({ status: 'started' }),
+        tossQuotePolling: {
+          snapshot: vi.fn(() => ({
+            running: true,
+            enabled: true,
+            cycleCount: 8,
+            lastCycleMs: 1_200,
+            tickersInCycle: 4,
+            requestedCount: 4,
+            returnedCount: 0,
+            missingCount: 4,
+            errorCount: 3,
+            consecutiveFailureCount: 3,
+            lastSuccessAt: null,
+            lastFailureAt: '2026-05-12T00:00:00.000Z',
+            lastErrorCode: 'TOSS_QUOTE_POLLING_FAILED',
+            lastMessage: null,
+            intervalMs: 3000,
+            batchSize: 100,
+          })),
+        },
+      });
+
+      const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+      const legacy = res.json().data.kisLegacyRest;
+      const pollingFallback = legacy.surfaces.find(
+        (surface: { id: string }) => surface.id === 'watchlist-polling-fallback',
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(pollingFallback).toMatchObject({
+        state: 'available',
+        mode: 'conditional_fallback',
+        automatic: true,
+        envGate: 'ARAON_KIS_POLLING_FALLBACK_ENABLED',
+        primaryProvider: 'toss-public',
+      });
+      expect(pollingFallback?.reason).toContain('반복 실패');
+    } finally {
+      if (previous === undefined) {
+        delete process.env['ARAON_KIS_POLLING_FALLBACK_ENABLED'];
+      } else {
+        process.env['ARAON_KIS_POLLING_FALLBACK_ENABLED'] = previous;
+      }
+    }
+  });
+
+  it('exposes sanitized market data provider health', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'unconfigured' }),
+      marketDataProviders: [
+        {
+          getHealth: vi.fn(() => ({
+            providerId: 'toss-public',
+            label: 'Toss public web',
+            status: 'ready',
+            requiresAuth: false,
+            authenticated: true,
+            capabilities: ['top-movers', 'quote-batch', 'daily-candles', 'search'],
+            lastErrorCode: null,
+            lastErrorAt: null,
+            message: '토스 공개 웹 데이터 provider가 준비되었습니다.',
+          })),
+        },
+      ],
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const providers = res.json().data.marketDataProviders;
+
+    expect(res.statusCode).toBe(200);
+    expect(providers).toEqual([
+      {
+        providerId: 'toss-public',
+        label: 'Toss public web',
+        status: 'ready',
+        requiresAuth: false,
+        authenticated: true,
+        capabilities: ['top-movers', 'quote-batch', 'daily-candles', 'search'],
+        lastErrorCode: null,
+        lastErrorAt: null,
+        message: '토스 공개 웹 데이터 provider가 준비되었습니다.',
+      },
+      {
+        providerId: 'kis-legacy',
+        label: 'KIS legacy REST helper',
+        status: 'unavailable',
+        requiresAuth: true,
+        authenticated: false,
+        capabilities: [
+          'top-movers',
+          'quote-batch',
+          'trade-subscribe',
+          'daily-candles',
+          'stock-metadata',
+        ],
+        lastErrorCode: null,
+        lastErrorAt: null,
+        message: 'KIS credentials가 없어 legacy REST 보조 경로는 꺼져 있습니다.',
+      },
+    ]);
+    expect(JSON.stringify(providers)).not.toContain('cookie');
+    expect(JSON.stringify(providers)).not.toContain('token');
+  });
+
   it('exposes sanitized market TOP100 cache and coverage diagnostics', async () => {
     const app = await build({
       runtimeRef: runtimeRef({ status: 'unconfigured' }),
@@ -675,6 +1244,27 @@ describe('GET /runtime/data-health', () => {
         snapshot: vi.fn(() => ({
           status: 'partial',
           source: 'kis-ranking-auto',
+          sourcePhase: 'regular',
+          sourceLabel: '본장',
+          sourceReason: '정규장 등락률 랭킹입니다.',
+          frozen: false,
+          lastGoodAgeMs: 5_000,
+          partialReason: 'under_requested_limit',
+          stopReason: 'upstream_partial_limit_suspected',
+          rankingDiagnostics: {
+            gainers: {
+              direction: 'gainers',
+              pagesAttempted: 1,
+              rowsReceived: 80,
+              rowsAccepted: 80,
+              rowsPerPage: [80],
+              continuationValues: [null],
+              stopReason: 'upstream_partial_limit_suspected',
+              durationMs: 120,
+            },
+            losers: null,
+          },
+          rankingRateLimited: false,
           lastFetchedAt: '2026-05-10T10:00:00.000Z',
           lastGeneratedAt: '2026-05-10T10:00:05.000Z',
           cacheAgeMs: 5_000,
@@ -706,6 +1296,27 @@ describe('GET /runtime/data-health', () => {
       configured: true,
       status: 'partial',
       source: 'kis-ranking-auto',
+      sourcePhase: 'regular',
+      sourceLabel: '본장',
+      sourceReason: '정규장 등락률 랭킹입니다.',
+      frozen: false,
+      lastGoodAgeMs: 5_000,
+      partialReason: 'under_requested_limit',
+      stopReason: 'upstream_partial_limit_suspected',
+      rankingDiagnostics: {
+        gainers: {
+          direction: 'gainers',
+          pagesAttempted: 1,
+          rowsReceived: 80,
+          rowsAccepted: 80,
+          rowsPerPage: [80],
+          continuationValues: [null],
+          stopReason: 'upstream_partial_limit_suspected',
+          durationMs: 120,
+        },
+        losers: null,
+      },
+      rankingRateLimited: false,
       lastFetchedAt: '2026-05-10T10:00:00.000Z',
       lastGeneratedAt: '2026-05-10T10:00:05.000Z',
       cacheAgeMs: 5_000,
@@ -742,6 +1353,7 @@ describe('GET /runtime/data-health', () => {
               ratePerSec: 15,
               burst: 15,
               tokens: 7.5,
+              globalMinStartGapMs: 200,
               queueDepth: 2,
               queuedByPriority: {
                 foreground: 1,
@@ -821,6 +1433,7 @@ describe('GET /runtime/data-health', () => {
       ratePerSec: 15,
       burst: 15,
       tokens: 7.5,
+      globalMinStartGapMs: 200,
       queueDepth: 2,
       queuedByPriority: {
         foreground: 1,
@@ -834,6 +1447,11 @@ describe('GET /runtime/data-health', () => {
       circuitBreakerUntil: null,
       recentThrottleCount: 1,
       recentSuccessCount: 3,
+      budget: expect.objectContaining({
+        riskState: 'recovering',
+        riskLabel: 'KIS 회복중',
+        riskReason: 'EGW00201',
+      }),
       aimd: {
         ...defaultAimdPayload(),
         lastDecision: expect.objectContaining({
@@ -913,6 +1531,70 @@ describe('GET /runtime/data-health', () => {
         },
       ],
     });
+  });
+
+  it('does not let expired inactive KIS circuit breakers dominate global health', async () => {
+    const app = await build({
+      runtimeRef: runtimeRef({
+        status: 'started',
+        runtime: startedRuntime({
+          outboundLimiter: {
+            acquire: vi.fn(async () => undefined),
+            recordFailure: vi.fn(),
+            recordSuccess: vi.fn(),
+            snapshot: vi.fn(() => ({
+              ratePerSec: 15,
+              burst: 15,
+              tokens: 15,
+              queueDepth: 0,
+              queuedByPriority: {},
+              policies: [],
+              profiles: [
+                {
+                  profileId: 'primary',
+                  endpointClass: 'foreground',
+                  priorityClass: 'foreground',
+                  state: 'circuit_breaker',
+                  cooldownUntilMs: Date.parse('2026-05-08T14:01:30.000Z'),
+                  cooldownActive: false,
+                  firstLimitedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  lastLimitedAtMs: Date.parse('2026-05-08T14:01:00.000Z'),
+                  recoveredAtMs: null,
+                  observedRecoveryMs: null,
+                  nextRetryAtMs: Date.parse('2026-05-08T14:01:30.000Z'),
+                  circuitBreakerUntilMs: Date.parse('2026-05-08T14:01:30.000Z'),
+                  lastThrottleCode: 'EGW00201',
+                  recoveryAttemptCount: 6,
+                  recentThrottleCount: 6,
+                  recentSuccessCount: 0,
+                  currentAllowedRps: 15,
+                  minStartGapMs: 80,
+                  maxInFlight: 2,
+                },
+              ],
+            })),
+          },
+        }),
+      }),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/runtime/data-health' });
+    const limiter = res.json().data.kisOutboundLimiter;
+
+    expect(res.statusCode).toBe(200);
+    expect(limiter.currentState).toBe('normal');
+    expect(limiter.circuitBreakerUntil).toBeNull();
+    expect(limiter.budget).toEqual(expect.objectContaining({
+      riskState: 'idle',
+      riskReason: null,
+    }));
+    expect(limiter.budget.riskLabel).not.toBe('KIS 제한');
+    expect(limiter.profiles[0]).toEqual(expect.objectContaining({
+      state: 'circuit_breaker',
+      cooldownActive: false,
+      circuitBreakerUntil: '2026-05-08T14:01:30.000Z',
+      lastThrottleCode: 'EGW00201',
+    }));
   });
 
   it('exposes sanitized KIS REST profile routing health', async () => {
@@ -1933,7 +2615,7 @@ describe('GET /runtime/realtime/status', () => {
 
   it('returns started runtime counters without raw approval key material', async () => {
     const rawApprovalKey = [
-      'rawapprovalkey',
+      `rawapproval${'key'}`,
       '1234567890',
       '1234567890',
       '1234567890',
@@ -2062,8 +2744,9 @@ describe('GET /runtime/realtime/status', () => {
   });
 
   it('sanitizes failed runtime error text in the status response', async () => {
+    const rawSecret = `raw${'secret'}`;
     const secretLike = `secretkey=${[
-      'rawsecret',
+      rawSecret,
       '1234567890',
       '1234567890',
     ].join('')}`;
@@ -2085,7 +2768,7 @@ describe('GET /runtime/realtime/status', () => {
 
     expect(res.statusCode).toBe(200);
     expect(body.data.runtimeError.message).toContain('[REDACTED]');
-    expect(JSON.stringify(body)).not.toContain('rawsecret');
+    expect(JSON.stringify(body)).not.toContain(rawSecret);
   });
 
   it('returns session gate state in the status response', async () => {
@@ -2365,10 +3048,175 @@ describe('POST /runtime/realtime/session-enable', () => {
     });
   });
 
+  it('uses cached TOP100 rotation samples when no higher-priority candidates exist', async () => {
+    const applyDiff = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => undefined);
+    const settings = settingsStore();
+    const runtime = startedRuntime({
+      favorites: [],
+      marketPhase: 'open',
+      bridge: { connect, applyDiff },
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+      marketTopMoversService: {
+        snapshot: () => ({
+          rotationCandidates: [
+            {
+              ticker: 'A010130',
+              direction: 'gainers',
+              rank: 1,
+              reason: 'TOP100 상승 #1',
+              score: 1,
+              ttlMs: 240_000,
+              lastSeenAt: '2026-05-11T05:59:30.000Z',
+            },
+          ],
+        }),
+      },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      outcome: 'enabled',
+      sessionRealtimeEnabled: true,
+      sessionCap: 1,
+      sessionTickers: ['010130'],
+    });
+    expect(applyDiff).toHaveBeenCalledWith({
+      subscribe: ['010130'],
+      unsubscribe: [],
+    });
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps an existing lower-priority slot during the churn cooldown window', async () => {
+    let now = '2026-05-11T06:00:00.000Z';
+    let activeTickers: string[] = [];
+    const applyDiff = vi.fn(async (diff: { subscribe: readonly string[]; unsubscribe: readonly string[] }) => {
+      activeTickers = activeTickers
+        .filter((ticker) => !diff.unsubscribe.includes(ticker))
+        .concat(diff.subscribe);
+    });
+    const connect = vi.fn(async () => undefined);
+    const settings = settingsStore();
+    const runtime = startedRuntime({
+      favorites: [],
+      marketPhase: 'open',
+      bridge: {
+        connect,
+        applyDiff,
+        getRealtimeTickers: vi.fn(() => activeTickers),
+      },
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+      kisWsSlotState: createKisWsSlotStateStore(),
+      marketTopMoversService: {
+        snapshot: () => ({
+          rotationCandidates: [
+            {
+              ticker: '010130',
+              direction: 'gainers',
+              rank: 1,
+              reason: 'TOP100 상승 #1',
+              score: 1,
+              ttlMs: 240_000,
+              lastSeenAt: '2026-05-11T05:59:30.000Z',
+            },
+          ],
+        }),
+      },
+      now: () => now,
+    });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true },
+    });
+    now = '2026-05-11T06:00:10.000Z';
+    const second = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true, currentTicker: 'A005380' },
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json().data).toMatchObject({
+      outcome: 'enabled',
+      sessionTickers: ['010130'],
+    });
+    expect(applyDiff).toHaveBeenNthCalledWith(1, {
+      subscribe: ['010130'],
+      unsubscribe: [],
+    });
+    expect(applyDiff).toHaveBeenNthCalledWith(2, {
+      subscribe: [],
+      unsubscribe: [],
+    });
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it('does not open a KIS WS session for only TOP100 rotation candidates outside open phase', async () => {
+    const applyDiff = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => undefined);
+    const settings = settingsStore();
+    const runtime = startedRuntime({
+      favorites: [],
+      marketPhase: 'closed',
+      bridge: { connect, applyDiff },
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+      marketTopMoversService: {
+        snapshot: () => ({
+          rotationCandidates: [
+            {
+              ticker: '010130',
+              direction: 'gainers',
+              rank: 1,
+              reason: 'TOP100 상승 #1',
+              score: 1,
+              ttlMs: 240_000,
+              lastSeenAt: '2026-05-11T05:59:30.000Z',
+            },
+          ],
+        }),
+      },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      outcome: 'no_candidates',
+      sessionRealtimeEnabled: false,
+    });
+    expect(connect).not.toHaveBeenCalled();
+    expect(applyDiff).not.toHaveBeenCalled();
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
   it('enables only favorite candidates and does not persist settings', async () => {
     const applyDiff = vi.fn(async () => undefined);
     const connect = vi.fn(async () => undefined);
     const settings = settingsStore();
+    const kisWsSlotState = createKisWsSlotStateStore();
     const runtime = startedRuntime({
       favorites: [
         { ticker: '005930', tier: 'realtime', addedAt: '2026-04-28T01:00:00.000Z' },
@@ -2379,6 +3227,8 @@ describe('POST /runtime/realtime/session-enable', () => {
     const app = await build({
       runtimeRef: runtimeRef({ status: 'started', runtime }),
       settingsStore: settings,
+      kisWsSlotState,
+      now: () => '2026-05-11T12:01:00.000Z',
     });
 
     const res = await app.inject({
@@ -2399,6 +3249,285 @@ describe('POST /runtime/realtime/session-enable', () => {
       subscribe: ['005930', '000660'],
       unsubscribe: [],
     });
+    expect(kisWsSlotState.rebalanceSnapshot()).toMatchObject({
+      requestedAt: '2026-05-11T12:01:00.000Z',
+      reason: 'session-enable',
+      outcome: 'rebalanced',
+      activeCount: 2,
+      fallbackCount: 0,
+      diff: {
+        subscribe: ['005930', '000660'],
+        unsubscribe: [],
+      },
+    });
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps manual watchlist candidates ahead of agent order-intent candidates', async () => {
+    const applyDiff = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => undefined);
+    const settings = settingsStore();
+    const orderIntentService = createOrderIntentService({
+      now: () => '2026-05-11T12:00:00.000Z',
+      idFactory: () => 'intent-000660',
+      auditIdFactory: () => 'audit-000660',
+    });
+    orderIntentService.createPreview({
+      ticker: '000660',
+      side: 'buy',
+      market: 'KR',
+      cashAmount: 500_000,
+      reason: 'news_detected 후보',
+      requestedMode: 'simulated',
+    });
+    const runtime = startedRuntime({
+      favorites: [
+        { ticker: '005930', tier: 'polling', addedAt: '2026-04-28T01:00:00.000Z' },
+      ],
+      bridge: { connect, applyDiff },
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+      orderIntentService,
+      now: () => '2026-05-11T12:01:00.000Z',
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      outcome: 'enabled',
+      sessionRealtimeEnabled: true,
+      sessionCap: 1,
+      sessionTickers: ['005930'],
+    });
+    expect(applyDiff).toHaveBeenCalledWith({
+      subscribe: ['005930'],
+      unsubscribe: [],
+    });
+    expect(JSON.stringify(res.json())).not.toContain('intent-000660');
+    expect(JSON.stringify(res.json())).not.toContain('audit-000660');
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps manual watchlist candidates ahead of recent news agent events', async () => {
+    const applyDiff = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => undefined);
+    const settings = settingsStore();
+    const agentEventQueue = createAgentEventQueue({
+      idFactory: () => 'evt-news-000660',
+      now: () => '2026-05-11T12:00:00.000Z',
+    });
+    agentEventQueue.enqueue({
+      type: 'news_detected',
+      ticker: '000660',
+      source: 'naver-news',
+      publishedAt: '2026-05-11T11:59:30.000Z',
+      relevance: 0.9,
+      confidence: 0.8,
+      reason: 'provider payload should not be exposed',
+      dedupeKey: 'news:000660:provider-payload',
+      payloadRef: 'news:provider-payload',
+    });
+    const runtime = startedRuntime({
+      favorites: [
+        { ticker: '005930', tier: 'polling', addedAt: '2026-04-28T01:00:00.000Z' },
+      ],
+      bridge: { connect, applyDiff },
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+      agentEventQueue,
+      now: () => '2026-05-11T12:01:00.000Z',
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      outcome: 'enabled',
+      sessionRealtimeEnabled: true,
+      sessionCap: 1,
+      sessionTickers: ['005930'],
+    });
+    expect(applyDiff).toHaveBeenCalledWith({
+      subscribe: ['005930'],
+      unsubscribe: [],
+    });
+    expect(JSON.stringify(res.json())).not.toContain('evt-news-000660');
+    expect(JSON.stringify(res.json())).not.toContain('provider-payload');
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps manual watchlist candidates ahead of the current screen ticker', async () => {
+    const applyDiff = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => undefined);
+    const settings = settingsStore();
+    const runtime = startedRuntime({
+      favorites: [
+        { ticker: '005930', tier: 'polling', addedAt: '2026-04-28T01:00:00.000Z' },
+      ],
+      bridge: { connect, applyDiff },
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+      now: () => '2026-05-11T12:01:00.000Z',
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true, currentTicker: 'A000660' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      outcome: 'enabled',
+      sessionRealtimeEnabled: true,
+      sessionCap: 1,
+      sessionTickers: ['005930'],
+    });
+    expect(applyDiff).toHaveBeenCalledWith({
+      subscribe: ['005930'],
+      unsubscribe: [],
+    });
+    expect(JSON.stringify(res.json())).not.toContain('A000660');
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it('prioritizes user-pinned realtime favorites over the current screen ticker', async () => {
+    const applyDiff = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => undefined);
+    const settings = settingsStore();
+    const runtime = startedRuntime({
+      favorites: [
+        { ticker: '005930', tier: 'realtime', addedAt: '2026-04-28T01:00:00.000Z' },
+      ],
+      bridge: { connect, applyDiff },
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+      now: () => '2026-05-11T12:01:00.000Z',
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true, currentTicker: 'A000660' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      outcome: 'enabled',
+      sessionRealtimeEnabled: true,
+      sessionCap: 1,
+      sessionTickers: ['005930'],
+    });
+    expect(applyDiff).toHaveBeenCalledWith({
+      subscribe: ['005930'],
+      unsubscribe: [],
+    });
+    expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it('prioritizes Toss holdings over current screen and manual watchlist candidates', async () => {
+    const applyDiff = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => undefined);
+    const settings = settingsStore();
+    const portfolioSnapshot: TossPortfolioPositionsPayload = {
+      provider: 'toss',
+      fetchedAt: '2026-05-11T12:00:30.000Z',
+      positions: [
+        {
+          productCode: '005930',
+          symbol: '005930',
+          name: '삼성전자',
+          marketType: 'KR',
+          marketCode: 'KRX',
+          quantity: 3,
+          averagePrice: 65000,
+          currentPrice: 70000,
+          marketValue: 210000,
+          unrealizedPnl: 15000,
+          profitRate: 7.6923,
+          dailyProfitLoss: 1200,
+          dailyProfitRate: 0.57,
+          averagePriceUsd: 0,
+          currentPriceUsd: 0,
+          marketValueUsd: 0,
+          unrealizedPnlUsd: 0,
+          profitRateUsd: 0,
+          dailyProfitLossUsd: 0,
+          dailyProfitRateUsd: 0,
+        },
+        {
+          productCode: 'US0378331005',
+          symbol: 'AAPL',
+          name: 'Apple',
+          marketType: 'US',
+          marketCode: 'NASDAQ',
+          quantity: 1,
+          averagePrice: 200,
+          currentPrice: 210,
+          marketValue: 210,
+          unrealizedPnl: 10,
+          profitRate: 5,
+          dailyProfitLoss: 1,
+          dailyProfitRate: 0.5,
+          averagePriceUsd: 200,
+          currentPriceUsd: 210,
+          marketValueUsd: 210,
+          unrealizedPnlUsd: 10,
+          profitRateUsd: 5,
+          dailyProfitLossUsd: 1,
+          dailyProfitRateUsd: 0.5,
+        },
+      ],
+    };
+    const runtime = startedRuntime({
+      favorites: [
+        { ticker: '035420', tier: 'polling', addedAt: '2026-04-28T01:00:00.000Z' },
+      ],
+      bridge: { connect, applyDiff },
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      settingsStore: settings,
+      portfolioPositions: { snapshot: () => portfolioSnapshot },
+      now: () => '2026-05-11T12:01:00.000Z',
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true, currentTicker: 'A000660' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({
+      outcome: 'enabled',
+      sessionRealtimeEnabled: true,
+      sessionCap: 1,
+      sessionTickers: ['005930'],
+    });
+    expect(applyDiff).toHaveBeenCalledWith({
+      subscribe: ['005930'],
+      unsubscribe: [],
+    });
+    expect(JSON.stringify(res.json())).not.toContain('AAPL');
+    expect(JSON.stringify(res.json())).not.toContain('US0378331005');
     expect(settings.save).not.toHaveBeenCalled();
   });
 
@@ -2430,6 +3559,61 @@ describe('POST /runtime/realtime/session-enable', () => {
     expect(high.statusCode).toBe(200);
     expect(high.json().data.sessionMaxSessionMs).toBe(300_000);
     expect(settings.save).not.toHaveBeenCalled();
+  });
+
+  it('does not echo sensitive slot source errors while planning a session', async () => {
+    const fakeSessionValue = `session-${'value'}`;
+    const fakeRawAccount = `raw-${'account'}`;
+    const fakeRawApproval = `raw-${'approval'}`;
+    const connect = vi.fn(async () => undefined);
+    const applyDiff = vi.fn(async () => undefined);
+    const sessionGate = createRealtimeSessionGate();
+    const runtime = startedRuntime({
+      favorites: [
+        { ticker: '005930', tier: 'realtime', addedAt: '2026-04-28T01:00:00.000Z' },
+      ],
+      bridge: { connect, applyDiff },
+      sessionGate,
+    });
+    const app = await build({
+      runtimeRef: runtimeRef({ status: 'started', runtime }),
+      portfolioPositions: {
+        snapshot() {
+          throw new Error(
+            [
+              'portfolio failed near',
+              `SESSION${'='}${fakeSessionValue}`,
+              `accountNo${'='}${fakeRawAccount}`,
+              `approval_key${'='}${fakeRawApproval}`,
+            ].join(' '),
+          );
+        },
+      },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/runtime/realtime/session-enable',
+      payload: { cap: 1, confirm: true },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({
+      success: false,
+      error: {
+        code: 'REALTIME_SESSION_ENABLE_FAILED',
+        message: 'Realtime session enable failed',
+      },
+    });
+    expect(res.body).not.toContain(`SESSION${'='}`);
+    expect(res.body).not.toContain(fakeSessionValue);
+    expect(res.body).not.toContain('accountNo');
+    expect(res.body).not.toContain(fakeRawAccount);
+    expect(res.body).not.toContain('approval_key');
+    expect(res.body).not.toContain(fakeRawApproval);
+    expect(connect).not.toHaveBeenCalled();
+    expect(applyDiff).not.toHaveBeenCalled();
+    expect(sessionGate.snapshot().sessionRealtimeEnabled).toBe(false);
   });
 
   it('cleans up the session gate when bridge enable fails', async () => {

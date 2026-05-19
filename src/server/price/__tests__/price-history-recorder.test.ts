@@ -177,6 +177,30 @@ describe('createPriceHistoryAggregator', () => {
     db.close();
   });
 
+  it('keeps Toss fast quote points ahead of REST fallback in the same bucket', async () => {
+    const db = openMemoryDb();
+    const repo = new PriceHistoryPointRepository(db);
+    const aggregator = createPriceHistoryAggregator({
+      writer: repo,
+      now: () => new Date('2026-05-07T00:00:06.000Z'),
+    });
+
+    aggregator.recordPrice(price({ price: 100_900, source: 'toss-fast-quote' }));
+    aggregator.recordPrice(price({ price: 100_300, source: 'rest' }));
+    await aggregator.flushDirty();
+
+    expect(repo.listPoints({ ticker: '005930' })).toEqual([
+      expect.objectContaining({
+        bucketAt: '2026-05-07T00:00:00.000Z',
+        price: 100_900,
+        source: 'toss-fast-quote',
+        sampleCount: 2,
+      }),
+    ]);
+
+    db.close();
+  });
+
   it('suppresses nearby REST fallback points after realtime history is flowing', async () => {
     const db = openMemoryDb();
     const repo = new PriceHistoryPointRepository(db);

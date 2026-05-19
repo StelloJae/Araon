@@ -11,37 +11,37 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
-import type { Price, SSEEvent } from '../src/shared/types.js';
-import { createFileCredentialStore } from '../src/server/credential-store.js';
+import type { Price, SSEEvent } from '../../../src/shared/types.js';
+import { createFileCredentialStore } from '../../../src/server/credential-store.js';
 import {
   createApprovalIssuer,
   type ApprovalRequest,
-} from '../src/server/kis/kis-approval.js';
-import { createKisRestClient } from '../src/server/kis/kis-rest-client.js';
+} from '../../../src/server/kis/kis-approval.js';
+import { createKisRestClient } from '../../../src/server/kis/kis-rest-client.js';
 import {
   parseKisTickFrame,
   type KisRealtimeTick,
-} from '../src/server/kis/kis-tick-parser.js';
+} from '../../../src/server/kis/kis-tick-parser.js';
 import {
   createKisWsClient,
   type KisWsClient,
-} from '../src/server/kis/kis-ws-client.js';
-import { PriceStore } from '../src/server/price/price-store.js';
+} from '../../../src/server/kis/kis-ws-client.js';
+import { PriceStore } from '../../../src/server/price/price-store.js';
 import {
   createRealtimeBridge,
   type ParsedWsFrame,
   type RealtimeTick,
   type WsTickParser,
-} from '../src/server/realtime/realtime-bridge.js';
+} from '../../../src/server/realtime/realtime-bridge.js';
 import {
   shouldApplyRuntimeWsTicks,
   type RuntimeWsGates,
-} from '../src/server/realtime/runtime-operator.js';
+} from '../../../src/server/realtime/runtime-operator.js';
 import {
   DEFAULT_SETTINGS,
   settingsSchema,
-} from '../src/server/settings-store.js';
-import { createSseManager } from '../src/server/sse/sse-manager.js';
+} from '../../../src/server/settings-store.js';
+import { createSseManager } from '../../../src/server/sse/sse-manager.js';
 
 const TR_ID = 'H0UNCNT0';
 const TARGET_TICKER = '005930';

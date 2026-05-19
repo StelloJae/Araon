@@ -4,9 +4,8 @@
  * Calls GET `KIS_INTSTOCK_GROUPLIST_PATH` with `tr_id = KIS_INTSTOCK_GROUPLIST_TR_ID`,
  * parses the KIS response shape defensively via zod, and returns typed groups.
  *
- * Note: the TR_ID is marked TODO in kis-constraints — if KIS returns an error
- * on the first real call, the full error detail (including the correct TR_ID)
- * is logged so the constant can be updated.
+ * This legacy helper logs only bounded diagnostics. It must not write raw KIS
+ * payloads, tokens, app keys, approval keys, or account identifiers.
  */
 
 import { z } from 'zod';
@@ -18,7 +17,7 @@ import {
 import { createChildLogger } from '@shared/logger.js';
 import type { Stock } from '@shared/types.js';
 
-import type { KisRestClient } from './kis-rest-client.js';
+import { KisRestError, type KisRestClient } from './kis-rest-client.js';
 import type { KisAuth } from './kis-auth.js';
 
 const log = createChildLogger('kis-watchlist-api');
@@ -32,11 +31,62 @@ const log = createChildLogger('kis-watchlist-api');
  */
 export class KisWatchlistUnavailableError extends Error {
   readonly cause: unknown;
-  constructor(message: string, cause?: unknown) {
+  readonly diagnostic: KisWatchlistErrorDiagnostic | null;
+  constructor(
+    message: string,
+    cause?: unknown,
+    diagnostic: KisWatchlistErrorDiagnostic | null = null,
+  ) {
     super(message);
     this.name = 'KisWatchlistUnavailableError';
     this.cause = cause;
+    this.diagnostic = diagnostic;
   }
+}
+
+export interface KisWatchlistErrorDiagnostic {
+  readonly name: string;
+  readonly message: string;
+  readonly status?: number;
+  readonly rtCd?: string | null;
+  readonly msgCd?: string | null;
+  readonly issueCount?: number;
+}
+
+const SENSITIVE_DIAGNOSTIC_PATTERNS: readonly RegExp[] = [
+  /\b(?:appKey|appSecret|accessToken|approvalKey|accountNo|accountNumber|authorization|bearer)\b\s*[:=]\s*[^\s"',}]+/gi,
+  /\b(?:approval[_-]?key|access[_-]?token|account[_-]?(?:no|number))\b\s*[:=]\s*[^\s"',}]+/gi,
+  /\b\d{8,14}-\d{2}\b/g,
+];
+
+function sanitizeDiagnosticText(value: string): string {
+  let sanitized = value;
+  for (const pattern of SENSITIVE_DIAGNOSTIC_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '[redacted]');
+  }
+  return sanitized;
+}
+
+export function describeKisWatchlistErrorCause(cause: unknown): KisWatchlistErrorDiagnostic {
+  if (cause instanceof KisRestError) {
+    return {
+      name: cause.name,
+      message: sanitizeDiagnosticText(cause.message),
+      status: cause.status,
+      rtCd: cause.rtCd,
+      msgCd: cause.msgCd,
+    };
+  }
+  if (cause instanceof Error) {
+    return {
+      name: cause.name,
+      message: sanitizeDiagnosticText(cause.message),
+    };
+  }
+  return {
+    name: typeof cause,
+    message: 'KIS watchlist request failed with a non-error cause',
+  };
 }
 
 // === KIS response schema =====================================================
@@ -117,22 +167,33 @@ export async function fetchWatchlistGroups(
       endpointClass: 'foreground',
     });
   } catch (err: unknown) {
+    const diagnostic = describeKisWatchlistErrorCause(err);
     log.error(
-      { err, path: KIS_INTSTOCK_GROUPLIST_PATH, trId: KIS_INTSTOCK_GROUPLIST_TR_ID },
-      'KIS watchlist request failed — check TR_ID if this is the first call',
+      { diagnostic, path: KIS_INTSTOCK_GROUPLIST_PATH, trId: KIS_INTSTOCK_GROUPLIST_TR_ID },
+      'KIS watchlist request failed',
     );
     throw new KisWatchlistUnavailableError(
-      `KIS watchlist endpoint unreachable or returned an error: ${err instanceof Error ? err.message : String(err)}`,
+      'KIS watchlist endpoint unreachable or returned an error',
       err,
+      diagnostic,
     );
   }
 
   const parsed = kisWatchlistResponseSchema.safeParse(raw);
   if (!parsed.success) {
-    log.error({ issues: parsed.error.issues, raw }, 'KIS watchlist response failed schema validation');
+    const diagnostic: KisWatchlistErrorDiagnostic = {
+      name: parsed.error.name,
+      message: 'KIS watchlist response schema validation failed',
+      issueCount: parsed.error.issues.length,
+    };
+    log.error(
+      { issues: parsed.error.issues, issueCount: parsed.error.issues.length },
+      'KIS watchlist response failed schema validation',
+    );
     throw new KisWatchlistUnavailableError(
-      `KIS watchlist response did not match expected shape: ${parsed.error.message}`,
+      'KIS watchlist response did not match expected shape',
       parsed.error,
+      diagnostic,
     );
   }
 

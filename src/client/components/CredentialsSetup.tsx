@@ -1,5 +1,5 @@
 /**
- * CredentialsSetup — KIS 앱키 등록 화면.
+ * CredentialsSetup — 선택형 실시간 추적 보조 기능 등록 화면.
  *
  * Renders when `/credentials/status` reports runtime === 'unconfigured' (or
  * 'failed'). Posts to `POST /credentials`; the server's setup mutex serializes
@@ -77,7 +77,7 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
           fontWeight: 800,
         }}
       >
-        거래는 폰에서 · 관찰은 Araon에서
+        Toss 중심 · KIS는 선택 실시간 추적
       </div>
       <h1
         style={{
@@ -88,7 +88,7 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
           letterSpacing: 0,
         }}
       >
-        옆 모니터에 켜두는 한국 주식 관찰 화면
+        Araon Toss-first 관찰 터미널
       </h1>
       <p
         style={{
@@ -99,27 +99,28 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
           color: 'var(--text-muted)',
         }}
       >
-        한국투자증권 OpenAPI 포털에서 발급받은 앱키와 앱시크릿을 입력하면
-        관심종목의 흐름, 차트, 뉴스, 알림을 로컬에서 정리합니다.
+        Toss 로그인 후 계좌·포트폴리오·관심종목을 읽기 전용으로 가져옵니다.
+        KIS 앱키는 한국 종목의 저지연 실시간 추적이 필요할 때만 등록합니다.
       </p>
 
       <div style={noticeStyle}>
         <div>Araon은 localhost에서만 실행되는 읽기 전용 모니터링 도구입니다.</div>
-        <div>거래는 기존 증권사 앱에서 하고, Araon은 옆 모니터에서 흐름을 보여줍니다.</div>
-        <div>주문/매매 기능은 없고, KIS credentials 등록 후 실시간 시세와 일봉 보강을 자동으로 관리합니다.</div>
+        <div>기본 검색·시세·차트·TOP100·계좌 화면은 Toss 중심으로 동작합니다.</div>
+        <div>KIS 자격증명은 선택 사항이며, 계좌·주문·차트·랭킹 기준이 아닙니다.</div>
       </div>
 
       <div style={stepsStyle}>
         <div style={stepsTitleStyle}>처음 시작 순서</div>
         <ol style={stepsListStyle}>
-          <li>한국투자증권 OpenAPI 앱키와 앱시크릿을 준비합니다.</li>
-          <li>아래에 등록하면 Araon이 전체 종목 목록을 자동으로 준비합니다.</li>
-          <li>대시보드 검색창에서 종목명·코드로 관심종목을 추가합니다.</li>
+          <li>먼저 Toss 계정 세션을 연결합니다.</li>
+          <li>검색·랭킹·관심종목은 Toss-first 데이터로 확인합니다.</li>
+          <li>저지연 실시간 추적이 필요할 때만 KIS App Key / App Secret을 등록합니다.</li>
         </ol>
       </div>
 
       <div style={hintStyle}>
-        최대 40종목까지 통합 시세로 운영하며 REST 폴링 fallback은 계속 유지됩니다.
+        실시간 추적은 최대 40개 한국 종목까지 보조합니다.
+        Toss-only product는 KIS로 보내지 않습니다.
         문제가 있으면 설정에서 비상정지할 수 있습니다.
       </div>
 

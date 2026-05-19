@@ -38,12 +38,16 @@ allowed RPS until enough stable successes have been observed.
 Phase 1 keeps the global token budget but adds start-spacing and in-flight
 limits. Initial policies are intentionally conservative:
 
+As of the 2026-05-11 live soak follow-up, Araon also keeps a 200ms global KIS
+REST start gap so polling and ranking cannot begin in the same tiny window even
+when their class-specific gaps are individually satisfied.
+
 | Class | Min start gap | Max in-flight |
 |---|---:|---:|
 | `auth` / `token` / `approval` | 1000ms | 1 |
 | `foreground` | 80ms | 2 |
 | `polling` | 350ms | 2 |
-| `ranking` | 750ms | 1 |
+| `ranking` | 1000ms | 1 |
 | `selected_backfill` / `selected-minute` | 1000ms | 1 |
 | `background_backfill` / `daily-backfill` | 1500ms | 1 |
 | `master_refresh` | 2000ms | 1 |

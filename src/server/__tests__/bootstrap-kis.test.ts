@@ -4,6 +4,7 @@ import {
   connectRealtimeFavoritesOnWarmup,
   createKisRuntimeRef,
   fetchRuntimeRestQuoteWithFallback,
+  shouldStartLegacyKisPollingScheduler,
   shouldPollRuntimeTicker,
   type KisRuntimeStaticDeps,
 } from '../bootstrap-kis.js';
@@ -17,10 +18,24 @@ describe('default KIS outbound limiter options', () => {
     const options = buildDefaultKisOutboundLimiterOptions({ isPaper: false });
 
     expect(options.recoveryStableMs).toBeGreaterThanOrEqual(30_000);
+    expect(options.globalMinStartGapMs).toBeGreaterThanOrEqual(200);
     expect(options.classPolicies?.polling?.minStartGapMs).toBeGreaterThanOrEqual(350);
     expect(options.classPolicies?.polling?.recoveryRatePerSec).toBeLessThanOrEqual(3);
+    expect(options.classPolicies?.ranking?.minStartGapMs).toBeGreaterThanOrEqual(1_000);
     expect(options.classPolicies?.selected_backfill?.maxInFlight).toBe(1);
     expect(options.classPolicies?.background_backfill?.minStartGapMs).toBeGreaterThanOrEqual(1_500);
+  });
+});
+
+describe('legacy KIS polling scheduler gate', () => {
+  it('keeps KIS REST polling scheduler off by default', () => {
+    expect(shouldStartLegacyKisPollingScheduler({})).toBe(false);
+    expect(shouldStartLegacyKisPollingScheduler({
+      shouldStartKisPollingScheduler: () => false,
+    })).toBe(false);
+    expect(shouldStartLegacyKisPollingScheduler({
+      shouldStartKisPollingScheduler: () => true,
+    })).toBe(true);
   });
 });
 
