@@ -36,7 +36,15 @@ export async function loadTossAccountRailSnapshot(
 ): Promise<TossAccountRailSnapshot> {
   const auth = await deps.getAuthStatus();
   const sessionReady = isTossAccountSessionReady(auth);
-  if (!sessionReady) {
+  let summary: TossAccountSummaryPayload | null = null;
+  if (sessionReady || canProbeRecentlyExpiredTossSession(auth)) {
+    try {
+      summary = await deps.getSummary();
+    } catch {
+      summary = null;
+    }
+  }
+  if (summary === null) {
     return {
       sessionReady: false,
       summary: null,
@@ -49,7 +57,6 @@ export async function loadTossAccountRailSnapshot(
     };
   }
 
-  const summary = await deps.getSummary();
   const [
     positions,
     pendingOrders,
@@ -87,6 +94,14 @@ export function isTossAccountSessionReady(
       auth.state === 'expiring' ||
       auth.state === 'session_scoped'
   );
+}
+
+function canProbeRecentlyExpiredTossSession(auth: TossSessionStatusPayload): boolean {
+  return auth.configured &&
+    auth.provider === 'toss' &&
+    auth.state === 'expired' &&
+    auth.expiresInMs !== null &&
+    auth.expiresInMs > -60_000;
 }
 
 async function optionalSurface<T>(load: () => Promise<T>): Promise<T | null> {

@@ -6,7 +6,9 @@
 
 @font-face {
   font-family: 'IBM Plex Sans';
-  src: url('/fonts/IBMPlexSans-VariableFont_wdth_wght.ttf') format('truetype-variations');
+  src:
+    url('/fonts/IBMPlexSans-VariableFont_wdth_wght.ttf') format('truetype-variations'),
+    url('/fonts/IBMPlexSans-VariableFont_wdth_wght.ttf') format('truetype');
   font-weight: 100 900;
   font-stretch: 75% 100%;
   font-style: normal;
@@ -14,7 +16,9 @@
 }
 @font-face {
   font-family: 'IBM Plex Sans';
-  src: url('/fonts/IBMPlexSans-Italic-VariableFont_wdth_wght.ttf') format('truetype');
+  src:
+    url('/fonts/IBMPlexSans-Italic-VariableFont_wdth_wght.ttf') format('truetype-variations'),
+    url('/fonts/IBMPlexSans-Italic-VariableFont_wdth_wght.ttf') format('truetype');
   font-weight: 100 900;
   font-stretch: 75% 100%;
   font-style: italic;
@@ -106,8 +110,12 @@ body {
   color: var(--text-primary);
   font-family: 'IBM Plex Sans', -apple-system, 'Apple SD Gothic Neo',
                'Noto Sans KR', 'Malgun Gothic', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background 200ms ease, color 200ms ease;
@@ -229,7 +237,7 @@ button {
 }
 
 .main--account-collapsed {
-  grid-template-columns: minmax(0, 1fr) 50px;
+  grid-template-columns: minmax(0, 1fr) 48px;
 }
 
 .home-workspace,
@@ -253,7 +261,6 @@ button {
   gap: 0;
   overflow: visible;
   background: var(--bg-card);
-  border-left: 1px solid var(--border);
   box-shadow: -12px 0 28px rgba(15, 23, 42, 0.08);
   height: calc(100% + 20px);
   margin-block: -10px;
@@ -269,6 +276,7 @@ button {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  border-left: 1px solid var(--border);
 }
 
 .home-grid {
@@ -331,11 +339,11 @@ button {
 }
 
 .home-agent-panel__header {
-  padding: 10px 14px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--border-soft);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .home-agent-panel__eyebrow,
@@ -351,7 +359,7 @@ button {
 .expanded-workspace__title {
   margin: 2px 0 0;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.15;
   font-weight: 900;
   letter-spacing: 0;
@@ -360,10 +368,11 @@ button {
 .home-agent-panel__body {
   flex: 1 1 0;
   min-height: 0;
-  padding: 10px;
+  padding: 8px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 8px;
   overflow: hidden;
 }
 
@@ -433,7 +442,9 @@ button {
 }
 
 .account-icon-rail {
-  min-width: 0;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -505,41 +516,37 @@ button {
   box-shadow: 0 8px 18px rgba(248, 113, 113, 0.12);
 }
 
+.toss-account-rail__position-row {
+  border-radius: 8px;
+  transition: background 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.toss-account-rail__position-row:not(:disabled):hover {
+  background: var(--bg-tint);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+
 .status-bar {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 80;
-  height: 44px;
+  height: 36px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: var(--bg-card);
   border-top: 1px solid var(--border);
   box-shadow: 0 -10px 28px rgba(15, 23, 42, 0.08);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   overflow: hidden;
 }
 
 [data-theme='dark'] .status-bar {
   box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.32);
-}
-
-.status-bar__notice {
-  height: 100%;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 18px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 900;
-  white-space: nowrap;
-  border-right: 1px solid var(--border);
-  background: var(--bg-card);
-  flex: 0 0 auto;
 }
 
 .status-bar__viewport {
@@ -565,20 +572,20 @@ button {
 .status-bar__market-tape {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: max-content;
   white-space: nowrap;
 }
 
 .status-bar__segment {
-  padding-right: 34px;
+  padding-right: 28px;
 }
 
 .status-bar__segment > span,
 .status-bar__market-tape > span {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 24px;
   line-height: 1;
 }
 
@@ -586,7 +593,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 28px;
+  height: 24px;
   line-height: 1;
   padding: 0 8px;
   border-radius: 999px;
@@ -607,9 +614,9 @@ button {
 }
 
 .status-bar__settings {
-  width: 34px;
-  height: 34px;
-  margin-right: 10px;
+  width: 30px;
+  height: 30px;
+  margin-right: 8px;
   border: none;
   border-radius: 999px;
   background: transparent;
@@ -714,14 +721,14 @@ button {
 .market-board__body--sectors {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  overflow-y: auto;
+  overflow: hidden auto;
   align-items: start;
 }
 
 .market-board__column {
   min-width: 0;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .market-board__column--divided {
@@ -860,6 +867,9 @@ button {
     grid-template-columns: minmax(0, 1fr) 48px;
     padding: 8px 0 8px 10px;
   }
+  .main--account-collapsed {
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
   .home-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 8px;
@@ -873,32 +883,26 @@ button {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
   .account-rail {
+    width: min(320px, calc(100vw - 24px));
+    justify-self: end;
+    z-index: 12;
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
+  .account-rail--collapsed {
+    width: 48px;
     grid-template-columns: 48px;
   }
-  .account-rail__panel {
+  .account-rail--collapsed .account-rail__panel {
     display: none;
   }
   .home-agent-panel__body {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 .section-block {
   display: flex;
   flex-direction: column;
-}
-
-.sectors-combined-block {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.sectors-combined-block__divider {
-  display: none;
-}
-
-.sectors-combined-block__column + .sectors-combined-block__column,
-.sectors-combined-block__divider + .sectors-combined-block__column {
-  border-top: 1px solid var(--border);
 }
 
 /* ---------- Terminal v2 primitives ---------- */

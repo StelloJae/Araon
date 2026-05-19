@@ -168,14 +168,14 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('서버 만료');
     expect(html).toContain('쿠키 만료');
     expect(html).toContain('로그인 진단');
-    expect(html).toContain('SSE 알림');
+    expect(html).toContain('토스 알림');
     expect(html).toContain('사용자 알림');
-    expect(html).toContain('thin notification');
-    expect(html).toContain('REST refresh 결과');
+    expect(html).toContain('알림 후 REST 갱신');
+    expect(html).toContain('데이터 갱신 결과');
     expect(html).toContain('portfolio-positions');
-    expect(html).toContain('refreshed');
+    expect(html).toContain('갱신됨');
     expect(html).toContain('completed-orders');
-    expect(html).toContain('throttled');
+    expect(html).toContain('속도 제한');
     expect(html).toContain('세션 연장');
     expect(html).not.toContain(`session-${'value'}`);
     expect(html).not.toContain('storage-value');
@@ -419,23 +419,23 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('000660 · 추적 종목 보조 후보');
     expect(html).toContain('제공자 보호');
     expect(html).toContain('10초 · 건너뜀 0회');
-    expect(html).toContain('first_seen 후 10-30초 목표');
+    expect(html).toContain('처음 감지 후 10-30초 목표');
     expect(html).toContain('제공자 발행 시점 보장 아님');
     expect(html).toContain('네이버 10초 · 토스 뉴스 10초 · 토스 시그널 꺼짐 · 공시 10초');
     expect(html).toContain('즐겨찾기 · 에이전트 이벤트 · 로컬 캐시');
-    expect(html).toContain('네이버 준비 · 토스 뉴스 세션 필요 · 토스 시그널 body 필요 · 공시 준비');
+    expect(html).toContain('네이버 준비 · 토스 뉴스 세션 필요 · 토스 시그널 요청 형식 필요 · 공시 준비');
     expect(html).toContain('제공자 지연');
     expect(html).toContain('네이버 갱신 120ms · 1건');
     expect(html).toContain('토스 뉴스 갱신 240ms · 0건');
     expect(html).toContain('토스 시그널 대기');
     expect(html).toContain('공시 대기');
-    expect(html).toContain('Toss 시그널 계약');
-    expect(html).toContain('capture 필요 · 외부 호출 off');
-    expect(html).toContain('사용자 로그인 + DevTools capture 필요');
-    expect(html).toContain('/api/v1/dashboard/intelligences/all');
-    expect(html).toContain('형식 후보: wts-info-api, wts-cert-api');
-    expect(html).toContain('empty는 비시그널 · non-empty만 event');
-    expect(html).toContain('raw template 숨김');
+    expect(html).toContain('Toss 시그널 확인');
+    expect(html).toContain('관찰 필요 · 외부 호출 꺼짐');
+    expect(html).toContain('사용자 로그인 + 브라우저 관찰 필요');
+    expect(html).toContain('후보 경로 관찰됨');
+    expect(html).toContain('형식 후보: 후보 2개');
+    expect(html).toContain('빈 응답은 비시그널 · 항목이 있을 때만 이벤트');
+    expect(html).toContain('원문 템플릿 숨김');
     expect(html).toContain('수동 확인');
     expect(html).toContain('자동 시작');
     expect(html).toContain('자동 정지');
@@ -556,17 +556,19 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('에이전트 이벤트 피드');
     expect(html).toContain('뉴스 감지');
     expect(html).toContain('005930');
-    expect(html).toContain('naver-finance');
+    expect(html).not.toContain('naver-finance');
     expect(html).toContain('삼성전자 신규 뉴스');
+    expect(html).toContain('신호 표시 지연');
     expect(html).toContain('18.0초');
     expect(html).toContain('51일');
     expect(html).not.toContain('4406526.4초');
     expect(html).toContain('알림 전달 기록');
     expect(html).toContain('목표 30.0초');
     expect(html).toContain('목표 내 1건');
-    expect(html).toContain('browser SSE');
+    expect(html).toContain('브라우저 알림');
     expect(html).toContain('전달 1명');
     expect(html).toContain('1.0초');
+    expect(html).not.toContain('agent-event SSE notification');
     expect(html).not.toContain('internal-key');
     expect(html).not.toContain('dedupeKey');
     expect(html).not.toContain('delivery-1');
@@ -658,8 +660,8 @@ describe('managed operations settings copy', () => {
     );
 
     expect(html).toContain('000660');
-    expect(html).toContain('agent 후보');
-    expect(html).toContain('TTL 60초');
+    expect(html).toContain('에이전트 후보');
+    expect(html).toContain('유지 60초');
     expect(html).not.toContain('intent-');
     expect(html).not.toContain('audit-');
   });
@@ -698,7 +700,7 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('010130');
     expect(html).toContain('TOP100 샘플');
     expect(html).toContain('대기');
-    expect(html).toContain('TTL 30초');
+    expect(html).toContain('유지 30초');
   });
 
   it('shows Toss account and portfolio as read-only session-gated data', () => {
@@ -879,7 +881,7 @@ describe('managed operations settings copy', () => {
     );
 
     expect(html).toContain('토스 계좌 / 포트폴리오');
-    expect(html).toContain('read-only');
+    expect(html).toContain('읽기 전용');
     expect(html).toContain('총 자산');
     expect(html).toContain('210,000원');
     expect(html).toContain('삼성전자');
@@ -1052,7 +1054,7 @@ describe('managed operations settings copy', () => {
     );
 
     expect(html).toContain('개발 모드');
-    expect(html).toContain('Simulated Market');
+    expect(html).toContain('모의 시장');
     expect(html).toContain('운영자 재검증');
   });
 
@@ -1090,11 +1092,11 @@ describe('managed operations settings copy', () => {
       }),
     );
 
-    expect(html).toContain('Toss candle 보강');
+    expect(html).toContain('Toss 차트 보강');
     expect(html).toContain('자동 운영');
     expect(html).toContain('장중 07:55~20:05');
     expect(html).toContain('비상정지');
-    expect(html).toContain('KIS chart REST는 legacy opt-in');
+    expect(html).toContain('KIS 차트 경로는 기본 경로가 아니며');
     expect(html).not.toContain('credentials 등록 후');
     expect(html).not.toContain('KIS 런타임 준비됨');
     expect(html).not.toContain('자동 백필 꺼짐');
@@ -1103,9 +1105,9 @@ describe('managed operations settings copy', () => {
   it('describes chart settings as Toss candle first', () => {
     const html = renderToStaticMarkup(createElement(ChartSettingsTab));
 
-    expect(html).toContain('Toss candle');
-    expect(html).toContain('저장된 candle이 있을 때만 표시');
-    expect(html).toContain('KIS chart REST는 legacy opt-in');
+    expect(html).toContain('Toss 차트');
+    expect(html).toContain('저장된 봉이 있을 때만 표시');
+    expect(html).toContain('KIS 차트 경로는 명시적으로 켠 이전 호환 경로');
     expect(html).not.toContain('KIS 일봉을 기준으로 보강');
   });
 
@@ -1465,15 +1467,15 @@ describe('managed operations settings copy', () => {
     expect(html).toContain('실시간 추적 억제');
     expect(html).toContain('데이터 소스');
     expect(html).toContain('Toss 기본');
-    expect(html).toContain('KIS legacy REST helper 꺼짐');
-    expect(html).toContain('KIS legacy REST');
+    expect(html).toContain('이전 호환 보조 경로 꺼짐');
+    expect(html).toContain('이전 KIS 경로');
     expect(html).toContain('꺼짐 6');
-    expect(html).toContain('KIS legacy: 역할=선택 보조');
-    expect(html).toContain('전경 시세 legacy REST 보조');
-    expect(html).toContain('관심종목 시세 legacy REST 보조');
+    expect(html).toContain('이전 KIS 경로: 역할=선택 보조');
+    expect(html).toContain('전경 시세 이전 호환 보조');
+    expect(html).toContain('관심종목 시세 이전 호환 보조');
     expect(html).toContain('마스터 메타데이터 수동 갱신');
     expect(html).toContain('KIS 관심종목 수동 가져오기');
-    expect(html).toContain('credential 필요');
+    expect(html).toContain('자격증명 필요');
     expect(html).toContain('자동 꺼짐');
     expect(html).toContain('ARAON_KIS_MASTER_AUTO_REFRESH');
     expect(html).toContain('TOP100 보장');
@@ -1686,11 +1688,11 @@ describe('managed operations settings copy', () => {
 
     expect(html).toContain('실시간 추적');
     expect(html).toContain('실시간 추적 허용');
-    expect(html).toContain('관심종목 시세 legacy REST 보조');
+    expect(html).toContain('관심종목 시세 이전 호환 보조');
     expect(html).toContain('조건부 보조');
     expect(html).toContain('자동 가능');
     expect(html).toContain('ARAON_KIS_POLLING_FALLBACK_ENABLED');
-    expect(html).toContain('Toss quote refresh가 반복 실패 중이라 KIS REST 보조 경로를 열어둡니다.');
+    expect(html).toContain('Toss 가격 갱신이 반복 실패 중이라 KIS 이전 호환 보조 경로를 열어둡니다.');
     expect(html).toContain('계좌/주문 기준=아니오');
     expect(html).not.toContain('accountNo');
     expect(html).not.toContain(['SESSION', ''].join('='));

@@ -77,7 +77,7 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
           fontWeight: 800,
         }}
       >
-        Toss 중심 · KIS는 선택 실시간 보조
+        Toss 중심 · KIS는 선택 실시간 추적
       </div>
       <h1
         style={{
@@ -100,13 +100,13 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
         }}
       >
         Toss 로그인 후 계좌·포트폴리오·관심종목을 읽기 전용으로 가져옵니다.
-        KIS 앱키는 한국 종목의 저지연 WS tick 보조가 필요할 때만 등록합니다.
+        KIS 앱키는 한국 종목의 저지연 실시간 추적이 필요할 때만 등록합니다.
       </p>
 
       <div style={noticeStyle}>
         <div>Araon은 localhost에서만 실행되는 읽기 전용 모니터링 도구입니다.</div>
-        <div>기본 검색·시세·차트·TOP100·계좌 surface는 Toss-first로 동작합니다.</div>
-        <div>KIS credentials는 선택 사항이며, 계좌·주문·차트·랭킹 기준이 아닙니다.</div>
+        <div>기본 검색·시세·차트·TOP100·계좌 화면은 Toss 중심으로 동작합니다.</div>
+        <div>KIS 자격증명은 선택 사항이며, 계좌·주문·차트·랭킹 기준이 아닙니다.</div>
       </div>
 
       <div style={stepsStyle}>
@@ -114,7 +114,7 @@ export function CredentialsSetup({ onSuccess }: CredentialsSetupProps) {
         <ol style={stepsListStyle}>
           <li>먼저 Toss 계정 세션을 연결합니다.</li>
           <li>검색·랭킹·관심종목은 Toss-first 데이터로 확인합니다.</li>
-          <li>저지연 tick 보조가 필요할 때만 KIS App Key / App Secret을 등록합니다.</li>
+          <li>저지연 실시간 추적이 필요할 때만 KIS App Key / App Secret을 등록합니다.</li>
         </ol>
       </div>
 

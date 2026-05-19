@@ -16,6 +16,7 @@ import { ExpandIcon, StarIcon } from '../lib/icons';
 import { SignalReasonList } from './SignalReasonList';
 import { StockCandleChart } from './StockCandleChart';
 import { StockNewsDisclosurePanel } from './StockNewsDisclosurePanel';
+import { ProductAvatar } from './ProductAvatar';
 import { TradingViewAdvancedChart } from './TradingViewAdvancedChart';
 
 interface DashboardFocusPanelProps {
@@ -23,6 +24,7 @@ interface DashboardFocusPanelProps {
   allStocks: ReadonlyArray<StockViewModel>;
   isFavorite: boolean;
   marketStatus: MarketStatus;
+  iconUrl?: string | null;
   onOpenFullChart: () => void;
   onToggleFav: (code: string) => void;
   presentation?: 'home' | 'fullChart';
@@ -43,6 +45,7 @@ export function DashboardFocusPanel({
   allStocks,
   isFavorite,
   marketStatus,
+  iconUrl = null,
   onOpenFullChart,
   onToggleFav,
   presentation = 'home',
@@ -110,6 +113,13 @@ export function DashboardFocusPanel({
       data-testid="dashboard-focus-panel"
     >
       <div style={headerStyle}>
+        <ProductAvatar
+          name={stock.name}
+          iconUrl={iconUrl}
+          ticker={stock.code}
+          size={28}
+          style={focusAvatarStyle}
+        />
         <div style={{ minWidth: 0, flex: '1 1 auto' }}>
           <div style={nameRowStyle}>
             <h2 style={titleStyle}>{stock.name}</h2>
@@ -196,11 +206,14 @@ export function DashboardFocusPanel({
         {activeTab === 'orderbook' && (
           <UnavailablePanel
             title="호가 / 체결"
-            detail="호가 데이터 provider 계약 대기. 준비 전까지 fake orderbook을 표시하지 않습니다."
+            detail="호가 데이터 연결 준비 중입니다. 준비 전까지 실제 호가창은 표시하지 않습니다."
           />
         )}
-        {(activeTab === 'news' || activeTab === 'disclosures') && (
-          <StockNewsDisclosurePanel ticker={stock.code} name={stock.name} />
+        {activeTab === 'news' && (
+          <StockNewsDisclosurePanel ticker={stock.code} name={stock.name} mode="news" />
+        )}
+        {activeTab === 'disclosures' && (
+          <StockNewsDisclosurePanel ticker={stock.code} name={stock.name} mode="disclosures" />
         )}
         {activeTab === 'signals' && (
           <div style={signalsWrapStyle}>
@@ -252,6 +265,10 @@ const headerStyle: CSSProperties = {
   flexShrink: 0,
 };
 
+const focusAvatarStyle: CSSProperties = {
+  marginTop: 1,
+};
+
 const nameRowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -262,7 +279,7 @@ const nameRowStyle: CSSProperties = {
 
 const titleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 24,
+  fontSize: 22,
   lineHeight: 1.1,
   fontWeight: 900,
   color: 'var(--text-strong)',
@@ -292,7 +309,7 @@ const quoteSummaryStyle: CSSProperties = {
 };
 
 const priceSummaryStyle: CSSProperties = {
-  fontSize: 18,
+  fontSize: 16,
   fontWeight: 900,
   color: 'var(--text-primary)',
 };

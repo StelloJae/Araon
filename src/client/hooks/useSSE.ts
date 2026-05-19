@@ -22,6 +22,7 @@ import { useErrorStore } from '../stores/error-store';
 import { useSurgeStore } from '../stores/surge-store';
 import { usePriceHistoryStore } from '../stores/price-history-store';
 import { useToastStore } from '../stores/toast-store';
+import { useProductDisplayNameStore } from '../stores/product-display-name-store';
 import {
   selectMomentumBuckets,
   useMomentumHistoryStore,
@@ -39,6 +40,7 @@ import { maybeAgentEventToToastSpec } from '../lib/agent-event-toast';
 import { dispatchAgentEventBrowserEvent } from '../lib/agent-event-browser-event';
 import { dispatchTossRefreshResultEvent } from '../lib/toss-refresh-result-event';
 import { maybeTossUserNotificationToToastSpec } from '../lib/toss-user-notification-toast';
+import { resolveProductDisplayName } from '../lib/product-display-name';
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
@@ -144,10 +146,15 @@ export function useSSE(url: string = '/events'): void {
                 session,
               );
               const meta = useStocksStore.getState().catalog[e.price.ticker];
+              const displayName = resolveProductDisplayName(
+                e.price.ticker,
+                meta?.name,
+                useProductDisplayNameStore.getState().names,
+              );
               const result = evaluateRealtimeMomentumPrice({
                 price: e.price,
                 marketStatus: currentMarketStatus,
-                name: meta?.name ?? e.price.ticker,
+                name: displayName ?? e.price.ticker,
                 buckets,
                 now,
                 state: momentumFeedState,
@@ -215,10 +222,15 @@ export function useSSE(url: string = '/events'): void {
             break;
           case 'agent-event': {
             const meta = useStocksStore.getState().catalog[e.event.ticker];
+            const displayName = resolveProductDisplayName(
+              e.event.product?.krTicker ?? e.event.ticker,
+              e.event.product?.displayName ?? meta?.name,
+              useProductDisplayNameStore.getState().names,
+            );
             const settings = useSettingsStore.getState().settings;
             const toast = maybeAgentEventToToastSpec(
               e,
-              meta?.name,
+              displayName,
               {
                 notificationsEnabled: settings.notifGlobalEnabled,
                 marketMovementThresholdPct: settings.surgeThreshold,
@@ -236,9 +248,14 @@ export function useSSE(url: string = '/events'): void {
           case 'toss-user-notification': {
             const ticker = e.notification.ticker;
             const meta = ticker !== null ? useStocksStore.getState().catalog[ticker] : undefined;
+            const displayName = resolveProductDisplayName(
+              ticker,
+              meta?.name,
+              useProductDisplayNameStore.getState().names,
+            );
             const toast = maybeTossUserNotificationToToastSpec(
               e,
-              meta?.name,
+              displayName,
               useSettingsStore.getState().settings.notifGlobalEnabled,
             );
             if (toast !== null) {

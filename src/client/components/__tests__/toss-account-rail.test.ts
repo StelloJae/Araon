@@ -24,7 +24,7 @@ describe('TossAccountRail', () => {
     );
 
     expect(html).toContain('기본계좌');
-    expect(html).toContain('읽기 전용');
+    expect(html).not.toContain('읽기 전용');
     expect(html).toContain('토스 로그인 필요');
     expect(html).toContain('계좌 데이터 없음');
     expect(html).toContain('토스 QR 로그인');
@@ -72,6 +72,7 @@ describe('TossAccountRail', () => {
               productCode: '005930',
               symbol: '005930',
               name: '삼성전자',
+              iconUrl: 'https://static.toss.im/png-icons/securities/icn-sec-fill-005930.png',
               marketType: 'KR_STOCK',
               marketCode: 'KSP',
               quantity: 3,
@@ -245,12 +246,21 @@ describe('TossAccountRail', () => {
     expect(html).toContain('체결 1건');
     expect(html).toContain('거래 1건');
     expect(html).toContain('관심 2종목');
+    expect(html).toContain('보유 종목 정렬');
+    expect(html).toContain('총 수익률 높은 순');
+    expect(html).toContain('평가금 높은 순');
+    expect(html).toContain('일간 수익률 낮은 순');
+    expect(html).toContain('현재가');
+    expect(html).toContain('평가금');
     expect(html).toContain('해외주식');
     expect(html).toContain('국내주식');
     expect(html).toContain('애플');
     expect(html).toContain('삼성전자');
+    expect(html).toContain('icn-sec-fill-005930.png');
     expect(html).toContain('네이버');
+    expect(html).toContain('icn-sec-fill-035420.png');
     expect(html).toContain('$0.39');
+    expect(html).not.toContain('>새로고침<');
     expect(html).not.toContain('pending-order-1');
     expect(html).not.toContain('completed-order-1');
     expect(html).not.toContain('transaction-1');

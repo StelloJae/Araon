@@ -23,6 +23,7 @@ import {
   useStocksStore,
   type SectorMeta,
 } from '../stores/stocks-store';
+import { useProductDisplayNameStore } from '../stores/product-display-name-store';
 import { useWatchlistStore } from '../stores/watchlist-store';
 import { StockRow } from './StockRow';
 import type { StockViewModel } from '../lib/view-models';
@@ -67,7 +68,7 @@ export function SectionStack({
 
   const view = useWatchlistStore((s) => s.view);
   const setView = useWatchlistStore((s) => s.setView);
-  const favorites = useWatchlistStore((s) => s.favorites);
+  const favorites = useWatchlistStore((s) => s.watchlistMembers);
 
   const stocksBySector = useMemo<Record<string, StockViewModel[]>>(() => {
     const sectorByName = new Map<string, SectorMeta>();
@@ -298,6 +299,7 @@ function SectorColumn({
                   onOpenDetail={onOpenDetail}
                   flashSeed={flashSeeds[s.code] ?? 0}
                   isFirst={i === 0}
+                  compact
                 />
               ))}
             </div>
@@ -322,6 +324,9 @@ function MarketTop100Block({
   const [data, setData] = useState<MarketTopMoversResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [market, setMarket] = useState<MarketTopMoversMarket>('kr');
+  const upsertMarketTopMovers = useProductDisplayNameStore(
+    (s) => s.upsertMarketTopMovers,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -342,6 +347,7 @@ function MarketTop100Block({
           return;
         }
         setData(next);
+        upsertMarketTopMovers(next);
         setError(null);
         if (shouldScheduleMarketTop100Refresh(cancelled)) {
           timer = setTimeout(load, normalizeMarketTop100RefreshDelayMs(next.refreshIntervalMs));
@@ -362,7 +368,7 @@ function MarketTop100Block({
       cancelled = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [market]);
+  }, [market, upsertMarketTopMovers]);
 
   if (data === null) {
     return (

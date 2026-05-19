@@ -40,9 +40,9 @@ import {
 import { useStocksStore } from '../stores/stocks-store';
 import { Field, Slider, Toggle } from './ui/SettingsControls';
 import { ensureAudioUnlocked, playBleep } from '../lib/sound';
+import { agentEventUserSummary } from '../lib/agent-candidate-view-model';
 import {
   ApiError,
-  addCredentialProfile,
   cancelTossLogin,
   clearTossSession,
   disableRealtimeSession,
@@ -68,7 +68,6 @@ import {
   getTossTransactionsOverview,
   getTossWatchlist,
   getAraonWatchlist,
-  getCredentialProfiles,
   getAgentEventMonitorStatus,
   getKisWsSlotStatus,
   getPhoneNotificationStatus,
@@ -91,7 +90,6 @@ import {
   type RealtimeStatusPayload,
   type RuntimeDataHealthPayload,
   type ServerRuntimeSettings,
-  type CredentialProfileSummary,
   type AgentEventAlertDeliveriesPayload,
   type AgentEventAlertDeliveryPayload,
   type AgentEventAlertDeliverySummaryPayload,
@@ -378,12 +376,6 @@ type BackupPhase =
   | { kind: 'success'; message: string }
   | { kind: 'error'; message: string };
 
-type ProfilePhase =
-  | { kind: 'idle' }
-  | { kind: 'saving' }
-  | { kind: 'success'; message: string }
-  | { kind: 'error'; message: string };
-
 function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
   const [status, setStatus] = useState<CredentialStatus | null>(null);
   const [realtimeStatus, setRealtimeStatus] =
@@ -447,12 +439,6 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
     useState<ServerSettingsPhase>({ kind: 'idle' });
   const [backupPhase, setBackupPhase] =
     useState<BackupPhase>({ kind: 'idle' });
-  const [credentialProfiles, setCredentialProfiles] =
-    useState<CredentialProfileSummary[]>([]);
-  const [profilePhase, setProfilePhase] = useState<ProfilePhase>({ kind: 'idle' });
-  const [profileLabel, setProfileLabel] = useState('');
-  const [profileAppKey, setProfileAppKey] = useState('');
-  const [profileAppSecret, setProfileAppSecret] = useState('');
   const [selectedCap, setSelectedCap] = useState<SessionRealtimeCap>(1);
   const [operatorConfirmed, setOperatorConfirmed] = useState(false);
 
@@ -536,27 +522,6 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
       });
     } catch (err) {
       setBackupPhase({ kind: 'error', message: operatorErrorMessage(err) });
-    }
-  }
-
-  async function handleAddCredentialProfile(): Promise<void> {
-    setProfilePhase({ kind: 'saving' });
-    try {
-      const profile = await addCredentialProfile({
-        label: profileLabel,
-        appKey: profileAppKey,
-        appSecret: profileAppSecret,
-      });
-      setCredentialProfiles(await getCredentialProfiles());
-      setProfileLabel('');
-      setProfileAppKey('');
-      setProfileAppSecret('');
-      setProfilePhase({
-        kind: 'success',
-        message: `${profile.label} 프로필을 추가했습니다`,
-      });
-    } catch (err) {
-      setProfilePhase({ kind: 'error', message: operatorErrorMessage(err) });
     }
   }
 
@@ -671,7 +636,7 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
       setTossRefreshResults(await getTossSseRefreshResults(5).catch(() => ({ items: [], returnedCount: 0 })));
       setTossPhase({
         kind: 'success',
-        message: '토스 SSE 알림 연결을 시작했습니다',
+        message: '토스 알림 연결을 시작했습니다',
       });
     } catch (err) {
       setTossPhase({ kind: 'error', message: operatorErrorMessage(err) });
@@ -685,7 +650,7 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
       setTossRefreshResults(await getTossSseRefreshResults(5).catch(() => ({ items: [], returnedCount: 0 })));
       setTossPhase({
         kind: 'success',
-        message: '토스 SSE 알림 연결을 중지했습니다',
+        message: '토스 알림 연결을 중지했습니다',
       });
     } catch (err) {
       setTossPhase({ kind: 'error', message: operatorErrorMessage(err) });
@@ -961,7 +926,6 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
           getAgentOrderIntentApprovalChallenges(20).catch(() => ({ items: [], returnedCount: 0 })),
           getAgentOrderIntentLivePolicy().catch(() => ({ policy: null })),
         ]);
-        const profiles = await getCredentialProfiles().catch(() => []);
         if (!cancelled) {
           setRealtimeStatus(realtime);
           setServerSettings(settings);
@@ -977,7 +941,6 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
           setOrderIntentApprovalChallenges(approvalChallenges.items);
           setOrderIntentLivePolicy(livePolicy.policy);
           setKisSlots(kisSlotStatus);
-          setCredentialProfiles(profiles);
         }
       } catch (err) {
         if ((err as { name?: string } | null)?.name === 'AbortError') return;
@@ -1030,6 +993,7 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
     tossSession?.configured === true &&
     tossSession.state !== 'expired' &&
     tossSession.state !== 'logged_out';
+  const showAdvancedConnectionTools = IS_DEV_BUILD && clientSettings.devModeEnabled;
 
   return (
     <div>
@@ -1056,7 +1020,7 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
         chipColor="var(--text-muted)"
       />
       <Row
-        k="WebSocket"
+        k="실시간 연결"
         v={
           realtimeStatus?.canApplyTicksToPriceStore
             ? '상시 활성'
@@ -1144,35 +1108,27 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
           onChange={(enabled) => updateClientSettings({ devModeEnabled: enabled })}
         />
       )}
-      <BackgroundBackfillControl
-        settings={serverSettings}
-        phase={serverSettingsPhase}
-        runtimeStarted={status.runtime === 'started'}
-        onEmergencyDisable={() => {
-          void saveServerSettings(
-            { backgroundDailyBackfillEnabled: false },
-            '과거 일봉 자동 보강을 비상정지했습니다',
-          );
-        }}
-      />
-      <CredentialProfilesPanel
-        configured={status.configured}
-        profiles={credentialProfiles}
-        phase={profilePhase}
-        label={profileLabel}
-        appKey={profileAppKey}
-        appSecret={profileAppSecret}
-        onLabelChange={setProfileLabel}
-        onAppKeyChange={setProfileAppKey}
-        onAppSecretChange={setProfileAppSecret}
-        onAdd={() => void handleAddCredentialProfile()}
-      />
-      <DataHealthPanel health={dataHealth} />
-      <LocalBackupPanel
-        phase={backupPhase}
-        onExport={() => void handleBackupExport()}
-        onRestore={(event) => void handleBackupRestore(event)}
-      />
+      {showAdvancedConnectionTools && (
+        <>
+          <BackgroundBackfillControl
+            settings={serverSettings}
+            phase={serverSettingsPhase}
+            runtimeStarted={status.runtime === 'started'}
+            onEmergencyDisable={() => {
+              void saveServerSettings(
+                { backgroundDailyBackfillEnabled: false },
+                '과거 일봉 자동 보강을 비상정지했습니다',
+              );
+            }}
+          />
+          <DataHealthPanel health={dataHealth} />
+          <LocalBackupPanel
+            phase={backupPhase}
+            onExport={() => void handleBackupExport()}
+            onRestore={(event) => void handleBackupRestore(event)}
+          />
+        </>
+      )}
 
       {status.errorMessage !== null && (
         <div
@@ -1204,20 +1160,21 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
       >
         보안을 위해 App Key / App Secret / 계좌번호는 표시하지 않습니다.
         <br />
-        KIS 키는 선택적 realtime rail용입니다.
+        KIS 키는 선택 실시간 추적용입니다.
         <br />
-        기본 시장 데이터와 계좌 surface는 Toss-first로 동작합니다.
+        기본 시장 데이터와 계좌 화면은 Toss 중심으로 동작합니다.
       </div>
 
-      <MasterCatalogPanel />
+      {showAdvancedConnectionTools && <MasterCatalogPanel />}
 
-      <div
-        style={{
-          marginTop: 22,
-          paddingTop: 18,
-          borderTop: '1px solid var(--border)',
-        }}
-      >
+      {showAdvancedConnectionTools && (
+        <div
+          style={{
+            marginTop: 22,
+            paddingTop: 18,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
         <div
           style={{
             fontSize: 13,
@@ -1226,7 +1183,7 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
             marginBottom: 6,
           }}
         >
-          KIS 관심종목 가져오기 · 마이그레이션 보조
+          이전 관심종목 가져오기
         </div>
         <div
           style={{
@@ -1236,9 +1193,9 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
             marginBottom: 12,
           }}
         >
-          Toss 로그인 후 관심종목은 Toss watchlist를 기준으로 사용합니다.
+          Toss 로그인 후 즐겨찾기는 Toss 관심종목을 기준으로 사용합니다.
           <br />
-          이 버튼은 예전 KIS HTS/MTS 관심종목을 로컬 추적 카탈로그로 옮기는 보조 도구입니다.
+          이 버튼은 예전 KIS HTS/MTS 관심종목을 로컬 백업 카탈로그로 옮기는 이전 호환 도구입니다.
         </div>
         <button
           type="button"
@@ -1289,22 +1246,23 @@ function ConnectionTab({ currentTicker }: { currentTicker: string | null }) {
             )}
           </div>
         )}
-        {importPhase.kind === 'error' && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: '10px 12px',
-              background: 'var(--accent-soft)',
-              borderRadius: 8,
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              lineHeight: 1.5,
-            }}
-          >
-            가져오기 실패: {importPhase.message}
-          </div>
-        )}
-      </div>
+          {importPhase.kind === 'error' && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: '10px 12px',
+                background: 'var(--accent-soft)',
+                borderRadius: 8,
+                fontSize: 12,
+                color: 'var(--text-secondary)',
+                lineHeight: 1.5,
+              }}
+            >
+              가져오기 실패: {importPhase.message}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1396,13 +1354,13 @@ export function RealtimeSessionControl({
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        실시간 시세는 장중 통합 feed, 장전/장후 NXT feed로 자동 전환됩니다.
+        실시간 시세는 장중 통합 시세 흐름, 장전/장후 NXT 흐름으로 자동 전환됩니다.
         <br />
-        실시간 추적은 최대 40개 한국 종목까지 보조하며, 기본 가격 갱신은 Toss가 맡습니다.
+        실시간 추적은 최대 40개 한국 종목만 저지연으로 따라붙고, 기본 가격 갱신은 Toss가 맡습니다.
         <br />
         일반 설정을 켤 필요 없이 Araon이 즐겨찾기와 화면 종목을 관리합니다.
         <br />
-        raw key / account / secret 정보는 표시하지 않습니다.
+        민감한 키와 계좌 정보는 표시하지 않습니다.
       </div>
       {status?.coverage !== undefined && (
         <div
@@ -1415,12 +1373,7 @@ export function RealtimeSessionControl({
           }}
         >
           <Row
-            k="프로필"
-            v={`${status.coverage.enabledProfileCount}/${status.coverage.profileCount}`}
-            chipColor="var(--text-muted)"
-          />
-          <Row
-            k="커버리지"
+            k="추적 범위"
             v={`${status.coverage.assignedTickerCount}/${status.coverage.totalCapacity} 후보`}
             chipColor="var(--gold-text)"
           />
@@ -1492,7 +1445,7 @@ export function RealtimeSessionControl({
               lineHeight: 1.6,
             }}
           >
-            아래 cap 선택은 운영자 재검증용입니다. 시간 또는 tick 제한에
+            아래 상한 선택은 운영자 재검증용입니다. 시간 또는 수신 제한에
             도달하면 자동으로 정리됩니다.
             <br />
             검증 완료: 1 / 3 / 5 / 10 / 20 / 40종목.
@@ -1501,7 +1454,7 @@ export function RealtimeSessionControl({
             <br />
             20종목 상태: {cap20Label}. {cap20Preview}.
             <br />
-            40종목까지 controlled live smoke는 완료됐지만, 40종목 초과 구독은 허용하지 않습니다.
+            40종목까지 제어된 실시간 검증은 완료됐지만, 40종목 초과 구독은 허용하지 않습니다.
           </div>
           <div
             data-testid="realtime-status-panel"
@@ -1523,7 +1476,7 @@ export function RealtimeSessionControl({
               chipColor="var(--text-muted)"
             />
             <Row
-              k="현재 cap"
+              k="현재 상한"
               v={session?.cap !== null && session?.cap !== undefined
                 ? `${session.cap}종목`
                 : `${selectedCap}종목 선택`}
@@ -1544,7 +1497,7 @@ export function RealtimeSessionControl({
               chipColor="var(--text-muted)"
             />
             <Row
-              k="최근 tick"
+              k="최근 가격"
               v={status?.lastTickAt !== undefined && status.lastTickAt !== null
                 ? formatLocal(status.lastTickAt)
                 : '없음'}
@@ -1728,13 +1681,13 @@ export function KisWsSlotControl({
             padding: '2px 5px',
           }}
         >
-          선택 realtime
+          선택 추적
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        KIS는 계좌/주문 기준이 아니라 고가치 종목의 저지연 tick 감시 경로입니다.
+        KIS는 계좌/주문 기준이 아니라 고가치 종목의 저지연 실시간 가격 감시 경로입니다.
         <br />
-        슬롯이 부족한 종목은 Toss 가격 대기열로 내려갑니다.
+        슬롯이 부족한 종목은 Toss 기본 가격 갱신으로 계속 확인합니다.
       </div>
       <div
         style={{
@@ -1759,7 +1712,7 @@ export function KisWsSlotControl({
           chipColor={(status?.fallbackCount ?? 0) > 0 ? 'var(--gold-text)' : 'var(--text-muted)'}
         />
         <Row
-          k="diff"
+          k="변경 예정"
           v={
             status === null
               ? '+0 / -0'
@@ -1768,7 +1721,7 @@ export function KisWsSlotControl({
           chipColor="var(--text-muted)"
         />
         <Row
-          k="churn cooldown"
+          k="교체 대기"
           v={
             status === null
               ? '—'
@@ -1835,11 +1788,11 @@ function KisWsSlotCandidateRow({
         {candidate.ticker}
       </span>
       <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-        {kisWsSourceLabel(candidate.source)} · {candidate.reason}
-        {candidate.pinned ? ' · pinned' : ''}
+        {kisWsSourceLabel(candidate.source)} · {formatKisWsCandidateReason(candidate.reason)}
+        {candidate.pinned ? ' · 고정' : ''}
         <br />
-        score {candidate.score.toFixed(2)} · {formatMaybeLocal(candidate.lastSeenAt)}
-        {candidate.ttlMs !== null ? ` · TTL ${formatTtlMs(candidate.ttlMs)}` : ''}
+        우선순위 {candidate.score.toFixed(2)} · {formatMaybeLocal(candidate.lastSeenAt)}
+        {candidate.ttlMs !== null ? ` · 유지 ${formatTtlMs(candidate.ttlMs)}` : ''}
       </span>
       <span
         style={{
@@ -1922,13 +1875,13 @@ export function TossDataControl({
             padding: '2px 5px',
           }}
         >
-          Toss-first
+          Toss 중심
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        TOP100과 foreground quote는 토스 공개 데이터를 먼저 사용합니다.
+        TOP100과 현재 화면 시세는 토스 공개 데이터를 먼저 사용합니다.
         <br />
-        로그인 세션은 알림 SSE 확인용이며 가격 갱신은 quote REST와 함께 처리됩니다.
+        로그인 세션은 알림 확인용이며 가격 갱신은 토스 가격 데이터와 함께 처리됩니다.
       </div>
       <div
         style={{
@@ -1949,7 +1902,7 @@ export function TossDataControl({
           chipColor={loginRunning ? 'var(--gold-text)' : 'var(--text-muted)'}
         />
         <Row
-          k="SSE 알림"
+          k="토스 알림"
           v={tossRealtimeLabel(realtime)}
           chipColor={realtimeRunning ? 'var(--kr-up)' : 'var(--text-muted)'}
         />
@@ -1959,7 +1912,7 @@ export function TossDataControl({
           chipColor={(realtime?.eventCount ?? 0) > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
         />
         <Row
-          k="가격 refresh"
+          k="가격 알림"
           v={`${realtime?.priceRefreshEventCount ?? 0}개`}
           chipColor={(realtime?.priceRefreshEventCount ?? 0) > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
         />
@@ -1969,7 +1922,7 @@ export function TossDataControl({
           chipColor={(realtime?.userNotificationEventCount ?? 0) > 0 ? 'var(--gold-text)' : 'var(--text-muted)'}
         />
         <Row
-          k="quote refresh"
+          k="가격 갱신"
           v={`${realtime?.priceRefreshDispatchCount ?? 0}회`}
           chipColor={(realtime?.priceRefreshDispatchCount ?? 0) > 0 ? 'var(--kr-up)' : 'var(--text-muted)'}
         />
@@ -1981,16 +1934,16 @@ export function TossDataControl({
         <br />
         로그인 진단: {formatTossLoginDiagnostic(login)}
         <br />
-        최근 SSE: {formatMaybeLocal(realtime?.lastEventAt ?? null)}
+        최근 알림: {formatMaybeLocal(realtime?.lastEventAt ?? null)}
         <br />
         최근 사용자 알림: {formatMaybeLocal(realtime?.lastUserNotificationAt ?? null)}
         <br />
         이벤트 종류: {formatTossRealtimeEventTypes(realtime?.eventTypes ?? [])}
-        {realtime?.thinNotificationOnly === true && <> · thin notification</>}
+        {realtime?.thinNotificationOnly === true && <> · 알림 후 REST 갱신</>}
         {realtime?.lastError !== null && realtime?.lastError !== undefined && (
           <>
             <br />
-            SSE 상태: {realtime.lastError}
+            알림 상태: {realtime.lastError}
           </>
         )}
       </div>
@@ -2011,7 +1964,7 @@ export function TossDataControl({
           }}
         >
           <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)' }}>
-            REST refresh 결과
+            데이터 갱신 결과
           </span>
           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700 }}>
             최근 {refreshResults?.returnedCount ?? 0}건
@@ -2019,7 +1972,7 @@ export function TossDataControl({
         </div>
         {(refreshResults?.items.length ?? 0) === 0 ? (
           <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            아직 refresh 결과 없음
+            아직 갱신 결과 없음
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 6 }}>
@@ -2055,7 +2008,7 @@ export function TossDataControl({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {item.result}
+                  {formatTossRefreshResultLabel(item.result)}
                 </span>
                 <span
                   style={{
@@ -2066,7 +2019,7 @@ export function TossDataControl({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {item.sourceType} · {formatMaybeLocal(item.recordedAt)}
+                  {formatTossRefreshSourceType(item.sourceType)} · {formatMaybeLocal(item.recordedAt)}
                   {item.error !== null ? ` · ${item.error}` : ''}
                 </span>
               </div>
@@ -2102,7 +2055,7 @@ export function TossDataControl({
         >
           {phase.kind === 'running' && phase.action === 'start-realtime'
             ? '연결 중…'
-            : 'SSE 시작'}
+            : '알림 시작'}
         </button>
         <button
           type="button"
@@ -2111,7 +2064,7 @@ export function TossDataControl({
           data-testid="toss-realtime-stop"
           style={operatorButtonStyle(!busy && realtimeRunning)}
         >
-          SSE 중지
+          알림 중지
         </button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
@@ -2223,7 +2176,7 @@ export function TossAccountSurfaceControl({
             padding: '2px 5px',
           }}
         >
-          read-only
+          읽기 전용
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
@@ -2336,7 +2289,7 @@ export function TossAccountSurfaceControl({
           marginTop: 12,
         }}
       >
-        {busy ? '조회 중…' : sessionReady ? '계좌 surface 새로고침' : '토스 로그인 필요'}
+        {busy ? '조회 중…' : sessionReady ? '계좌 화면 새로고침' : '토스 로그인 필요'}
       </button>
       {error !== null && (
         <div style={operatorMessageStyle('var(--accent-soft)')}>{error}</div>
@@ -2839,7 +2792,7 @@ export function AgentEventMonitorControl({
           chipColor="var(--text-muted)"
         />
         <Row
-          k="Toss 시그널 계약"
+          k="Toss 시그널 확인"
           v={status === null ? '—' : agentMonitorTossSignalContractLabel(status.tossSignalContract)}
           chipColor={
             status?.tossSignalContract.externalCallsEnabled === true
@@ -2863,21 +2816,21 @@ export function AgentEventMonitorControl({
         <br />
         {status?.dispatchPolicy.providerPublicationGuarantee === false
           ? '제공자 발행 시점 보장 아님'
-          : '제공자 freshness 확인 중'}
+          : '제공자 지연 확인 중'}
         <br />
         {status === null
-          ? 'Toss signal contract 확인 중'
-          : `Toss signal endpoint: ${status.tossSignalContract.endpoint.path}`
+          ? 'Toss 시그널 확인 중'
+          : 'Toss 시그널 후보: 후보 경로 관찰됨'
             + ` · 형식 후보: ${agentMonitorTossSignalShapeProbeHosts(status.tossSignalContract)}`
             + ` · ${agentMonitorTossSignalSemanticPolicyLabel(status.tossSignalContract)}`
-            + ' · raw template 숨김'}
+            + ' · 원문 템플릿 숨김'}
         <br />
         최근 결과:{' '}
         {phase.kind === 'success'
           ? `${phase.result.tickers.length}종목 · 이벤트 ${phase.result.insertedEvents}개`
             + ` · 토스뉴스 ${phase.result.refreshedTossNews}회`
             + ` · 토스시그널 ${phase.result.refreshedTossSignals}회`
-            + (phase.result.skippedRefreshes > 0 ? ` · skip ${phase.result.skippedRefreshes}` : '')
+            + (phase.result.skippedRefreshes > 0 ? ` · 건너뜀 ${phase.result.skippedRefreshes}` : '')
           : status?.lastErrorCode ?? '대기'}
       </div>
       <div style={{
@@ -2982,7 +2935,7 @@ function agentMonitorDispatchPolicyLabel(
 ): string {
   const min = Math.round(policy.targetFirstSeenToDispatchMs.min / 1_000);
   const max = Math.round(policy.targetFirstSeenToDispatchMs.max / 1_000);
-  return `first_seen 후 ${min}-${max}초 목표`;
+  return `처음 감지 후 ${min}-${max}초 목표`;
 }
 
 function agentMonitorProviderPolicyLabel(
@@ -3032,7 +2985,7 @@ function providerObservationLabel(
 }
 
 function providerLatencyLabel(durationMs: number | null): string {
-  if (durationMs === null) return 'latency 없음';
+  if (durationMs === null) return '지연 정보 없음';
   if (durationMs < 1_000) return `${durationMs}ms`;
   return `${(durationMs / 1_000).toFixed(1)}초`;
 }
@@ -3040,20 +2993,19 @@ function providerLatencyLabel(durationMs: number | null): string {
 function agentMonitorTossSignalContractLabel(
   contract: AgentEventMonitorStatusPayload['tossSignalContract'],
 ): string {
-  const bodyLabel = contract.bodyContract === 'configured' ? '요청 형식 준비' : 'capture 필요';
-  const callLabel = contract.externalCallsEnabled ? '외부 호출 on' : '외부 호출 off';
+  const bodyLabel = contract.bodyContract === 'configured' ? '요청 형식 준비' : '관찰 필요';
+  const callLabel = contract.externalCallsEnabled ? '외부 호출 켜짐' : '외부 호출 꺼짐';
   const captureLabel = contract.captureGuidance.required
-    ? '사용자 로그인 + DevTools capture 필요'
-    : 'capture 완료';
+    ? '사용자 로그인 + 브라우저 관찰 필요'
+    : '관찰 완료';
   return `${bodyLabel} · ${callLabel} · ${captureLabel}`;
 }
 
 function agentMonitorTossSignalShapeProbeHosts(
   contract: AgentEventMonitorStatusPayload['tossSignalContract'],
 ): string {
-  const hosts = contract.shapeProbeCandidates
-    .map((candidate) => candidate.host.replace('.tossinvest.com', ''));
-  return hosts.length > 0 ? hosts.join(', ') : '없음';
+  const count = contract.shapeProbeCandidates.length;
+  return count > 0 ? `후보 ${count}개` : '없음';
 }
 
 function agentMonitorTossSignalSemanticPolicyLabel(
@@ -3063,9 +3015,9 @@ function agentMonitorTossSignalSemanticPolicyLabel(
     contract.semanticPolicy.emptyResponse === 'supported_empty_not_actionable' &&
     contract.semanticPolicy.eventEmission === 'non_empty_items_only'
   ) {
-    return 'empty는 비시그널 · non-empty만 event';
+    return '빈 응답은 비시그널 · 항목이 있을 때만 이벤트';
   }
-  return 'semantic policy 확인 중';
+  return '시그널 판정 정책 확인 중';
 }
 
 function providerStateLabel(
@@ -3082,7 +3034,7 @@ function providerStateLabel(
     case 'request-body-template-configured':
       return `${label} 준비`;
     case 'request-body-template-missing':
-      return `${label} body 필요`;
+      return `${label} 요청 형식 필요`;
     case 'dart-configured':
       return `${label} 준비`;
     case 'dart-not-configured':
@@ -3138,9 +3090,9 @@ export function AgentEventsFeedControl({
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        서버 dedupe 후 agent queue에 들어온 이벤트만 표시합니다.
+        감지된 이벤트와 알림 전달 상태만 표시합니다.
         <br />
-        내부 dedupe key와 raw provider payload는 화면에 노출하지 않습니다.
+        내부 키와 제공자 원문은 화면에 노출하지 않습니다.
       </div>
       <div style={{ marginTop: 10 }}>
         {events === null ? (
@@ -3149,7 +3101,7 @@ export function AgentEventsFeedControl({
           </div>
         ) : latest.length === 0 ? (
           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            아직 감지된 agent event가 없습니다.
+            아직 감지된 에이전트 이벤트가 없습니다.
           </div>
         ) : (
           latest.map((event) => <AgentEventFeedRow key={event.id} event={event} />)
@@ -3231,8 +3183,6 @@ function AgentEventDeliveryRow({ entry }: { entry: AgentEventAlertDeliveryPayloa
         </strong>
         {' · '}
         {agentEventDeliveryChannelLabel(entry.channel)}
-        {' · '}
-        {entry.reason}
         <br />
         {formatMaybeLocal(entry.createdAt)}
         {' · '}
@@ -3275,11 +3225,9 @@ function AgentEventFeedRow({ event }: { event: AgentEventPayload }) {
           {agentEventTypeLabel(event.type)}
         </strong>
         {' · '}
-        {event.source}
-        {' · '}
-        {event.reason}
+        {settingsAgentEventReasonLabel(event)}
         <br />
-        first_seen {formatMaybeLocal(event.firstSeenAt)}
+        처음 감지 {formatMaybeLocal(event.firstSeenAt)}
       </span>
       <span
         style={{
@@ -3298,6 +3246,12 @@ function AgentEventFeedRow({ event }: { event: AgentEventPayload }) {
       </span>
     </div>
   );
+}
+
+function settingsAgentEventReasonLabel(event: AgentEventPayload): string {
+  return agentEventUserSummary(event)
+    .replace(/Provider signal surfaced after a long delay/gi, '신호 표시 지연')
+    .trim();
 }
 
 export function DevModeControl({
@@ -3329,142 +3283,8 @@ export function DevModeControl({
         />
       </div>
       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        켜면 Simulated Market과 운영자 재검증 도구가 표시됩니다. 실제 KIS 호출을 만들지 않는 화면 검증용 도구입니다.
+        켜면 모의 시장과 운영자 재검증 도구가 표시됩니다. 실제 KIS 호출을 만들지 않는 화면 검증용 도구입니다.
       </div>
-    </div>
-  );
-}
-
-export function CredentialProfilesPanel({
-  configured,
-  profiles,
-  phase,
-  label,
-  appKey,
-  appSecret,
-  onLabelChange,
-  onAppKeyChange,
-  onAppSecretChange,
-  onAdd,
-}: {
-  configured: boolean;
-  profiles: readonly CredentialProfileSummary[];
-  phase: ProfilePhase;
-  label: string;
-  appKey: string;
-  appSecret: string;
-  onLabelChange: (value: string) => void;
-  onAppKeyChange: (value: string) => void;
-  onAppSecretChange: (value: string) => void;
-  onAdd: () => void;
-}) {
-  const canSubmit =
-    configured &&
-    phase.kind !== 'saving' &&
-    label.trim().length > 0 &&
-    appKey.trim().length >= 10 &&
-    appSecret.trim().length >= 10;
-  return (
-    <div
-      data-testid="credential-profiles-panel"
-      style={{
-        marginTop: 18,
-        padding: '12px 14px',
-        background: 'var(--bg-tint)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-      }}
-    >
-      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
-        KIS API 프로필
-      </div>
-      <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        선택적으로 등록한 첫 KIS 키가 기본 프로필입니다. 추가 키는 여기서 저장해두고,
-        실시간 추적 배정에 쓸 수 있는 프로필로 관리합니다.
-      </div>
-      <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
-        {profiles.length === 0 ? (
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            등록된 프로필이 없습니다.
-          </div>
-        ) : (
-          profiles.map((profile) => (
-            <div
-              key={profile.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                padding: '7px 9px',
-                borderRadius: 7,
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-soft)',
-              }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)' }}>
-                {profile.label}
-              </span>
-              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)' }}>
-                {profile.enabled ? '켜짐' : '꺼짐'} · {profile.isPaper ? '모의' : '실계좌'}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-      <div
-        style={{
-          marginTop: 12,
-          display: 'grid',
-          gridTemplateColumns: '1fr',
-          gap: 8,
-        }}
-      >
-        <input
-          value={label}
-          onChange={(event) => onLabelChange(event.currentTarget.value)}
-          placeholder="프로필 이름 예: KIS 2"
-          disabled={!configured}
-          data-testid="credential-profile-label"
-          style={credentialInputStyle}
-        />
-        <input
-          value={appKey}
-          onChange={(event) => onAppKeyChange(event.currentTarget.value)}
-          placeholder="App Key"
-          disabled={!configured}
-          data-testid="credential-profile-app-key"
-          style={credentialInputStyle}
-        />
-        <input
-          value={appSecret}
-          onChange={(event) => onAppSecretChange(event.currentTarget.value)}
-          placeholder="App Secret"
-          type="password"
-          disabled={!configured}
-          data-testid="credential-profile-app-secret"
-          style={credentialInputStyle}
-        />
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={!canSubmit}
-          data-testid="credential-profile-add"
-          style={operatorButtonStyle(canSubmit)}
-        >
-          {phase.kind === 'saving' ? '저장 중…' : '프로필 추가'}
-        </button>
-      </div>
-      {phase.kind === 'success' && (
-        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-up)' }}>
-          {phase.message}
-        </div>
-      )}
-      {phase.kind === 'error' && (
-        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--kr-down)' }}>
-          저장 실패: {phase.message}
-        </div>
-      )}
     </div>
   );
 }
@@ -3501,10 +3321,10 @@ export function BackgroundBackfillControl({
           marginBottom: 8,
         }}
       >
-        Toss candle 보강
+        Toss 차트 보강
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        Toss chart/candle 데이터를 우선 사용합니다. KIS chart REST는 legacy opt-in 상태에서만 보조합니다.
+        Toss 차트 데이터를 우선 사용합니다. KIS 차트 경로는 기본 경로가 아니며, 명시적으로 켠 이전 호환 경로에서만 사용됩니다.
         <br />
         장중 07:55~20:05에는 서버 정책으로 자동 실행되지 않습니다.
       </div>
@@ -3522,8 +3342,8 @@ export function BackgroundBackfillControl({
         </span>
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           {runtimeStarted
-            ? '보강 runtime 준비됨'
-            : 'runtime 시작 후 실행 가능'}
+            ? '보강 실행 준비됨'
+            : '실행 시작 후 가능'}
         </span>
         <button
           type="button"
@@ -3644,7 +3464,7 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
               chipColor={kisLimiterSummary?.chipColor ?? 'var(--text-muted)'}
             />
             <Row
-              k="KIS legacy REST"
+              k="이전 KIS 경로"
               v={kisLegacyRestSummary?.label ?? '대기'}
               chipColor={kisLegacyRestSummary?.chipColor ?? 'var(--text-muted)'}
             />
@@ -3718,19 +3538,19 @@ export function DataHealthPanel({ health }: { health: RuntimeDataHealthPayload |
             최신 1분봉: {formatMaybeLocal(oneMinute?.newestBucketAt ?? null)} · 최신 일봉:{' '}
             {formatMaybeLocal(daily?.newestBucketAt ?? null)}
             <br />
-            KIS REST: {formatKisBudgetDetails(health.kisOutboundLimiter)}
+            이전 KIS 호출: {formatKisBudgetDetails(health.kisOutboundLimiter)}
             <br />
             Toss 가격: {formatTossQuotePollingDetails(health.tossQuotePolling)}
             <br />
             데이터 소스: {formatMarketDataProviderDetails(health.marketDataProviders)}
             <br />
-            KIS legacy: {formatKisLegacyRestProfileSummary(health.kisLegacyRest)}
+            이전 KIS 경로: {formatKisLegacyRestProfileSummary(health.kisLegacyRest)}
             {health.kisLegacyRest.surfaces.map((surface) => (
               <span key={surface.id} style={{ display: 'block' }}>
                 • {formatKisLegacySurfaceLabel(surface.label)}: {formatKisLegacySurfaceState(surface.state)} ·{' '}
                 {formatKisLegacySurfaceMode(surface.mode)} ·{' '}
                 {surface.automatic ? '자동 가능' : '자동 꺼짐'} ·{' '}
-                {surface.envGate ?? 'env gate 없음'} · {surface.primaryProvider}
+                {surface.envGate ?? '환경 제한 없음'} · {surface.primaryProvider}
                 {' · '}
                 {formatKisLegacyReason(surface.reason)}
               </span>
@@ -3904,7 +3724,10 @@ function formatMarketDataProviderDetails(
 }
 
 function formatProviderLabel(label: string): string {
-  return label.replace(/fallback/gi, '보조');
+  return label
+    .replace(/KIS legacy REST helper/gi, '이전 호환 보조 경로')
+    .replace(/legacy REST helper/gi, '이전 호환 보조 경로')
+    .replace(/fallback/gi, '보조');
 }
 
 function formatKisLegacyRestSummary(
@@ -3965,13 +3788,13 @@ function formatKisLegacySurfaceState(state: RuntimeDataHealthPayload['kisLegacyR
 function formatKisLegacySurfaceLabel(label: string): string {
   switch (label) {
     case 'Foreground quote legacy REST helper':
-      return '전경 시세 legacy REST 보조';
+      return '전경 시세 이전 호환 보조';
     case 'Watchlist quote legacy REST helper':
-      return '관심종목 시세 legacy REST 보조';
+      return '관심종목 시세 이전 호환 보조';
     case 'Daily chart legacy REST helper':
-      return '일봉 차트 legacy REST 보조';
+      return '일봉 차트 이전 호환 보조';
     case 'Minute chart legacy REST helper':
-      return '분봉 차트 legacy REST 보조';
+      return '분봉 차트 이전 호환 보조';
     case 'Master metadata refresh':
       return '마스터 메타데이터 수동 갱신';
     case 'KIS watchlist import':
@@ -3984,21 +3807,36 @@ function formatKisLegacySurfaceLabel(label: string): string {
 function formatKisLegacySurfaceMode(mode: RuntimeDataHealthPayload['kisLegacyRest']['surfaces'][number]['mode']): string {
   switch (mode) {
     case 'credentials_required':
-      return 'credential 필요';
+      return '자격증명 필요';
     case 'suppressed_by_default':
       return '기본 억제';
     case 'explicit_opt_in':
-      return '명시 opt-in';
+      return '직접 켬';
     case 'conditional_fallback':
       return '조건부 보조';
     case 'manual_only':
-      return '수동 helper';
+      return '수동 도구';
   }
 }
 
 function formatKisLegacyReason(reason: string): string {
   return reason
-    .replace(/Toss quote polling/gi, 'Toss quote refresh')
+    .replace(/Toss quote refresh가/gi, 'Toss 가격 갱신이')
+    .replace(/Toss quote refresh는/gi, 'Toss 가격 갱신은')
+    .replace(/Toss quote refresh/gi, 'Toss 가격 갱신')
+    .replace(/KIS credentials/gi, 'KIS 자격증명')
+    .replace(/KIS REST 보조 경로/gi, 'KIS 이전 호환 보조 경로')
+    .replace(/KIS foreground quote REST helper/gi, 'KIS 전경 시세 이전 호환 보조 경로')
+    .replace(/KIS watchlist REST/gi, 'KIS 관심종목 이전 호환 경로')
+    .replace(/KIS chart REST helper/gi, 'KIS 차트 이전 호환 보조 경로')
+    .replace(/KIS chart REST/gi, 'KIS 차트 이전 호환 경로')
+    .replace(/KIS WS rail/gi, 'KIS 실시간 추적')
+    .replace(/realtime/gi, '실시간')
+    .replace(/KIS refresh/gi, 'KIS 갱신')
+    .replace(/manual helper/gi, '수동 도구')
+    .replace(/legacy REST helper/gi, '이전 호환 보조 경로')
+    .replace(/legacy REST/gi, '이전 호환 경로')
+    .replace(/Toss quote polling/gi, 'Toss 가격 갱신')
     .replace(/fallback/gi, '보조');
 }
 
@@ -4379,7 +4217,7 @@ function tossLoginLabel(login: TossLoginStatusPayload | null): string {
     case 'waiting_for_qr':
       return 'QR 대기';
     case 'waiting_for_persistent':
-      return '세션 유지 대기';
+      return '확인 중';
     case 'succeeded':
       return '완료';
     case 'failed':
@@ -4434,8 +4272,42 @@ function formatTossRealtimeEventTypes(
   if (eventTypes.length === 0) return '수집 전';
   return eventTypes
     .slice(0, 3)
-    .map((item) => `${item.type} ${item.count}`)
+    .map((item) => `${formatTossRealtimeEventType(item.type)} ${item.count}`)
     .join(', ');
+}
+
+function formatTossRealtimeEventType(type: string): string {
+  return type
+    .replace(/wts-notification/gi, '토스 알림')
+    .replace(/share-holdings/gi, '보유 변동')
+    .replace(/order-refresh/gi, '주문 갱신')
+    .replace(/portfolio-positions/gi, '포트폴리오 갱신');
+}
+
+function formatTossRefreshSourceType(sourceType: string): string {
+  return sourceType
+    .replace(/share-holdings/gi, '보유 변동')
+    .replace(/order-refresh/gi, '주문 갱신')
+    .replace(/portfolio-positions/gi, '포트폴리오 갱신')
+    .replace(/completed-orders/gi, '체결 주문')
+    .replace(/pending-orders/gi, '대기 주문');
+}
+
+function formatTossRefreshResultLabel(
+  result: TossSseRefreshResultsPayload['items'][number]['result'],
+): string {
+  switch (result) {
+    case 'refreshed':
+      return '갱신됨';
+    case 'failed':
+      return '실패';
+    case 'throttled':
+      return '속도 제한';
+    case 'in_flight':
+      return '진행 중';
+    case 'ignored':
+      return '무시됨';
+  }
 }
 
 function tossRefreshResultColor(
@@ -4469,12 +4341,21 @@ function kisWsSourceLabel(source: KisWsSlotSource): string {
     case 'toss_signal':
       return '토스 시그널';
     case 'agent_candidate':
-      return 'agent 후보';
+      return '에이전트 후보';
     case 'manual_watchlist':
       return '관심종목';
     case 'top100_rotation':
       return 'TOP100 샘플';
   }
+}
+
+function formatKisWsCandidateReason(reason: string): string {
+  return reason
+    .replace(/realtime/gi, '실시간')
+    .replace(/pinned/gi, '고정')
+    .replace(/watchlist/gi, '관심종목')
+    .replace(/agent/gi, '에이전트')
+    .replace(/top100/gi, 'TOP100');
 }
 
 function orderIntentAmountLabel(preview: OrderIntentPreviewPayload): string {
@@ -4599,11 +4480,15 @@ function agentEventTypeLabel(type: AgentEventPayload['type']): string {
       return '승인 거절';
     case 'execution_locked':
       return '실행 잠금';
+    case 'risk_check_completed':
+      return '리스크 확인';
+    case 'preview_created':
+      return '미리보기 생성';
   }
 }
 
 function agentEventFreshnessLabel(freshnessMs: number | null): string {
-  if (freshnessMs === null) return 'freshness 없음';
+  if (freshnessMs === null) return '지연 정보 없음';
   return compactAgentEventDurationLabel(freshnessMs);
 }
 
@@ -4628,7 +4513,7 @@ function agentEventDeliveryChannelLabel(
 ): string {
   switch (channel) {
     case 'browser-sse':
-      return 'browser SSE';
+      return '브라우저 알림';
   }
 }
 
@@ -5376,8 +5261,8 @@ export function ChartSettingsTab() {
             lineHeight: 1.6,
           }}
         >
-          1m/3m/5m 차트는 Toss candle과 저장된 1분봉을 우선 사용합니다.
-          과거 intraday는 저장된 candle이 있을 때만 표시하고, KIS chart REST는 legacy opt-in 상태에서만 보조합니다.
+          1m/3m/5m 차트는 Toss 차트와 저장된 1분봉을 우선 사용합니다.
+          과거 분봉은 저장된 봉이 있을 때만 표시하고, KIS 차트 경로는 명시적으로 켠 이전 호환 경로에서만 사용됩니다.
         </div>
       </Field>
     </div>

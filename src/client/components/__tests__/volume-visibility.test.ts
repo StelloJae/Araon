@@ -1,6 +1,7 @@
 import { createElement } from 'react';
+import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { StockViewModel } from '../../lib/view-models';
 import { buildSignalExplanation } from '../../lib/signal-explainer';
@@ -12,6 +13,7 @@ import {
 import { StockDetailModal } from '../StockDetailModal';
 import { formatSurgeSubLabel, SurgeBlock, SurgeRow } from '../SurgeBlock';
 import { usePriceHistoryStore } from '../../stores/price-history-store';
+import { useSettingsStore } from '../../stores/settings-store';
 
 function stock(overrides: Partial<StockViewModel> = {}): StockViewModel {
   return {
@@ -63,6 +65,25 @@ describe('volume visibility', () => {
 
     expect(html).toContain('stock-row-interactive');
     expect(html).not.toContain('--stock-row-bg');
+  });
+
+  it('keeps sector stock rows inside a narrow two-column board', () => {
+    const html = renderToStaticMarkup(
+      createElement(StockRow, {
+        stock: stock({ name: '일반전기전자', effectiveSector: { name: 'KIS 공식 지수업종', source: 'kis-industry' } }),
+        rank: 1,
+        isFav: false,
+        onToggleFav: () => undefined,
+        onOpenDetail: () => undefined,
+        flashSeed: 0,
+        isFirst: true,
+        compact: true,
+      }),
+    );
+
+    expect(html).toContain('grid-template-columns:16px 14px minmax(0,1fr) 58px minmax(54px,auto)');
+    expect(html).not.toContain('KIS 공식 지수업종');
+    expect(html).not.toContain('KOSPI');
   });
 
   it('keeps unchanged stock rows memoizable across parent quote flushes', () => {
@@ -223,6 +244,7 @@ describe('volume visibility', () => {
   });
 
   it('renders clear surge tab labels for recent surge and today strength', () => {
+    useSettingsStore.getState().update({ surgeFilter: 'live', surgeThreshold: 3 });
     const html = renderToStaticMarkup(
       createElement(SurgeBlock, {
         marketStatus: 'open',
@@ -233,7 +255,25 @@ describe('volume visibility', () => {
 
     expect(html).toContain('최근 급상승');
     expect(html).toContain('오늘 강세');
-    expect(html).toContain('10~30초');
+    expect(html).toContain('0~30초 · ≥3%');
+    expect(html).toContain('최근 0~30초 기준');
+    expect(html).not.toContain('최근 10초~30초 기준');
+  });
+
+  it('explains that recent surge is a live-session signal when market is closed', () => {
+    useSettingsStore.getState().update({ surgeFilter: 'live', surgeThreshold: 3 });
+    const html = renderToStaticMarkup(
+      createElement(SurgeBlock, {
+        marketStatus: 'closed',
+        allStocks: [],
+        onOpenDetail: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('장외 대기');
+    expect(html).toContain(
+      '장 시간 외 · 최근 급상승은 장중 0~30초 실시간 변화만 표시',
+    );
   });
 
   it('renders deterministic signal explanation on surge rows', () => {
@@ -280,6 +320,35 @@ describe('volume visibility', () => {
     expect(html).toContain('즐겨찾기 종목');
     expect(html).toContain('거래량 기준선 수집 중');
     expect(html).not.toContain('거래량 기준선 대비');
+  });
+
+  it('wires recent surge rows to the selected ticker handler', () => {
+    const onOpenDetail = vi.fn();
+    const row = SurgeRow({
+      item: {
+        code: '084670',
+        name: '동양고속',
+        price: 74_200,
+        changePct: 3.26,
+        volume: 926_000,
+        ts: 1_700_000_000_000,
+        isLive: true,
+        signalType: 'strong_scalp',
+        momentumPct: 3.26,
+        momentumWindow: '30s',
+      },
+      now: 1_700_000_001_000,
+      isFirst: true,
+      explanation: null,
+      onOpenDetail,
+    }) as ReactElement<{
+      onClick: () => void;
+      'data-stock-row': string;
+    }>;
+
+    expect(row.props['data-stock-row']).toBe('084670');
+    row.props.onClick();
+    expect(onOpenDetail).toHaveBeenCalledWith('084670');
   });
 
   it('does not render observation reasons in the stock detail modal', () => {

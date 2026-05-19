@@ -37,6 +37,7 @@ import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastStack } from './components/ToastStack';
 import { DashboardFocusPanel } from './components/DashboardFocusPanel';
+import { AgentDecisionSummary } from './components/AgentDecisionSummary';
 import { AgentEventsRail } from './components/AgentEventsRail';
 import { OrderIntentSafetyRail } from './components/OrderIntentSafetyRail';
 import { TossAccountRail } from './components/TossAccountRail';
@@ -65,9 +66,12 @@ import {
   getAgentOrderIntentAudit,
   getAgentOrderIntents,
   getAgentOrderIntentLivePolicy,
+  getAgentOrderIntentPaperLedger,
+  getAgentOrderIntentPerformanceReview,
   getMarketSummary,
   getStocks,
   getThemesWithStocks,
+  reconcileAraonWatchlist,
   removeAraonWatchlistItem,
   setTossFastQuoteCurrentTickers,
   startTossLogin,
@@ -76,6 +80,8 @@ import {
   type OrderIntentAuditEntryPayload,
   type OrderIntentApprovalChallengePayload,
   type OrderIntentLivePolicyPayload,
+  type OrderIntentPaperLedgerSnapshotPayload,
+  type OrderIntentPerformanceReviewSnapshotPayload,
   type OrderIntentPreviewPayload,
   type TossAccountSummaryPayload,
   type TossCompletedOrdersPayload,
@@ -143,6 +149,7 @@ export function App() {
 
   const setWatchlistItems = useWatchlistStore((s) => s.setWatchlistItems);
   const favorites = useWatchlistStore((s) => s.favorites);
+  const watchlistMembers = useWatchlistStore((s) => s.watchlistMembers);
   const watchlistItemsByCode = useWatchlistStore((s) => s.itemsByCode);
   const toggleFavoriteLocal = useWatchlistStore((s) => s.toggleFavorite);
   const marketStatus = useMarketStore((s) => s.marketStatus);
@@ -174,6 +181,10 @@ export function App() {
     useState<OrderIntentApprovalChallengePayload[]>([]);
   const [orderIntentLivePolicy, setOrderIntentLivePolicy] =
     useState<OrderIntentLivePolicyPayload | null>(null);
+  const [orderIntentPaperLedger, setOrderIntentPaperLedger] =
+    useState<OrderIntentPaperLedgerSnapshotPayload | null>(null);
+  const [orderIntentPerformanceReview, setOrderIntentPerformanceReview] =
+    useState<OrderIntentPerformanceReviewSnapshotPayload | null>(null);
   const [orderIntentLoading, setOrderIntentLoading] = useState(false);
   const [tossAccountSessionReady, setTossAccountSessionReady] = useState(false);
   const [tossAccountSummary, setTossAccountSummary] =
@@ -198,6 +209,17 @@ export function App() {
     useState<KisWsSlotStatusPayload | null>(null);
   const [kisWsSlotLoading, setKisWsSlotLoading] = useState(false);
   const [kisWsSlotError, setKisWsSlotError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const collapseNarrowAccountRail = () => {
+      if (window.innerWidth <= 900) {
+        setAccountRailCollapsed(true);
+      }
+    };
+    collapseNarrowAccountRail();
+    window.addEventListener('resize', collapseNarrowAccountRail);
+    return () => window.removeEventListener('resize', collapseNarrowAccountRail);
+  }, []);
 
   const selectTicker = useCallback((code: string) => {
     setFocusCode(code);
@@ -307,6 +329,15 @@ export function App() {
       setTossTransactionsOverview(snapshot.transactionsOverview);
       setTossTransactions(snapshot.transactions);
       setTossWatchlist(snapshot.watchlist);
+      if (snapshot.sessionReady && snapshot.positions !== null) {
+        try {
+          await reconcileAraonWatchlist({ dryRun: false, maxMutations: 10 });
+        } catch {
+          // The visible watchlist still refreshes below; sync state stays honest.
+        }
+      }
+      const watchlistSnapshot = await getAraonWatchlist();
+      setWatchlistItems(watchlistSnapshot.items);
       setTossAccountError(null);
       setTossAccountNotice(null);
     } catch (err) {
@@ -435,16 +466,20 @@ export function App() {
   const loadOrderIntentRail = useCallback(async (): Promise<void> => {
     setOrderIntentLoading(true);
     try {
-      const [previews, audit, approvalChallenges, livePolicy] = await Promise.all([
+      const [previews, audit, approvalChallenges, livePolicy, paperLedger, performanceReview] = await Promise.all([
         getAgentOrderIntents(4),
         getAgentOrderIntentAudit(4),
         getAgentOrderIntentApprovalChallenges(4),
         getAgentOrderIntentLivePolicy(),
+        getAgentOrderIntentPaperLedger(20),
+        getAgentOrderIntentPerformanceReview(20),
       ]);
       setOrderIntentPreviews(previews.items);
       setOrderIntentAudit(audit.items);
       setOrderIntentApprovalChallenges(approvalChallenges.items);
       setOrderIntentLivePolicy(livePolicy.policy);
+      setOrderIntentPaperLedger(paperLedger);
+      setOrderIntentPerformanceReview(performanceReview);
     } catch {
       // Order-intent rail is a local safety snapshot. It should never block
       // the dashboard if the optional agent foundation is unavailable.
@@ -558,7 +593,7 @@ export function App() {
   }, [setWatchlistItems]);
 
   const onToggleFav = useCallback(async (ticker: string): Promise<void> => {
-    const wasFav = favorites.has(ticker);
+    const wasFav = watchlistMembers.has(ticker);
     const existingWatchlistItem = watchlistItemsByCode[ticker];
     toggleFavoriteLocal(ticker);
     try {
@@ -586,9 +621,9 @@ export function App() {
     }
   }, [
     catalog,
-    favorites,
     refreshWatchlist,
     toggleFavoriteLocal,
+    watchlistMembers,
     watchlistItemsByCode,
     pushError,
   ]);
@@ -617,8 +652,8 @@ export function App() {
   }, [selectTicker]);
 
   const handlePickRankingTicker = useCallback(async (ticker: string): Promise<void> => {
+    selectTicker(ticker);
     if (catalog[ticker] !== undefined) {
-      selectTicker(ticker);
       return;
     }
     try {
@@ -632,10 +667,9 @@ export function App() {
         }
       }
       await syncTrackedCatalogAfterMasterAdd({ setCatalog, setThemes });
-      selectTicker(ticker);
     } catch (err) {
       pushError({
-        title: 'TOP100 종목 열기 실패',
+        title: '종목 열기 실패',
         detail: describeError(err),
       });
     }
@@ -687,6 +721,10 @@ export function App() {
     const firstFavorite = allStockVMs.find((s) => favorites.has(s.code));
     return firstFavorite ?? allStockVMs[0] ?? null;
   }, [allStockVMs, favorites, focusCode]);
+  const focusedIconUrl =
+    focusedStock === null
+      ? null
+      : watchlistItemsByCode[focusedStock.code]?.iconUrl ?? null;
 
   useEffect(() => {
     void setTossFastQuoteCurrentTickers(
@@ -735,7 +773,8 @@ export function App() {
                 stock={focusedStock}
                 allStocks={allStockVMs}
                 marketStatus={marketStatus}
-                isFavorite={focusedStock !== null && favorites.has(focusedStock.code)}
+                iconUrl={focusedIconUrl}
+                isFavorite={focusedStock !== null && watchlistMembers.has(focusedStock.code)}
                 onOpenFullChart={openFullChart}
                 onToggleFav={toggleFavoriteFromRow}
                 presentation="fullChart"
@@ -758,6 +797,15 @@ export function App() {
                   <CollapseIcon size={16} />
                 </button>
               </div>
+              <AgentDecisionSummary
+                events={agentEvents}
+                previews={orderIntentPreviews}
+                approvalChallenges={orderIntentApprovalChallenges}
+                livePolicy={orderIntentLivePolicy}
+                paperLedger={orderIntentPaperLedger}
+                performanceReview={orderIntentPerformanceReview}
+                loading={agentEventsLoading || orderIntentLoading}
+              />
               <div className="agent-detail-grid">
                 <AgentEventsRail
                   events={agentEvents}
@@ -788,9 +836,10 @@ export function App() {
                   <FavoritesBlock
                     stocks={allStockVMs}
                     favorites={favorites}
+                    watchlistMembers={watchlistMembers}
                     watchlistItemsByCode={watchlistItemsByCode}
                     onToggleFav={toggleFavoriteFromRow}
-                    onOpenDetail={selectTicker}
+                    onOpenDetail={(ticker) => void handlePickRankingTicker(ticker)}
                     flashSeeds={flashSeeds}
                     kisStatus={kisWsSlotStatus}
                     kisLoading={kisWsSlotLoading}
@@ -800,7 +849,7 @@ export function App() {
                   <SurgeBlock
                     allStocks={allStockVMs}
                     marketStatus={marketStatus}
-                    onOpenDetail={selectTicker}
+                    onOpenDetail={(ticker) => void handlePickRankingTicker(ticker)}
                     flush
                   />
                 </div>
@@ -810,7 +859,8 @@ export function App() {
                   stock={focusedStock}
                   allStocks={allStockVMs}
                   marketStatus={marketStatus}
-                  isFavorite={focusedStock !== null && favorites.has(focusedStock.code)}
+                  iconUrl={focusedIconUrl}
+                  isFavorite={focusedStock !== null && watchlistMembers.has(focusedStock.code)}
                   onOpenFullChart={openFullChart}
                   onToggleFav={toggleFavoriteFromRow}
                   presentation="home"
@@ -838,6 +888,7 @@ export function App() {
                       onOpenTicker={(ticker) => void handlePickRankingTicker(ticker)}
                       onCreateBuyPreview={(event) => void handleCreateBuyPreviewFromAgentEvent(event)}
                       onOpenDetails={openAgentDetail}
+                      compact
                     />
                     <OrderIntentSafetyRail
                       previews={orderIntentPreviews}
@@ -846,6 +897,7 @@ export function App() {
                       livePolicy={orderIntentLivePolicy}
                       loading={orderIntentLoading}
                       onOpenDetails={openAgentDetail}
+                      compact
                     />
                   </div>
                 </div>
@@ -873,6 +925,7 @@ export function App() {
                 statusMessage={tossAccountNotice}
                 onRefresh={() => void loadTossAccountRail()}
                 onLoginStart={() => void handleTossLoginStart()}
+                onOpenTicker={(ticker) => void handlePickRankingTicker(ticker)}
               />
             </div>
           )}
@@ -918,7 +971,7 @@ export function App() {
           <DevMarketSimulator devModeEnabled={settings.devModeEnabled} />
         </Suspense>
       )}
-      <ToastStack onPickStock={selectTicker} />
+      <ToastStack onPickStock={(ticker) => void handlePickRankingTicker(ticker)} />
     </div>
   );
 }

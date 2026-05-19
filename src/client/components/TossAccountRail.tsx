@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 
 import type {
   TossAccountSummaryPayload,
@@ -10,6 +10,7 @@ import type {
   TossTransactionsPayload,
   TossWatchlistPayload,
 } from '../lib/api-client';
+import { ProductAvatar } from './ProductAvatar';
 
 interface TossAccountRailProps {
   sessionReady: boolean;
@@ -25,7 +26,20 @@ interface TossAccountRailProps {
   statusMessage?: string | null;
   onRefresh: () => void;
   onLoginStart?: () => void;
+  onOpenTicker?: (ticker: string) => void;
 }
+
+type PositionSortKey =
+  | 'profitRateDesc'
+  | 'profitRateAsc'
+  | 'marketValueDesc'
+  | 'marketValueAsc'
+  | 'dailyProfitRateDesc'
+  | 'dailyProfitRateAsc'
+  | 'nameAsc'
+  | 'manual';
+
+type PositionValueMode = 'current' | 'evaluation';
 
 export function TossAccountRail({
   sessionReady,
@@ -41,9 +55,16 @@ export function TossAccountRail({
   statusMessage = null,
   onRefresh,
   onLoginStart,
+  onOpenTicker,
 }: TossAccountRailProps) {
+  const [positionSortKey, setPositionSortKey] = useState<PositionSortKey>('marketValueDesc');
+  const [positionValueMode, setPositionValueMode] = useState<PositionValueMode>('evaluation');
   const positionCount = positions?.positions.length ?? 0;
-  const positionGroups = groupPositions(positions?.positions ?? []);
+  const sortedPositions = useMemo(
+    () => sortPositions(positions?.positions ?? [], positionSortKey),
+    [positions, positionSortKey],
+  );
+  const positionGroups = groupPositions(sortedPositions);
   const pendingCount = pendingOrders?.orders.length ?? 0;
   const completedCount = completedOrders?.orders.length ?? 0;
   const transactionCount = transactions?.items.length ?? 0;
@@ -64,7 +85,6 @@ export function TossAccountRail({
             {sessionReady ? 'Toss 세션 준비' : '토스 로그인 필요'}
           </div>
         </div>
-        <span style={pillStyle}>{loading ? '수집 중' : '읽기 전용'}</span>
         {sessionReady && (
           <button
             type="button"
@@ -73,12 +93,12 @@ export function TossAccountRail({
             aria-label="Toss 계좌 새로고침"
             title="Toss 계좌 새로고침"
             style={{
-              ...miniRefreshButtonStyle,
+              ...refreshIconButtonStyle,
               cursor: loading ? 'not-allowed' : 'pointer',
               opacity: loading ? 0.56 : 1,
             }}
           >
-            새로고침
+            ↻
           </button>
         )}
       </div>
@@ -120,13 +140,56 @@ export function TossAccountRail({
               <span>관심 {watchlistCount.toLocaleString('ko-KR')}종목</span>
             </div>
             {positionCount > 0 ? (
+              <div style={positionToolbarStyle} aria-label="보유 종목 표시 설정">
+                <label style={sortSelectLabelStyle}>
+                  <span>정렬</span>
+                  <select
+                    value={positionSortKey}
+                    onChange={(event) => setPositionSortKey(event.currentTarget.value as PositionSortKey)}
+                    style={sortSelectStyle}
+                    aria-label="보유 종목 정렬"
+                  >
+                    <option value="profitRateDesc">총 수익률 높은 순</option>
+                    <option value="profitRateAsc">총 수익률 낮은 순</option>
+                    <option value="marketValueDesc">평가금 높은 순</option>
+                    <option value="marketValueAsc">평가금 낮은 순</option>
+                    <option value="dailyProfitRateDesc">일간 수익률 높은 순</option>
+                    <option value="dailyProfitRateAsc">일간 수익률 낮은 순</option>
+                    <option value="nameAsc">가나다 순</option>
+                    <option value="manual">직접 설정하기</option>
+                  </select>
+                </label>
+                <div style={valueToggleStyle} role="group" aria-label="보유 금액 표시 방식">
+                  <button
+                    type="button"
+                    onClick={() => setPositionValueMode('current')}
+                    style={toggleButtonStyle(positionValueMode === 'current')}
+                  >
+                    현재가
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPositionValueMode('evaluation')}
+                    style={toggleButtonStyle(positionValueMode === 'evaluation')}
+                  >
+                    평가금
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {positionCount > 0 ? (
               <div style={positionsListStyle} aria-label="Toss 보유 포지션">
                 {positionGroups.map((group) => (
                   group.positions.length > 0 && (
                     <section key={group.key} style={positionGroupStyle}>
                       <div style={positionGroupLabelStyle}>{group.label}</div>
                       {group.positions.map((position) => (
-                        <PositionRow key={`${position.marketCode}-${position.symbol}`} position={position} />
+                        <PositionRow
+                          key={`${position.marketCode}-${position.symbol}`}
+                          position={position}
+                          valueMode={positionValueMode}
+                          {...(onOpenTicker !== undefined ? { onOpenTicker } : {})}
+                        />
                       ))}
                     </section>
                   )
@@ -154,9 +217,20 @@ export function TossAccountRail({
   );
 }
 
-function PositionRow({ position }: { position: TossPortfolioPosition }) {
+function PositionRow({
+  position,
+  valueMode,
+  onOpenTicker,
+}: {
+  position: TossPortfolioPosition;
+  valueMode: PositionValueMode;
+  onOpenTicker?: (ticker: string) => void;
+}) {
   const foreign = isForeignPosition(position);
-  const amount = foreign ? formatUsd(position.marketValueUsd || position.marketValue) : formatKrw(position.marketValue);
+  const displayAmount = valueMode === 'current'
+    ? positionCurrentDisplayAmount(position)
+    : positionEvaluationDisplayAmount(position);
+  const amount = foreign ? formatUsd(displayAmount) : formatKrw(displayAmount);
   const pnl = foreign
     ? formatSignedUsd(position.unrealizedPnlUsd || position.unrealizedPnl)
     : formatSignedKrw(position.unrealizedPnl);
@@ -164,9 +238,34 @@ function PositionRow({ position }: { position: TossPortfolioPosition }) {
     ? position.profitRateUsd
     : position.profitRate;
   const pnlValue = foreign ? position.unrealizedPnlUsd || position.unrealizedPnl : position.unrealizedPnl;
+  const ticker = positionTickerForChart(position);
+  const canOpen = ticker !== null && onOpenTicker !== undefined;
   return (
-    <div style={positionRowStyle}>
-      <span style={positionLogoStyle}>{position.name.slice(0, 1)}</span>
+    <button
+      type="button"
+      className="toss-account-rail__position-row"
+      style={{
+        ...positionRowStyle,
+        cursor: canOpen ? 'pointer' : 'default',
+      }}
+      onClick={
+        canOpen
+          ? () => {
+              if (ticker !== null) onOpenTicker?.(ticker);
+            }
+          : undefined
+      }
+      disabled={!canOpen}
+      aria-label={`${position.name} 차트 보기`}
+    >
+      <ProductAvatar
+        name={position.name}
+        iconUrl={position.iconUrl ?? null}
+        productCode={position.productCode}
+        ticker={position.symbol}
+        size={28}
+        style={positionLogoStyle}
+      />
       <span style={positionNameStyle}>
         <strong>{position.name}</strong>
         <em style={positionMetaStyle}>{formatQuantity(position.quantity)}주</em>
@@ -182,8 +281,79 @@ function PositionRow({ position }: { position: TossPortfolioPosition }) {
           {pnl} · {formatSignedPct(profitRate)}
         </em>
       </span>
-    </div>
+    </button>
   );
+}
+
+function sortPositions(
+  positions: readonly TossPortfolioPosition[],
+  sortKey: PositionSortKey,
+): TossPortfolioPosition[] {
+  const sorted = [...positions];
+  sorted.sort((left, right) => {
+    switch (sortKey) {
+      case 'profitRateDesc':
+        return positionTotalProfitRate(right) - positionTotalProfitRate(left);
+      case 'profitRateAsc':
+        return positionTotalProfitRate(left) - positionTotalProfitRate(right);
+      case 'marketValueDesc':
+        return positionEvaluationValue(right) - positionEvaluationValue(left);
+      case 'marketValueAsc':
+        return positionEvaluationValue(left) - positionEvaluationValue(right);
+      case 'dailyProfitRateDesc':
+        return positionDailyProfitRate(right) - positionDailyProfitRate(left);
+      case 'dailyProfitRateAsc':
+        return positionDailyProfitRate(left) - positionDailyProfitRate(right);
+      case 'nameAsc':
+        return left.name.localeCompare(right.name, 'ko-KR');
+      case 'manual':
+        return 0;
+      default:
+        return 0;
+    }
+  });
+  return sorted;
+}
+
+function positionTotalProfitRate(position: TossPortfolioPosition): number {
+  return isForeignPosition(position) && position.profitRateUsd !== 0
+    ? position.profitRateUsd
+    : position.profitRate;
+}
+
+function positionDailyProfitRate(position: TossPortfolioPosition): number {
+  return isForeignPosition(position) && position.dailyProfitRateUsd !== 0
+    ? position.dailyProfitRateUsd
+    : position.dailyProfitRate;
+}
+
+function positionEvaluationValue(position: TossPortfolioPosition): number {
+  return isForeignPosition(position)
+    ? position.marketValueUsd || position.marketValue
+    : position.marketValue;
+}
+
+function positionCurrentDisplayAmount(position: TossPortfolioPosition): number {
+  return isForeignPosition(position)
+    ? position.currentPriceUsd || position.currentPrice
+    : position.currentPrice;
+}
+
+function positionEvaluationDisplayAmount(position: TossPortfolioPosition): number {
+  return positionEvaluationValue(position);
+}
+
+function positionTickerForChart(position: TossPortfolioPosition): string | null {
+  if (!isDomesticPosition(position)) return null;
+  const fromProduct = stripKrTicker(position.productCode);
+  if (fromProduct !== null) return fromProduct;
+  return stripKrTicker(position.symbol);
+}
+
+function stripKrTicker(value: string): string | null {
+  const normalized = value.trim().toUpperCase();
+  const ticker = normalized.startsWith('A') ? normalized.slice(1) : normalized;
+  return /^\d{6}$/.test(ticker) ? ticker : null;
 }
 
 function groupPositions(positions: readonly TossPortfolioPosition[]): Array<{
@@ -320,7 +490,7 @@ const headerTextStyle: CSSProperties = {
 };
 
 const titleStyle: CSSProperties = {
-  fontSize: 14,
+  fontSize: 15,
   fontWeight: 800,
   color: 'var(--text-primary)',
   lineHeight: 1.1,
@@ -333,28 +503,21 @@ const subtitleInlineStyle: CSSProperties = {
   lineHeight: 1.2,
 };
 
-const pillStyle: CSSProperties = {
+const refreshIconButtonStyle: CSSProperties = {
   marginLeft: 'auto',
-  fontSize: 10,
-  fontWeight: 800,
-  color: 'var(--text-secondary)',
-  background: 'var(--bg-tint)',
-  border: '1px solid var(--border-soft)',
-  borderRadius: 50,
-  padding: '2px 7px',
-  whiteSpace: 'nowrap',
-};
-
-const miniRefreshButtonStyle: CSSProperties = {
+  width: 28,
+  height: 28,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   border: '1px solid var(--border-soft)',
   borderRadius: 50,
   background: 'var(--bg-tint)',
   color: 'var(--text-secondary)',
-  fontSize: 10,
-  fontWeight: 800,
+  fontSize: 14,
+  fontWeight: 900,
   fontFamily: 'inherit',
-  padding: '3px 7px',
-  whiteSpace: 'nowrap',
+  padding: 0,
 };
 
 const bodyStyle: CSSProperties = {
@@ -425,7 +588,7 @@ const assetLabelStyle: CSSProperties = {
 };
 
 const assetValueStyle: CSSProperties = {
-  fontSize: 21,
+  fontSize: 20,
   fontWeight: 900,
   color: 'var(--text-primary)',
   whiteSpace: 'nowrap',
@@ -433,7 +596,7 @@ const assetValueStyle: CSSProperties = {
 };
 
 const assetPnlStyle: CSSProperties = {
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 900,
   whiteSpace: 'nowrap',
 };
@@ -458,27 +621,80 @@ const positionsListStyle: CSSProperties = {
   paddingTop: 4,
 };
 
+const positionToolbarStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8,
+  flexShrink: 0,
+};
+
+const sortSelectLabelStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 5,
+  minWidth: 0,
+  color: 'var(--text-muted)',
+  fontSize: 10,
+  fontWeight: 800,
+};
+
+const sortSelectStyle: CSSProperties = {
+  minWidth: 112,
+  maxWidth: 148,
+  height: 26,
+  border: '1px solid var(--border-soft)',
+  borderRadius: 7,
+  background: 'var(--bg-tint)',
+  color: 'var(--text-primary)',
+  fontSize: 11,
+  fontWeight: 800,
+  fontFamily: 'inherit',
+  padding: '0 6px',
+};
+
+const valueToggleStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 2,
+  padding: 2,
+  borderRadius: 8,
+  background: 'var(--bg-tint)',
+  border: '1px solid var(--border-soft)',
+  flex: '0 0 auto',
+};
+
+function toggleButtonStyle(active: boolean): CSSProperties {
+  return {
+    height: 20,
+    border: 'none',
+    borderRadius: 6,
+    background: active ? 'var(--bg-card)' : 'transparent',
+    color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+    fontSize: 10,
+    fontWeight: 900,
+    fontFamily: 'inherit',
+    padding: '0 7px',
+    cursor: 'pointer',
+  };
+}
+
 const positionRowStyle: CSSProperties = {
+  width: '100%',
   display: 'grid',
   gridTemplateColumns: '28px minmax(0, 1fr) minmax(88px, auto)',
   gap: 8,
   alignItems: 'center',
   padding: '7px 0',
+  color: 'inherit',
+  border: 'none',
   borderTop: '1px solid var(--border-soft)',
+  fontFamily: 'inherit',
+  textAlign: 'left',
 };
 
 const positionLogoStyle: CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: '50%',
-  background: 'var(--bg-tint)',
-  border: '1px solid var(--border-soft)',
-  color: 'var(--text-secondary)',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
   fontSize: 11,
-  fontWeight: 900,
 };
 
 const positionNameStyle: CSSProperties = {
@@ -486,7 +702,8 @@ const positionNameStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 2,
-  fontSize: 12,
+  fontSize: 13,
+  fontWeight: 800,
   color: 'var(--text-primary)',
 };
 
@@ -496,7 +713,8 @@ const positionAmountStyle: CSSProperties = {
   flexDirection: 'column',
   gap: 2,
   textAlign: 'right',
-  fontSize: 12,
+  fontSize: 13,
+  fontWeight: 800,
   color: 'var(--text-primary)',
   whiteSpace: 'nowrap',
 };

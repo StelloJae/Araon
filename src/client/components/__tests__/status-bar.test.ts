@@ -6,10 +6,12 @@ import {
   KisBudgetPill,
   MarketTape,
   StatusBar,
+  TossFastQuoteLanePill,
   TossQuotePollingPill,
   shouldShowKisBudgetPill,
   type KisBudgetSummary,
   type MarketTapeSummary,
+  type TossFastQuoteLaneSummary,
   type TossQuotePollingSummary,
 } from '../StatusBar';
 
@@ -40,7 +42,7 @@ describe('MarketTape', () => {
 });
 
 describe('StatusBar', () => {
-  it('uses final-product copy for non-realtime rows instead of polling wording', () => {
+  it('keeps diagnostics out of the normal product tape', () => {
     const html = renderToStaticMarkup(
       createElement(StatusBar, {
         totalCount: 50,
@@ -53,14 +55,18 @@ describe('StatusBar', () => {
       }),
     );
 
-    expect(html).toContain('비실시간');
-    expect(html).not.toContain('일반 갱신');
+    expect(html).toContain('즐겨찾기');
+    expect(html).not.toContain('투자 유의사항');
+    expect(html).not.toContain('비실시간');
     expect(html).not.toContain('폴링');
+    expect(html).not.toContain('총 종목');
+    expect(html).not.toContain('일반 갱신');
+    expect(html).not.toContain('일반 가격');
   });
 });
 
 describe('KisBudgetPill', () => {
-  it('renders the compact REST budget risk label', () => {
+  it('renders a product-facing realtime tracking risk label without raw provider classes', () => {
     const budget: KisBudgetSummary = {
       generatedAt: '2026-05-11T03:00:00.000Z',
       riskState: 'safe',
@@ -95,14 +101,34 @@ describe('KisBudgetPill', () => {
 
     const html = renderToStaticMarkup(createElement(KisBudgetPill, { budget }));
 
-    expect(html).toContain('KIS 여유');
+    expect(html).toContain('실시간 추적 여유');
     expect(html).toContain('1.0/s');
-    expect(html).toContain('REST 0.83/s');
+    expect(html).toContain('활성 경로 1개');
+    expect(html).not.toContain('KIS');
+    expect(html).not.toContain('REST');
+    expect(html).not.toContain('polling');
+    expect(html).not.toContain('ranking');
+    expect(html).not.toContain('foreground');
+  });
+
+  it('translates raw KIS throttle reasons into user-facing tracking copy', () => {
+    const budget = kisBudgetFixture({
+      riskState: 'recovering',
+      riskLabel: 'KIS 회복중',
+      riskReason: 'EGW00201',
+    });
+
+    const html = renderToStaticMarkup(createElement(KisBudgetPill, { budget }));
+
+    expect(html).toContain('실시간 추적 회복중');
+    expect(html).toContain('요청 제한');
+    expect(html).not.toContain('KIS');
+    expect(html).not.toContain('EGW00201');
   });
 });
 
 describe('TossQuotePollingPill', () => {
-  it('renders the compact Toss quote polling label', () => {
+  it('renders general quote diagnostics without product-bar copy', () => {
     const polling: TossQuotePollingSummary = {
       configured: true,
       running: true,
@@ -127,9 +153,10 @@ describe('TossQuotePollingPill', () => {
 
     const html = renderToStaticMarkup(createElement(TossQuotePollingPill, { polling }));
 
-    expect(html).toContain('Toss 부분');
-    expect(html).toContain('11/12');
+    expect(html).toContain('가격 일부 지연');
+    expect(html).toContain('실시간 추적과 별개');
     expect(html).toContain('실시간 추적 억제');
+    expect(html).not.toContain('일반 가격');
   });
 
   it('does not imply KIS REST helper is open when repeated Toss failures are still suppressed', () => {
@@ -162,6 +189,89 @@ describe('TossQuotePollingPill', () => {
     expect(html).not.toContain('실시간 추적 허용');
     expect(html).not.toContain('fallback');
     expect(html).not.toContain('polling');
+  });
+});
+
+describe('TossFastQuoteLanePill', () => {
+  it('renders user-facing fast quote health without raw cap counts', () => {
+    const lane: TossFastQuoteLaneSummary = {
+      configured: true,
+      running: true,
+      enabled: true,
+      source: 'toss-fast-quote',
+      intervalMs: 100,
+      targetCap: 200,
+      hardCap: 400,
+      candidateCount: 33,
+      requestedCount: 33,
+      returnedCount: 33,
+      acceptedCount: 2,
+      droppedUnchangedCount: 31,
+      droppedStaleCount: 0,
+      droppedInvalidCount: 0,
+      skippedInFlightCount: 0,
+      failureCount: 0,
+      consecutiveFailureCount: 0,
+      backoffUntil: null,
+      lastSuccessAt: '2026-05-11T03:00:00.000Z',
+      lastFailureAt: null,
+      lastErrorCode: null,
+      lastMessage: 'ready',
+    };
+
+    const html = renderToStaticMarkup(createElement(TossFastQuoteLanePill, { lane }));
+
+    expect(html).toContain('빠른 가격 정상');
+    expect(html).toContain('관심 종목 33/33 갱신');
+    expect(html).not.toContain('실시간 추적과 별개');
+    expect(html).not.toContain('간격 0.1s');
+    expect(html).not.toContain('상세 진단');
+    expect(html).not.toContain('빠른 가격 · 33종목');
+  });
+
+  it('renders fast quote health as tape text instead of a tall pill in the footer', () => {
+    const lane: TossFastQuoteLaneSummary = {
+      configured: true,
+      running: true,
+      enabled: true,
+      source: 'toss-fast-quote',
+      intervalMs: 100,
+      targetCap: 200,
+      hardCap: 400,
+      candidateCount: 33,
+      requestedCount: 33,
+      returnedCount: 33,
+      acceptedCount: 2,
+      droppedUnchangedCount: 31,
+      droppedStaleCount: 0,
+      droppedInvalidCount: 0,
+      skippedInFlightCount: 0,
+      failureCount: 0,
+      consecutiveFailureCount: 0,
+      backoffUntil: null,
+      lastSuccessAt: '2026-05-11T03:00:00.000Z',
+      lastFailureAt: null,
+      lastErrorCode: null,
+      lastMessage: 'ready',
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(StatusBar, {
+        totalCount: 50,
+        favCount: 10,
+        pollingCount: 40,
+        lastUpdate: '20:09:00',
+        kstTime: '20:09:00 KST',
+        marketSummary: null,
+        onOpenSettings: () => undefined,
+        fastQuoteLaneOverride: lane,
+      }),
+    );
+
+    expect(html).toContain('빠른 가격');
+    expect(html).toContain('정상');
+    expect(html).not.toContain('height:22px');
+    expect(html).not.toContain('border-radius:999px');
   });
 });
 

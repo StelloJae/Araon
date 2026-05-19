@@ -1,7 +1,7 @@
 /**
  * StatusBar — sticky 40px footer summarising tracking counts and last update.
  *
- *   KST + market tape | 총 종목 NN | 즐겨찾기 NN | 비실시간 NN ─► 업데이트 HH:MM:SS ⚙
+ *   KST + market tape | 즐겨찾기 NN | 빠른 가격 상태 ─► 업데이트 HH:MM:SS ⚙
  */
 
 import { useEffect, useState } from 'react';
@@ -12,6 +12,7 @@ import { SettingsIcon } from '../lib/icons';
 export type MarketTapeSummary = Pick<SharedMarketTapeSummary, 'indicators'>;
 export type KisBudgetSummary = RuntimeDataHealthPayload['kisOutboundLimiter']['budget'];
 export type TossQuotePollingSummary = RuntimeDataHealthPayload['tossQuotePolling'];
+export type TossFastQuoteLaneSummary = RuntimeDataHealthPayload['tossFastQuoteLane'];
 
 interface StatusBarProps {
   totalCount: number;
@@ -22,21 +23,27 @@ interface StatusBarProps {
   kstTime: string;
   marketSummary: MarketTapeSummary | null;
   onOpenSettings: () => void;
+  fastQuoteLaneOverride?: TossFastQuoteLaneSummary | null;
 }
 
 export function StatusBar({
-  totalCount,
   favCount,
-  pollingCount,
   lastUpdate,
   kstTime,
   marketSummary,
   onOpenSettings,
+  fastQuoteLaneOverride,
 }: StatusBarProps) {
   const [kisBudget, setKisBudget] = useState<KisBudgetSummary | null>(null);
-  const [tossQuotePolling, setTossQuotePolling] = useState<TossQuotePollingSummary | null>(null);
+  const [tossFastQuoteLane, setTossFastQuoteLane] = useState<TossFastQuoteLaneSummary | null>(
+    fastQuoteLaneOverride ?? null,
+  );
 
   useEffect(() => {
+    if (fastQuoteLaneOverride !== undefined) {
+      setTossFastQuoteLane(fastQuoteLaneOverride);
+      return;
+    }
     let cancelled = false;
     let timer: number | null = null;
     async function refresh() {
@@ -44,12 +51,12 @@ export function StatusBar({
         const health = await getRuntimeDataHealth();
         if (!cancelled) {
           setKisBudget(health.kisOutboundLimiter.budget);
-          setTossQuotePolling(health.tossQuotePolling);
+          setTossFastQuoteLane(health.tossFastQuoteLane);
         }
       } catch {
         if (!cancelled) {
           setKisBudget(null);
-          setTossQuotePolling(null);
+          setTossFastQuoteLane(null);
         }
       }
     }
@@ -61,36 +68,31 @@ export function StatusBar({
       cancelled = true;
       if (timer !== null) window.clearInterval(timer);
     };
-  }, []);
+  }, [fastQuoteLaneOverride]);
 
   return (
     <footer
       className="status-bar"
       aria-label="시장 상태 바"
     >
-      <div className="status-bar__notice">투자 유의사항</div>
       <div className="status-bar__viewport">
         <div className="status-bar__track">
-          <StatusTapeSegment
-            kstTime={kstTime}
-            marketSummary={marketSummary}
-            totalCount={totalCount}
-            favCount={favCount}
-            pollingCount={pollingCount}
-            lastUpdate={lastUpdate}
-            tossQuotePolling={tossQuotePolling}
-            kisBudget={kisBudget}
-          />
-          <StatusTapeSegment
-            kstTime={kstTime}
-            marketSummary={marketSummary}
-            totalCount={totalCount}
-            favCount={favCount}
-            pollingCount={pollingCount}
-            lastUpdate={lastUpdate}
-            tossQuotePolling={tossQuotePolling}
-            kisBudget={kisBudget}
-            ariaHidden
+      <StatusTapeSegment
+        kstTime={kstTime}
+        marketSummary={marketSummary}
+        favCount={favCount}
+        lastUpdate={lastUpdate}
+        tossFastQuoteLane={tossFastQuoteLane}
+        kisBudget={kisBudget}
+      />
+      <StatusTapeSegment
+        kstTime={kstTime}
+        marketSummary={marketSummary}
+        favCount={favCount}
+        lastUpdate={lastUpdate}
+        tossFastQuoteLane={tossFastQuoteLane}
+        kisBudget={kisBudget}
+        ariaHidden
           />
         </div>
       </div>
@@ -110,21 +112,17 @@ export function StatusBar({
 function StatusTapeSegment({
   kstTime,
   marketSummary,
-  totalCount,
   favCount,
-  pollingCount,
   lastUpdate,
-  tossQuotePolling,
+  tossFastQuoteLane,
   kisBudget,
   ariaHidden = false,
 }: {
   kstTime: string;
   marketSummary: MarketTapeSummary | null;
-  totalCount: number;
   favCount: number;
-  pollingCount: number;
   lastUpdate: string;
-  tossQuotePolling: TossQuotePollingSummary | null;
+  tossFastQuoteLane: TossFastQuoteLaneSummary | null;
   kisBudget: KisBudgetSummary | null;
   ariaHidden?: boolean;
 }) {
@@ -132,18 +130,14 @@ function StatusTapeSegment({
     <div className="status-bar__segment" aria-hidden={ariaHidden || undefined}>
       <MarketTape kstTime={kstTime} summary={marketSummary} />
       <Sep />
-      <Stat label="총 종목" value={totalCount} />
-      <Sep />
       <Stat label="즐겨찾기" value={favCount} highlight />
-      <Sep />
-      <Stat label="비실시간" value={pollingCount} />
-      {tossQuotePolling !== null && (
+      {tossFastQuoteLane !== null && (
         <>
           <Sep />
-          <TossQuotePollingPill polling={tossQuotePolling} />
+          <FastQuoteLaneText lane={tossFastQuoteLane} />
         </>
       )}
-      {kisBudget !== null && shouldShowKisBudgetPill(kisBudget, tossQuotePolling) && (
+      {kisBudget !== null && shouldShowKisBudgetPill(kisBudget, null) && (
         <>
           <Sep />
           <KisBudgetPill budget={kisBudget} />
@@ -187,7 +181,140 @@ export function TossQuotePollingPill({ polling }: { polling: TossQuotePollingSum
   );
 }
 
+export function TossFastQuoteLanePill({ lane }: { lane: TossFastQuoteLaneSummary }) {
+  const label = tossFastQuoteLaneLabel(lane);
+  const color = tossFastQuoteLaneColor(lane);
+  return (
+    <span
+      title={tossFastQuoteLaneTitle(lane)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        minWidth: 0,
+        maxWidth: 170,
+        height: 22,
+        padding: '0 8px',
+        borderRadius: 999,
+        border: `1px solid ${color}`,
+        color,
+        background: 'rgba(255,255,255,0.03)',
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function FastQuoteLaneText({ lane }: { lane: TossFastQuoteLaneSummary }) {
+  return (
+    <span title={tossFastQuoteLaneTitle(lane)}>
+      빠른 가격{' '}
+      <span
+        style={{
+          color: tossFastQuoteLaneColor(lane),
+          fontWeight: 800,
+        }}
+      >
+        {tossFastQuoteLaneStatus(lane)}
+      </span>
+    </span>
+  );
+}
+
 export function KisBudgetPill({ budget }: { budget: KisBudgetSummary }) {
+  const rate = budget.windows.sixtySec.callPerSec;
+  const queue = Math.max(
+    0,
+    ...budget.windows.sixtySec.byClass.map((item) => item.queueDepth),
+  );
+  const label = realtimeTrackingBudgetLabel(budget, rate);
+  const color = kisBudgetColor(budget.riskState);
+  const title = realtimeTrackingBudgetTitle(budget, queue);
+  return (
+    <span
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        minWidth: 0,
+        maxWidth: 180,
+        height: 22,
+        padding: '0 8px',
+        borderRadius: 999,
+        border: `1px solid ${color}`,
+        color,
+        background: 'rgba(255,255,255,0.03)',
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function realtimeTrackingBudgetLabel(
+  budget: KisBudgetSummary,
+  rate: number,
+): string {
+  const publicLabel = publicTrackingLabel(budget.riskLabel);
+  if (budget.riskReason !== null && budget.riskState !== 'safe') {
+    return `${publicLabel} · ${publicTrackingReason(budget.riskReason)}`;
+  }
+  return `${publicLabel} · ${rate.toFixed(1)}/s`;
+}
+
+function publicTrackingLabel(label: string): string {
+  return label
+    .replace(/KIS\s*/gi, '실시간 추적 ')
+    .replace(/REST\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function publicTrackingReason(reason: string): string {
+  if (/EGW00201|초당 거래건수 초과/i.test(reason)) return '요청 제한';
+  if (/throttle|rate/i.test(reason)) return '요청 제한';
+  return reason.replace(/KIS|REST|polling|ranking|foreground|background/gi, '').trim() || '확인 필요';
+}
+
+function realtimeTrackingBudgetTitle(budget: KisBudgetSummary, queue: number): string {
+  const window = budget.windows.sixtySec;
+  const activeClasses = window.byClass.filter(
+    (item) => item.callPerSec > 0 || item.throttleCount > 0 || item.queueDepth > 0,
+  ).length;
+  return [
+    `실시간 추적 ${window.callPerSec.toFixed(2)}/s`,
+    `요청 제한 ${window.throttlePerMin.toFixed(1)}/min`,
+    `대기 ${queue}`,
+    activeClasses > 0 ? `활성 경로 ${activeClasses}개` : '활성 경로 없음',
+  ].join(' · ');
+}
+
+export function shouldShowKisBudgetPill(
+  budget: KisBudgetSummary,
+  polling: TossQuotePollingSummary | null,
+): boolean {
+  void polling;
+  if (budget.riskState === 'idle' || budget.riskState === 'safe') {
+    return false;
+  }
+  return true;
+}
+
+/*
+ * Legacy diagnostics components remain exported for focused tests and internal
+ * diagnostics, but normal footer copy must stay product-facing.
+ */
+export function LegacyKisBudgetPill({ budget }: { budget: KisBudgetSummary }) {
   const rate = budget.windows.sixtySec.callPerSec;
   const queue = Math.max(
     0,
@@ -222,19 +349,6 @@ export function KisBudgetPill({ budget }: { budget: KisBudgetSummary }) {
   );
 }
 
-export function shouldShowKisBudgetPill(
-  budget: KisBudgetSummary,
-  polling: TossQuotePollingSummary | null,
-): boolean {
-  if (
-    polling?.suppressingKisPolling === true &&
-    (budget.riskState === 'idle' || budget.riskState === 'safe')
-  ) {
-    return false;
-  }
-  return true;
-}
-
 function tossQuotePollingLabel(polling: TossQuotePollingSummary): string {
   if (!polling.configured) return 'Toss 미구성';
   if (!polling.enabled) return 'Toss 꺼짐';
@@ -244,9 +358,9 @@ function tossQuotePollingLabel(polling: TossQuotePollingSummary): string {
       : 'Toss 실패 · 실시간 추적';
   }
   if (polling.lastErrorCode !== null) return 'Toss 복구 대기';
-  if (polling.cycleCount === 0) return 'Toss 시작 대기';
-  if (polling.missingCount > 0) return `Toss 부분 · ${polling.returnedCount}/${polling.tickersInCycle}`;
-  return `Toss 가격 · ${polling.returnedCount}/${polling.tickersInCycle}`;
+  if (polling.cycleCount === 0) return '가격 확인 중';
+  if (polling.missingCount > 0) return '가격 일부 지연';
+  return '가격 정상';
 }
 
 function tossQuotePollingColor(polling: TossQuotePollingSummary): string {
@@ -257,6 +371,42 @@ function tossQuotePollingColor(polling: TossQuotePollingSummary): string {
     return 'var(--gold-text)';
   }
   return 'var(--kr-up)';
+}
+
+function tossFastQuoteLaneLabel(lane: TossFastQuoteLaneSummary): string {
+  if (!lane.configured) return '빠른 가격 미구성';
+  if (!lane.enabled) return '빠른 가격 꺼짐';
+  if (lane.consecutiveFailureCount >= 2 || lane.lastErrorCode !== null) return '빠른 가격 대기';
+  if (lane.candidateCount === 0) return '빠른 가격 후보 없음';
+  if (lane.returnedCount < lane.requestedCount) return '빠른 가격 일부 지연';
+  return '빠른 가격 정상';
+}
+
+function tossFastQuoteLaneStatus(lane: TossFastQuoteLaneSummary): string {
+  return tossFastQuoteLaneLabel(lane).replace(/^빠른 가격\s*/, '');
+}
+
+function tossFastQuoteLaneColor(lane: TossFastQuoteLaneSummary): string {
+  if (!lane.configured || !lane.enabled || lane.candidateCount === 0) {
+    return 'var(--text-muted)';
+  }
+  if (lane.consecutiveFailureCount >= 2 || lane.lastErrorCode !== null || lane.returnedCount < lane.requestedCount) {
+    return 'var(--gold-text)';
+  }
+  return 'var(--kr-up)';
+}
+
+function tossFastQuoteLaneTitle(lane: TossFastQuoteLaneSummary): string {
+  if (!lane.configured) return '빠른 가격 준비 전';
+  const status = tossFastQuoteLaneStatus(lane);
+  const scope = lane.candidateCount > 0
+    ? `관심 종목 ${lane.returnedCount}/${lane.candidateCount} 갱신`
+    : '관심 종목 대기';
+  return [
+    `빠른 가격 ${status}`,
+    scope,
+    lane.running ? '자동 갱신 중' : '대기 중',
+  ].join(' · ');
 }
 
 function tossQuotePollingTitle(polling: TossQuotePollingSummary): string {
@@ -271,6 +421,7 @@ function tossQuotePollingTitle(polling: TossQuotePollingSummary): string {
     : '실시간 추적 허용';
   return [
     `Toss 가격 갱신 ${polling.running ? '실행 중' : '대기'}`,
+    '실시간 추적과 별개',
     `${polling.returnedCount}/${polling.tickersInCycle} 수신`,
     `누락 ${polling.missingCount}`,
     `실패 ${polling.errorCount}`,

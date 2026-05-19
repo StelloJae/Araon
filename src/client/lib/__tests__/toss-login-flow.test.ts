@@ -11,6 +11,7 @@ import type { TossLoginStatusPayload } from '../api-client';
 function loginStatus(
   state: TossLoginStatusPayload['state'],
   message: string | null = null,
+  overrides: Partial<TossLoginStatusPayload> = {},
 ): TossLoginStatusPayload {
   return {
     state,
@@ -25,6 +26,7 @@ function loginStatus(
     expiresAt: null,
     missingCookieCount: 0,
     missingLocalStorageKeyCount: 0,
+    ...overrides,
   };
 }
 
@@ -71,5 +73,18 @@ describe('toss login flow helpers', () => {
     expect(notice).not.toContain(rawSessionMarker);
     expect(notice).not.toContain(rawStorageMarker);
     expect(notice).not.toContain(rawAccountMarker);
+  });
+
+  it('does not describe authenticated session-scoped capture as a persistent-session wait', () => {
+    const notice = tossLoginRailNotice(
+      loginStatus('waiting_for_persistent', 'QR login completed; verifying Toss session', {
+        persistent: false,
+        cookieCount: 5,
+        localStorageKeyCount: 2,
+      }),
+    );
+
+    expect(notice).toBe('Toss 로그인 정보를 확인하는 중입니다.');
+    expect(notice).not.toContain('유지');
   });
 });
