@@ -1,0 +1,47 @@
+- generic [ref=e5] [box=0,0,1600,1000]:
+  - banner [ref=e6] [box=0,0,1600,64]:
+    - button "운영 홈으로 이동" [ref=e7] [cursor=pointer] [box=24,19,142,26]:
+      - generic [ref=e9] [box=60,23,106,18]:
+        - generic [ref=e10] [box=60,23,46,18]: 아라온
+        - generic [ref=e11] [box=113,27,54,11]: · Araon
+    - 'generic "시장 상태: LIVE · 장중" [ref=e12] [box=186,20,86,23]': LIVE · 장중
+    - generic [ref=e16] [box=637,15,380,33]:
+      - img [ref=e18] [box=648,25,14,14]
+      - textbox "종목 검색" [ref=e21] [box=670,23,301,17]:
+        - /placeholder: 종목명·코드 검색
+      - generic [ref=e22] [box=980,23,27,17]: ⌘K
+    - button "테마 전환" [ref=e23] [cursor=pointer] [box=1382,16,32,32]:
+      - img [ref=e24] [box=1390,24,16,16]
+    - button "설정 열기" [ref=e27] [cursor=pointer] [box=1434,16,32,32]:
+      - img [ref=e28] [box=1442,24,16,16]
+    - button "실시간 연결 상태" [ref=e33] [cursor=pointer] [box=1507,17,69,30]:
+      - generic [ref=e35] [box=1534,24,31,16]: 실시간
+  - generic [ref=e36] [box=0,64,1600,892]:
+    - main [ref=e37] [box=18,74,1188,872]:
+      - generic [ref=e38] [box=18,74,1188,872]:
+        - generic [ref=e39] [box=18,74,588,872]
+        - generic [ref=e2084] [box=618,74,588,872]
+    - complementary "Toss account rail" [ref=e2232] [box=1218,64,382,892]:
+      - generic [ref=e2234] [box=1219,64,333,892]:
+        - generic [ref=e2235] [box=1219,64,333,55]
+        - generic [ref=e2241] [box=1219,119,333,836]
+      - navigation "빠른 이동" [ref=e2334] [box=1552,64,48,892]:
+        - button "계좌 접기 · Toss 준비됨" [ref=e2335] [cursor=pointer] [box=1559,72,36,36]
+        - button "홈" [ref=e2338] [cursor=pointer] [box=1559,116,36,36]
+        - button "전체 차트" [ref=e2343] [cursor=pointer] [box=1559,160,36,36]
+        - button "에이전트" [ref=e2347] [cursor=pointer] [box=1559,204,36,36]
+        - button "설정" [ref=e2350] [cursor=pointer] [box=1559,248,36,36]
+  - contentinfo "시장 상태 바" [ref=e2354] [box=0,964,1600,36]:
+    - generic [ref=e2356] [box=-857,971,2134,24]:
+      - generic [ref=e2357] [box=-857,971,1067,24]:
+        - generic [ref=e2358] [box=-857,971,749,24]
+        - generic [ref=e2377] [box=-87,971,51,24]
+        - generic "Toss 빠른 가격 실행 중 · 실시간 추적과 별개 · 간격 0.1s · 상세 진단은 설정에서 확인" [ref=e2380] [box=-14,971,60,24]
+        - generic [ref=e2383] [box=66,971,116,24]
+      - generic [ref=e2385] [box=210,971,1067,24]:
+        - generic [ref=e2386] [box=210,971,749,24]
+        - generic [ref=e2405] [box=980,971,51,24]
+        - generic [ref=e2408] [box=1053,971,60,24]
+        - generic [ref=e2411] [box=1133,971,116,24]
+    - button "설정 열기" [ref=e2413] [cursor=pointer] [box=1562,968,30,30]:
+      - img [ref=e2414] [box=1569,975,16,16]

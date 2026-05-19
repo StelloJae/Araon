@@ -16,13 +16,13 @@
   ·
   <a href="INSTALL.md">Install guide</a>
   ·
-  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.1.3">v1.1.3 release</a>
+  <a href="https://github.com/StelloJae/Araon/releases/tag/v1.2.0">v1.2.0 release</a>
 </p>
 
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933">
-  <img alt="npm" src="https://img.shields.io/badge/npm-v1.1.3-111827">
+  <img alt="npm" src="https://img.shields.io/badge/npm-v1.2.0-111827">
 </p>
 
 Araon is a personal observation dashboard for Korean stock traders who want a
@@ -67,6 +67,10 @@ watching the market:
 - intraday price movement and persisted local candle history
 - Toss-first daily and selected-minute candle backfill for chart views
 - selected-ticker today-minute backfill when the guarded route allows it
+- compact product icons, Toss-watchlist-aware favorites, and portfolio-aware
+  account rail surfaces
+- agent decision-support views for detected candidates, simulated previews,
+  risk/audit context, and an explicit live-trading lock
 - news and disclosure links, with optional Naver Search and OpenDART enrichment
 - local, desktop, sound, and optional Telegram alerts
 - data-health diagnostics so you can see what Araon is collecting
@@ -192,10 +196,10 @@ and order identifiers.
 
 Desktop artifacts are attached to the GitHub release:
 
-- `Araon-1.1.3-arm64.dmg`
-- `Araon-1.1.3-arm64-mac.zip`
-- `Araon-Setup-1.1.3-x64.exe`
-- `Araon-1.1.3-x64-portable.exe`
+- `Araon-1.2.0-arm64.dmg`
+- `Araon-1.2.0-arm64-mac.zip`
+- `Araon-Setup-1.2.0-x64.exe`
+- `Araon-1.2.0-x64-portable.exe`
 
 The desktop build is still unsigned for public distribution, so macOS may show
 a Gatekeeper warning. For now, the npm/CLI path is the most reliable way to run

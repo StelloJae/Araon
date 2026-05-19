@@ -48,7 +48,8 @@ function classify(path: string): Omit<ClassifiedPath, 'path' | 'status'> {
   if (
     matches(path, [
       /^docs\/research\/.*\.md$/,
-      /^docs\/archive\/.*\.(md|json)$/,
+      /^docs\/archive\/.*\.(md|json|png)$/,
+      /^docs\/release-notes\/v\d+\.\d+\.\d+\.md$/,
       /^docs\/design\.md$/,
       /^docs\/frontend-.*\.md$/,
     ])
@@ -56,7 +57,11 @@ function classify(path: string): Omit<ClassifiedPath, 'path' | 'status'> {
     return { slice: 'A_docs_evidence', reason: 'research/evidence/goal documentation' };
   }
 
-  if (path === 'package.json') {
+  if (matches(path, [/^README(\.ko)?\.md$/, /^INSTALL\.md$/])) {
+    return { slice: 'F_cli_package', reason: 'user-facing install and package documentation' };
+  }
+
+  if (matches(path, [/^package(-lock)?\.json$/])) {
     return { slice: 'F_cli_package', reason: 'package script or npm packaging metadata' };
   }
 
