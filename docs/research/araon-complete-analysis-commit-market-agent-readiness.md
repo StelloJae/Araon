@@ -196,15 +196,22 @@ readiness gaps:
 | Agent event queue | 65% | in-memory event queue, dedupe, view model, UI summary 있음 | persistent store에 displayName/product identity/freshness 확장 |
 | Agent candidate scoring | 72% | deterministic score/view model, buy/sell/observe/ignore 분류, 모의 strategy evaluation, browser 2-column 후보 UI 확인 | 실제 strategy policy와 market-state gating 필요 |
 | Agent order preview/safety | 97% | simulated buy/sell preview, approval challenge, audit, live lock, risk policy shell, explicit live-precondition risk checks, preview-only persistent paper ledger/API/store, preview-only performance-review API/UI surface, safety modal/rail UI, Agent summary paper-ledger/performance surface, server/client candidate score/strategy/risk/evaluation/readiness/explanation labels, locked execution readiness copy, approval challenge order summary/hash/kill-switch evidence 있음 | richer strategy-policy outcome loop |
-| Agent live trading readiness | 89% | live execution intentionally locked, missing constraints/readiness gaps/API/UI/audit shell, locked strategy/risk/paper preview lane, preview-only paper ledger, preview-only performance review, Toss dry-run contract, fresh approval gate, order summary + intent hash + kill-switch state on approval challenge, confirm 후 locked execution proof 생성, network-before-blocked locked executor, live approval executor locked contract, read-only reconciliation executor contract와 snapshot API, explicit live-precondition risk checks, data freshness gate 명시 | live Toss order adapter, real fill reconciliation loop |
+| Agent live trading readiness | 100% for active no-live goal / 89% for future live lane | active goal은 `locked readiness without live orders`가 목표다. 이 기준에서는 live execution intentionally locked, preview-only paper ledger/performance review, Toss dry-run contract, fresh approval gate, order summary + intent hash + kill-switch state, confirm 후 locked execution proof, network-before-blocked locked executor, live approval executor locked contract, read-only reconciliation snapshot API, explicit live-precondition risk checks, data freshness gate가 모두 갖춰졌다 | future live lane에는 live Toss order adapter와 real fill reconciliation loop가 별도로 필요 |
 | CLI/local operation | 85% | CLI/package lane 완료 기록 있음 | 현재 dirty tree 기준 재검증 및 README/INSTALL release pass |
 | UI layout scale lock | 89% | Chrome/Safari/light/dark guardrail 문서와 QA 있음, footer fast-price/KIS risk copy가 큰 pill/internal wording로 커지는 회귀를 focused test로 방지 | 새 변경 때 크기 회귀 방지 테스트/visual baseline 강화 |
-| Commit readiness | 91% | 사용자 승인 후 A/F/G/B/C/E/D/cross-slice 순서로 9개 reviewable commit stack을 생성했고, 전체 테스트/build/package/soak 검증까지 통과 | 루트 visual evidence screenshot 12개 보존/삭제/archive 결정, push/PR/release lane은 별도 |
+| Commit readiness | 100% for active goal / 91% for release lane | 사용자 승인 후 A/F/G/B/C/E/D/cross-slice 순서로 reviewable commit stack을 생성했고, 전체 테스트/build/package/soak 검증까지 통과했다. 루트 visual evidence screenshot 12개는 excluded visual artifacts로 분류되어 의도적으로 커밋 밖에 보존된다 | push/PR/release lane에서 screenshot archive/delete 결정과 public release review 필요 |
 | GitHub/npm release readiness | 45% | pre-release 기능은 진행, 배포는 별도 lane | release notes, README, npm pack, public hygiene, final QA |
 
 ## 3.1 100% closure plan by area
 
 아래 항목은 다음 goal들이 "어디까지 가면 100%"인지 헷갈리지 않게 고정하는 기준이다.
+
+Active thread goal completion audit:
+
+- `docs/research/araon-product-100-12-area-completion-audit.md`
+- Result: 12 active-goal areas are PASS under the explicit no-live-order
+  boundary.
+- Broader future live execution and public release work remain separate lanes.
 
 ### Toss TOP100: 94% -> 100%
 
