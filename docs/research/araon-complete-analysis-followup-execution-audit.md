@@ -940,8 +940,9 @@ Verification:
 
 Updated completion estimate:
 
-- 12-area average: 92.5%.
+- 12-area average: 94.8%.
 - Excluding commit readiness: 94.2%.
+- Commit readiness: 91%.
 - Agent live trading readiness: 89%.
 
 Remaining live-readiness blockers:
@@ -951,13 +952,47 @@ Remaining live-readiness blockers:
 - No live strategy/risk policy approval lane.
 - Data freshness is now a locked contract, not a live runtime unlock.
 
-## 21. Recommended next actions
+## 21. 2026-05-19 post-commit stack closeout
 
-1. Do not stage yet.
-2. Review this audit with the authoritative complete-analysis doc.
-3. Decide whether the next goal should be:
-   - commit slicing only,
-   - product icons implementation,
-   - agent decision policy foundation,
-   - or another market-hours evidence pass.
-4. If commit slicing is approved, start with Slice A docs/evidence, then F/G/B/C/E/D, then cross-slice verification.
+Commit stack created after explicit user approval:
+
+1. `acf7630` - docs/evidence.
+2. `e4c8f38` - CLI/package/audit scripts.
+3. `7c76300` - KIS containment.
+4. `b484935` - Toss backend/product identity/watchlist.
+5. `64d1d1e` - watchlist provenance repository supplement.
+6. `7a5f837` - realtime/chart/surge.
+7. `d76e230` - agent safety/decision-support.
+8. `6a9b0eb` - frontend product UI.
+9. `5e112b6` - cross-slice readiness probes.
+
+Verification after commit stack:
+
+- `npm test`: PASS, 230 files / 1573 tests.
+- `npm run typecheck`: PASS.
+- `npm run build`: PASS, Vite chunk-size warning only.
+- `npm pack --dry-run --json`: PASS, 53 package entries.
+- `npm run audit:pre-release-product`: PASS, 42/42 criteria.
+- `npm run soak:no-live -- --duration-ms=1500 --interval-ms=500`: PASS, issueCount=0.
+- `git diff --check`: PASS.
+- refined tracked-file secret-like scan: PASS, no hits.
+- `npx tsx scripts/internal/probes/probe-commit-slice-coverage.mts`: PASS, remaining untracked entries are excluded visual artifacts only.
+
+Remaining non-commit artifacts:
+
+- 12 root-level visual evidence files remain untracked.
+- They are intentionally not included in the reviewable commit stack until the
+  user decides whether to archive, keep, or delete them.
+
+Updated completion estimate:
+
+- 12-area average: 94.8%.
+- Excluding commit readiness: 94.2%.
+- Commit readiness: 91%.
+- Agent live trading readiness: 89%.
+
+Recommended next actions:
+
+1. Decide the fate of the 12 root visual evidence artifacts.
+2. If this commit stack shape is acceptable, move to push/PR or release-review lane.
+3. Keep live order execution and npm/GitHub release as separate explicit lanes.

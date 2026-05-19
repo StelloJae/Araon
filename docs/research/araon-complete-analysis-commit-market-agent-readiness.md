@@ -199,7 +199,7 @@ readiness gaps:
 | Agent live trading readiness | 89% | live execution intentionally locked, missing constraints/readiness gaps/API/UI/audit shell, locked strategy/risk/paper preview lane, preview-only paper ledger, preview-only performance review, Toss dry-run contract, fresh approval gate, order summary + intent hash + kill-switch state on approval challenge, confirm 후 locked execution proof 생성, network-before-blocked locked executor, live approval executor locked contract, read-only reconciliation executor contract와 snapshot API, explicit live-precondition risk checks, data freshness gate 명시 | live Toss order adapter, real fill reconciliation loop |
 | CLI/local operation | 85% | CLI/package lane 완료 기록 있음 | 현재 dirty tree 기준 재검증 및 README/INSTALL release pass |
 | UI layout scale lock | 89% | Chrome/Safari/light/dark guardrail 문서와 QA 있음, footer fast-price/KIS risk copy가 큰 pill/internal wording로 커지는 회귀를 focused test로 방지 | 새 변경 때 크기 회귀 방지 테스트/visual baseline 강화 |
-| Commit readiness | 74% | 2026-05-19 dirty tree를 A/F/G/B/C/E/D/cross-slice로 재분류했고, 최신 status/stat와 Agent locked-readiness migration/slice ownership, locked executor/read-only reconciliation snapshot focused test evidence, 실행 가능한 staging manifest, 그리고 dirty/untracked 178개 entry unknown=0 coverage probe까지 반영 | 사용자 승인 전 stage/commit 금지, hunk-level split 실제 수행/commit message 최종 확정 |
+| Commit readiness | 91% | 사용자 승인 후 A/F/G/B/C/E/D/cross-slice 순서로 9개 reviewable commit stack을 생성했고, 전체 테스트/build/package/soak 검증까지 통과 | 루트 visual evidence screenshot 12개 보존/삭제/archive 결정, push/PR/release lane은 별도 |
 | GitHub/npm release readiness | 45% | pre-release 기능은 진행, 배포는 별도 lane | release notes, README, npm pack, public hygiene, final QA |
 
 ## 3.1 100% closure plan by area
@@ -619,18 +619,26 @@ readiness gaps:
 - locked executor/read-only reconciliation snapshot tests.
 - live mutation only with separate fresh GO.
 
-### Commit readiness: 74% -> 100%
+### Commit readiness: 91% -> 100%
 
 현재:
 
-- tracked 104 files changed.
-- dirty/untracked entries 174개.
-- docs/screenshots/scripts/source files가 섞여 있다.
-- `docs/research/araon-commit-slice-plan.md`에 2026-05-19 executable staging manifest가 있다.
-- slice map exists and latest Agent locked-readiness files are assigned.
-- `scripts/internal/probes/probe-commit-slice-coverage.mts` now proves the
-  current 178 dirty/untracked entries are all classified with unknown=0.
-- actual staging not done.
+- 사용자 승인 후 reviewable commit stack이 생성됐다.
+- Commit order:
+  1. A docs/evidence
+  2. F CLI/package/audit scripts
+  3. G KIS containment
+  4. B Toss backend/product identity/watchlist
+  5. B supplemental watchlist provenance repository
+  6. C realtime/chart/surge
+  7. E agent safety/decision-support
+  8. D frontend product UI
+  9. cross-slice product readiness probes
+- `scripts/internal/probes/probe-commit-slice-coverage.mts`는 현재 남은
+  dirty/untracked entry가 root visual artifact 12개뿐임을 확인한다.
+- `npm test`, `npm run typecheck`, `npm run build`, `npm pack --dry-run --json`,
+  `npm run soak:no-live -- --duration-ms=1500 --interval-ms=500`,
+  `git diff --check`, secret-like scan이 통과했다.
 
 100% 조건:
 
@@ -642,22 +650,13 @@ readiness gaps:
   - review risk.
   - verification commands.
   - commit message draft.
-- 사용자 승인 전 stage/commit 없음.
+- 사용자 승인 후 생성된 commit stack이 review 가능한 상태다.
 
 필요 작업:
 
-- `git add -p` 기준으로 cross-slice hunks 실제 분리.
-- untracked screenshot artifacts 최종 include/exclude 결정.
-- 각 slice commit message 최종 확정.
-- commit order final:
-  1. A docs
-  2. F CLI/package
-  3. G KIS containment
-  4. B Toss backend
-  5. C realtime/chart
-  6. E agent safety
-  7. D frontend
-  8. cross-slice verification
+- 루트 screenshot/visual artifact 12개를 보존, archive, 또는 삭제할지 결정.
+- PR/release 전 필요하면 commit stack을 squash/reorder/reword한다.
+- GitHub/npm release lane에서 README/release note/public packaging을 최종 검수한다.
 
 검증:
 

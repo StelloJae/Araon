@@ -4,7 +4,8 @@ Date: 2026-05-17
 
 Authoritative basis: `docs/research/araon-release-readiness-live-watchlist-agent-roadmap.md`
 
-Status: planning document only. Do not stage or commit from this document until the user explicitly approves.
+Status: executed after explicit user approval on 2026-05-19. The original
+planning details remain below for review context.
 
 ## 0. 2026-05-19 current-state update
 
@@ -1020,13 +1021,32 @@ Also run a tracked-file secret scan after any security-sensitive or provider-ses
 
 Current state:
 
-- Ready for user review of commit plan.
-- Not yet approved for staging.
-- Not yet approved for commit creation.
+- User approved staging/commits.
+- Reviewable commit stack was created in the planned A/F/G/B/C/E/D/cross-slice
+  order.
+- Final stack:
+  1. `acf7630 docs: record Araon product 100 evidence and commit plan`
+  2. `e4c8f38 chore: add Araon product audit scripts`
+  3. `7c76300 refactor: contain KIS realtime tracking slots`
+  4. `b484935 feat: make Toss watchlist and product identity primary`
+  5. `64d1d1e fix: add watchlist provenance repository`
+  6. `7a5f837 feat: stabilize Toss realtime surge and chart paths`
+  7. `d76e230 feat: add locked agent decision support`
+  8. `6a9b0eb feat: polish Araon product UI surfaces`
+  9. `5e112b6 test: add Araon product readiness probes`
 
-Recommended next action:
+Post-stack verification:
 
-1. Review this slice plan.
-2. Inspect cross-slice hunks, especially `src/server/realtime/runtime-operator.ts`.
-3. If approved, stage Slice A only and create the first documentation commit.
-4. Continue in the recommended order, running focused verification per slice.
+- `npm test`: PASS, 230 files / 1573 tests.
+- `npm run typecheck`: PASS.
+- `npm run build`: PASS, Vite chunk-size warning only.
+- `npm pack --dry-run --json`: PASS, 53 package entries.
+- `npm run audit:pre-release-product`: PASS, 42/42 criteria.
+- `npm run soak:no-live -- --duration-ms=1500 --interval-ms=500`: PASS.
+- `git diff --check`: PASS.
+- refined tracked-file secret-like scan: PASS.
+
+Remaining decision:
+
+- 12 root-level visual evidence artifacts are still untracked and intentionally
+  excluded from the commit stack until the user chooses archive/keep/delete.
